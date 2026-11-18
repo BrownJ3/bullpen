@@ -261,11 +261,20 @@ wss.on("connection", (socket: WebSocket) => {
         });
         for (const p of projects.values()) {
           rows.push({
-            ...projectFor(p.path), name: p.title, sessions: 0, lastUsedAt: p.lastUsedAt, location: locationOf(p.path),
+            ...projectFor(p.path), name: p.title, sessions: 0, tools: [], lastUsedAt: p.lastUsedAt, location: locationOf(p.path),
             projectId: p.id, added: true, archived: Boolean(p.archivedAt), pinned: Boolean(p.pinnedAt),
           });
         }
         return rows;
+      }
+      case "projectSuggestions": {
+        // Folders you've used Claude Code or Codex in that aren't in the sidebar yet (and you haven't waved off).
+        const have = new Set(store.listProjects().map((p) => p.path));
+        const dismissed = new Set(store.getSetting<string[]>("projects.dismissed", []));
+        const items = importCandidates()
+          .filter((c) => c.tools.length && !have.has(c.path) && !dismissed.has(c.path))
+          .sort((a, b) => (b.lastUsedAt ?? "").localeCompare(a.lastUsedAt ?? ""));
+        return { firstRun: !have.size && !store.getSetting("projects.onboarded", false), items };
       }
       case "pastSessions": {
         // Hide sessions this Bullpen has already picked up.

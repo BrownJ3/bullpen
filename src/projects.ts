@@ -213,8 +213,10 @@ export function pastClaudeSessions(path: string, limit = 12): PastSession[] {
 // ---------- import: folders worth adding as projects ----------
 
 export interface ImportCandidate extends Project {
-  /** Claude Code sessions found for this folder. */
+  /** Claude Code and Codex sessions found for this folder. */
   sessions: number;
+  /** Which tools you've used here. */
+  tools: Array<"claude" | "codex">;
   lastUsedAt?: string;
   /** Where it was found, for grouping in the dialog. */
   location: "documents" | "home" | "elsewhere";
@@ -245,15 +247,16 @@ function skipForImport(path: string): boolean {
 export function importCandidates(): ImportCandidate[] {
   const byPath = new Map<string, ImportCandidate>();
   const docs = join(HOME, "Documents");
-  const add = (path: string, sessions: number, lastUsedAt?: string) => {
+  const add = (path: string, sessions: number, lastUsedAt?: string, tool?: "claude" | "codex") => {
     if (skipForImport(path) || !existsSync(path)) return;
     const prev = byPath.get(path);
     if (prev) {
       prev.sessions += sessions;
+      if (tool && !prev.tools.includes(tool)) prev.tools.push(tool);
       if (lastUsedAt && (!prev.lastUsedAt || lastUsedAt > prev.lastUsedAt)) prev.lastUsedAt = lastUsedAt;
       return;
     }
-    byPath.set(path, { ...project(path), sessions, lastUsedAt, location: locationOf(path) });
+    byPath.set(path, { ...project(path), sessions, tools: tool ? [tool] : [], lastUsedAt, location: locationOf(path) });
   };
 
   const root = join(HOME, ".claude", "projects");
@@ -282,8 +285,10 @@ export function importCandidates(): ImportCandidate[] {
     } catch {
       continue;
     }
-    add(path, files.length, new Date(files[0].mtime).toISOString());
+    add(path, files.length, new Date(files[0].mtime).toISOString(), "claude");
   }
+  // Codex: each session file starts with a session_meta line holding its folder.
+  for (const { path, mtime } of codexSessionFolders()) add(path, 1, new Date(mtime).toISOString(), "codex");
   // Project folders found on disk: ~/Documents, the home folder itself, and the usual code folders under it.
   for (const p of discoverProjects()) add(p.path, 0);
 
@@ -294,6 +299,36 @@ export function importCandidates(): ImportCandidate[] {
       (b.lastUsedAt ?? "").localeCompare(a.lastUsedAt ?? "") ||
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
+}
+
+/** Folders from Codex's session files (~/.codex/sessions/YYYY/MM/DD/*.jsonl), newest first, at most 3000 files. */
+function codexSessionFolders(): Array<{ path: string; mtime: number }> {
+  const root = join(process.env.CODEX_HOME ?? join(HOME, ".codex"), "sessions");
+  const files: string[] = [];
+  const walk = (dir: string, depth: number) => {
+    let names: string[];
+    try {
+      names = readdirSync(dir).sort().reverse();
+    } catch {
+      return;
+    }
+    for (const n of names) {
+      if (files.length >= 3000) return;
+      const p = join(dir, n);
+      if (depth < 3) walk(p, depth + 1);
+      else if (n.endsWith(".jsonl")) files.push(p);
+    }
+  };
+  walk(root, 0);
+  const out: Array<{ path: string; mtime: number }> = [];
+  for (const f of files) {
+    const cwd = readSlice(f, 0, 16 * 1024).match(/"cwd":"((?:[^"\\]|\\.)*)"/)?.[1];
+    if (!cwd) continue;
+    try {
+      out.push({ path: JSON.parse(`"${cwd}"`), mtime: statSync(f).mtimeMs });
+    } catch {}
+  }
+  return out;
 }
 
 // ---------- project icons (T3: ProjectFaviconResolver) ----------

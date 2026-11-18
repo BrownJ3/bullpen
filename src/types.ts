@@ -400,6 +400,8 @@ export type Command =
     }
   | { type: "project.add"; path: string; title?: string }
   | { type: "project.import"; projects: Array<{ path: string; lastUsedAt?: string }> }
+  /** Stop suggesting these folders (the "found your projects" prompt). */
+  | { type: "projects.dismissSuggestions"; paths: string[] }
   | {
       type: "project.update";
       projectId: string;

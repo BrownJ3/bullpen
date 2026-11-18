@@ -17,7 +17,9 @@ against nodejs.org's checksums), puts Bullpen in `~/.bullpen/app` at the newest 
 curl -fsSL https://raw.githubusercontent.com/BrownJ3/bullpen/main/install.sh | sh
 ```
 
-Bullpen drives Claude Code and/or Codex with your existing sign-ins; the installer says how to get them if missing.
+Bullpen drives Claude Code and/or Codex with your existing sign-ins; the installer says how to get them if missing. On first open,
+Bullpen finds the folders you've worked in with Claude Code or Codex and asks which to add to the sidebar; projects
+you start in those tools later show up as a "Review" notice above your projects.
 Update with `bullpen update`, or the "Update to …" button that appears in the sidebar when a new release is out
 (`bullpen version` shows what you have). A checkout on a branch (like this development copy) follows its branch
 instead of releases.

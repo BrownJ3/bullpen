@@ -45,6 +45,7 @@ export type Request =
   | { id: number; method: "browser.close"; params: { threadId: string } }
   | { id: number; method: "remote.info"; params?: undefined }
   | { id: number; method: "listEngines"; params?: undefined }
+  | { id: number; method: "projectSuggestions"; params?: undefined }
   | { id: number; method: "version"; params?: undefined }
   | { id: number; method: "artifact.content"; params: { artifactId: string; version?: number } }
   | { id: number; method: "update.run"; params?: undefined }

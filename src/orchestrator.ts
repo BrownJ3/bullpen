@@ -242,7 +242,17 @@ export class Orchestrator {
             // folder gone since the scan: skip it
           }
         }
+        this.#store.commit("settings", [{ type: "setting.upserted", key: "projects.onboarded", value: true }]);
         return { added };
+      }
+      case "projects.dismissSuggestions": {
+        const dismissed = new Set(this.#store.getSetting<string[]>("projects.dismissed", []));
+        for (const p of command.paths) dismissed.add(p);
+        this.#store.commit("settings", [
+          { type: "setting.upserted", key: "projects.dismissed", value: [...dismissed].slice(-2000) },
+          { type: "setting.upserted", key: "projects.onboarded", value: true },
+        ]);
+        return { ok: true };
       }
       case "project.update": {
         const project = this.#store.getProject(command.projectId);

@@ -638,6 +638,20 @@ button:focus-visible, [role="button"]:focus-visible { outline: 2px solid color-m
 .app.side-hidden { grid-template-columns: 0 1fr; }
 .app.side-hidden .sidebar { visibility: hidden; border-right: 0; overflow: hidden; }
 .brand { padding: 13px 16px 8px; }
+.suggest-banner { display: flex; align-items: center; gap: 8px; width: calc(100% - 16px); margin: 2px 8px 6px; padding: 7px 9px; border-radius: 8px; border: 1px dashed var(--line-strong); background: transparent; color: var(--text); font-size: 12.5px; text-align: left; }
+.suggest-banner:hover { background: var(--hover); }
+.suggest-banner span:first-of-type { flex: 1; }
+.suggest-banner .go { color: var(--primary); font-weight: 600; }
+.suggest-dlg { width: min(640px, calc(100vw - 24px)); padding: 18px 20px 20px; }
+.suggest-dlg .dlg-head { display: flex; align-items: center; justify-content: space-between; }
+.suggest-dlg h3 { margin: 0; font-size: 16px; }
+.suggest-bar { display: flex; align-items: center; gap: 12px; font-size: 12.5px; color: var(--muted); margin: 10px 0 6px; }
+.suggest-list { max-height: min(52vh, 460px); overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+.suggest-tools { display: flex; gap: 4px; margin-left: auto; }
+.tool-chip { font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; }
+.tool-chip.claude { background: #d9775722; color: #c2603e; }
+.tool-chip.codex { background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--muted); }
+.suggest-dlg .dialog-actions { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
 .update-pill { margin: 0 14px 8px; border: 0; border-radius: 8px; padding: 6px 10px; font-size: 12.5px; font-weight: 600; background: var(--primary); color: var(--on-primary); text-align: left; }
 .update-pill[hidden] { display: none; }
 .column.wide { max-width: 1100px; }
@@ -1047,6 +1061,7 @@ button.hrow:hover { background: var(--hover); }
       <div class="section-head">Projects <span class="head-actions">
         <button class="icon-btn" id="import-projects" title="Choose which projects show here" aria-label="Choose projects" data-icon="list" data-size="15"></button>
         <button class="icon-btn" id="new-thread" title="Add or create a project" aria-label="Add or create a project" data-icon="plus" data-size="15"></button></span></div>
+      <div id="project-suggest"></div>
       <div id="threads"></div>
     </div>
     <button class="update-pill" id="update-pill" hidden type="button"></button>
@@ -1513,6 +1528,7 @@ function connect() {
     try { ENGINES = await call("listEngines"); } catch {}
     checkForUpdate();
     await loadSidebar();
+    checkProjectSuggestions(true);
     if (state.threadId) openThread(state.threadId, true);
     else if (state.view === "inbox") renderInbox();
     else if (state.view === "teams") renderTeams();
@@ -2914,7 +2930,7 @@ function renderArtifacts(force = false) {
   if (!force && $("art-grid")) { drawArtGrid(); return; } // live updates: just the cards, so scroll and typing aren't lost
   const on = state.settings?.claudeArtifacts === true;
   const last = state.settings?.artifactsLastSync;
-  const importBtn = h("button", { class: "btn primary sm", onclick: () => openImport() }, icon("plus", 13), "Import");
+  const importBtn = h("button", { class: "btn primary sm", onclick: () => openArtifactImport() }, icon("plus", 13), "Import");
   // Syncing only works when Claude Code runs inside the Claude desktop app; it stays tucked away in the menu.
   const more = ibtn("more", "More", (ev) => { ev.stopPropagation(); popMenu(ev.currentTarget, [
     { icon: "refresh", label: "Try syncing from claude.ai", desc: "Works only where Claude Code can read your claude.ai artifacts", run: () => syncArtifacts() },
@@ -2927,7 +2943,7 @@ function renderArtifacts(force = false) {
     pageTopbar("layers", "Artifacts", last?.ok && last.at ? `claude.ai last synced ${ago(last.at)}` : "Pages, reports and diagrams", [importBtn, more]),
     h("div", { class: "page" }, h("div", { class: "column wide" },
       h("div", { class: "art-tools" }, chips, search),
-      h("div", { class: "art-hint" }, "From claude.ai: open the artifact there, copy its code or download it, then ", h("button", { class: "link", onclick: () => openImport() }, "Import"),
+      h("div", { class: "art-hint" }, "From claude.ai: open the artifact there, copy its code or download it, then ", h("button", { class: "link", onclick: () => openArtifactImport() }, "Import"),
         " (or drop the file here). Add its link to keep the two connected."),
       h("div", { id: "art-grid", class: "art-grid" }))));
   drawArtGrid();
@@ -2977,7 +2993,7 @@ async function renderArtifact(force = true) {
     actions.push(sel);
   }
   if (a.source === "claude") actions.push(h("button", { class: "btn sm", onclick: () => window.open(a.url, "_blank", "noopener") }, icon("external", 13), "Open on claude.ai"));
-  if (a.source === "claude") actions.push(h("button", { class: "btn sm", onclick: () => openImport({ url: a.url, title: a.title }) }, icon("refresh", 13), a.version ? "Import a newer copy" : "Import its page"));
+  if (a.source === "claude") actions.push(h("button", { class: "btn sm", onclick: () => openArtifactImport({ url: a.url, title: a.title }) }, icon("refresh", 13), a.version ? "Import a newer copy" : "Import its page"));
   if (a.kind === "html" && a.version) actions.push(ibtn("external", "Open in a new tab", () => window.open(`/av/${a.key}/${v}`, "_blank", "noopener")));
   if (a.threadId && state.threads.has(a.threadId)) actions.push(ibtn("message", "Go to the chat it came from", () => openThread(a.threadId)));
   actions.push(ibtn("trash", a.source === "claude" ? "Remove from Bullpen (stays on claude.ai)" : "Delete", async () => {
@@ -2990,7 +3006,7 @@ async function renderArtifact(force = true) {
     body = h("div", { class: "page" }, h("div", { class: "column" }, h("div", { class: "art-link" },
       h("p", {}, "This artifact lives on claude.ai. Open it there, copy its code (or download it), and import it to see it here and let agents read and build on it."),
       h("div", { class: "row-actions" },
-        h("button", { class: "btn primary", onclick: () => openImport({ url: a.url, title: a.title }) }, "Import its page"),
+        h("button", { class: "btn primary", onclick: () => openArtifactImport({ url: a.url, title: a.title }) }, "Import its page"),
         h("button", { class: "btn", onclick: () => window.open(a.url, "_blank", "noopener") }, "Open on claude.ai")),
       a.owner === "shared" ? h("p", { class: "muted" }, "Shared artifacts usually can't be copied, only ones you own.") : null)));
   } else if (a.kind === "html") {
@@ -3005,7 +3021,7 @@ async function renderArtifact(force = true) {
   $("main").replaceChildren(top, body);
 }
 /** Import dialog: paste a page, or choose/drop a file; a claude.ai link keeps it tied to that artifact. */
-function openImport(prefill = {}, file = null) {
+function openArtifactImport(prefill = {}, file = null) {
   const title = h("input", { type: "text", placeholder: "Title (taken from the page if empty)", value: prefill.title ?? "" });
   const url = h("input", { type: "url", placeholder: "claude.ai link (optional): https://claude.ai/artifact/…", value: prefill.url ?? "" });
   const body = h("textarea", { class: "mono", rows: 10, placeholder: "Paste the page's HTML, or Markdown", spellcheck: "false" });
@@ -3049,7 +3065,7 @@ function openImport(prefill = {}, file = null) {
 document.addEventListener("dragover", (ev) => { if (state.view === "artifacts" && ev.dataTransfer?.types.includes("Files")) ev.preventDefault(); });
 document.addEventListener("drop", (ev) => {
   if (state.view !== "artifacts" || !ev.dataTransfer?.files.length || ev.target.closest?.("dialog")) return;
-  ev.preventDefault(); openImport({}, ev.dataTransfer.files[0]);
+  ev.preventDefault(); openArtifactImport({}, ev.dataTransfer.files[0]);
 });
 async function copyIn(a, btn) {
   btn.disabled = true; const label = btn.textContent; btn.textContent = "Copying…";
@@ -3603,6 +3619,63 @@ async function showDiff(from, to) {
     $("diff-dialog").showModal();
   } catch (err) { fail(err); }
 }
+// ---------- your projects: offer the folders you've used Claude Code or Codex in ----------
+let suggestShown = false;
+async function checkProjectSuggestions(onConnect = false) {
+  let r; try { r = await call("projectSuggestions"); } catch { return; }
+  const box = $("project-suggest");
+  if (!r.items.length) { box.replaceChildren(); return; }
+  // A fresh install: ask right away, once per page load.
+  if (r.firstRun && onConnect && !suggestShown) { suggestShown = true; box.replaceChildren(); openProjectSuggestions(r.items, true); return; }
+  const tools = [...new Set(r.items.flatMap((i) => i.tools))].map((t) => (t === "codex" ? "Codex" : "Claude Code")).join(" and ");
+  box.replaceChildren(h("button", { class: "suggest-banner", onclick: () => openProjectSuggestions(r.items, false) },
+    icon("folderplus", 14), h("span", {}, `${r.items.length} project${r.items.length === 1 ? "" : "s"} from ${tools}`), h("span", { class: "go" }, "Review")));
+}
+setInterval(() => { if (ws?.readyState === 1) checkProjectSuggestions(); }, 30 * 60_000);
+function openProjectSuggestions(items, first) {
+  const recent = Date.now() - 90 * 24 * 3600_000;
+  const rows = items.map((it, i) => ({ it, on: i < 15 && (!it.lastUsedAt || Date.parse(it.lastUsedAt) > recent) }));
+  const count = h("span", {});
+  const add = h("button", { class: "btn primary", type: "button" });
+  const sync = () => { const n = rows.filter((r) => r.on).length; add.textContent = n ? `Add ${n} project${n === 1 ? "" : "s"}` : "Add projects"; add.disabled = !n; count.textContent = `${n} of ${rows.length} selected`; };
+  const list = h("div", { class: "suggest-list" }, ...rows.map((r) => {
+    const box = h("input", { type: "checkbox", checked: r.on, onchange: (ev) => { r.on = ev.target.checked; sync(); } });
+    return h("label", { class: "import-row" }, box, folderIcon(),
+      h("span", { class: "row-main" }, h("div", { class: "row-title" }, r.it.name), h("div", { class: "faint" }, r.it.where)),
+      h("span", { class: "suggest-tools" }, ...r.it.tools.map((t) => h("span", { class: "tool-chip " + t }, t === "codex" ? "Codex" : "Claude Code"))),
+      r.it.lastUsedAt ? h("span", { class: "faint", style: "white-space:nowrap" }, ago(r.it.lastUsedAt)) : null);
+  }));
+  const all = (on) => { rows.forEach((r) => (r.on = on)); list.querySelectorAll("input").forEach((b) => (b.checked = on)); sync(); };
+  const dlg = h("dialog", { class: "suggest-dlg" },
+    h("div", { class: "dlg-head" }, h("h3", {}, first ? "Bring in your projects" : "New projects found"),
+      h("button", { class: "icon-btn", "aria-label": "Close", onclick: () => dlg.close() }, icon("x", 15))),
+    h("p", { class: "muted" }, `Bullpen found ${rows.length} folder${rows.length === 1 ? "" : "s"} you've worked in with Claude Code or Codex. Add the ones you want in the sidebar; you can resume their past sessions from there.`),
+    h("div", { class: "suggest-bar" }, count, h("span", { class: "spacer" }),
+      h("button", { class: "link", type: "button", onclick: () => all(true) }, "Select all"), h("button", { class: "link", type: "button", onclick: () => all(false) }, "None")),
+    list,
+    h("div", { class: "dialog-actions" },
+      h("button", { class: "link", type: "button", onclick: () => { dlg.close(); openImport(); } }, "Choose from all folders…"),
+      h("span", { class: "spacer" }),
+      h("button", { class: "btn", type: "button", onclick: async () => {
+        await dispatch({ type: "projects.dismissSuggestions", paths: rows.map((r) => r.it.path) }).catch(fail);
+        dlg.close(); $("project-suggest").replaceChildren();
+        toast("OK. Add projects any time with the + next to Projects.");
+      } }, "Not now"),
+      add));
+  add.addEventListener("click", async () => {
+    add.disabled = true;
+    const picked = rows.filter((r) => r.on), skipped = rows.filter((r) => !r.on);
+    try {
+      await dispatch({ type: "project.import", projects: picked.map((r) => ({ path: r.it.path, lastUsedAt: r.it.lastUsedAt })) });
+      if (skipped.length) await dispatch({ type: "projects.dismissSuggestions", paths: skipped.map((r) => r.it.path) });
+      dlg.close(); $("project-suggest").replaceChildren();
+      toast(`Added ${picked.length} project${picked.length === 1 ? "" : "s"} to the sidebar.`);
+    } catch (err) { fail(err); add.disabled = false; }
+  });
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg); dlg.showModal(); sync();
+}
+
 // ---------- updates: a small notice when a newer release is out ----------
 async function checkForUpdate() {
   let v; try { v = await call("version"); } catch { return; }
