@@ -1,0 +1,6 @@
+node_modules/
+.DS_Store
+*.log
+.env
+.env.*
+# Runtime data lives in ~/.bullpen (database, token, agent memory), never in the repo.

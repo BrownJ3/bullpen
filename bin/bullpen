@@ -1,0 +1,9 @@
+#!/bin/sh
+# Runs src/cli.ts from wherever this file really lives (it's usually reached through a symlink in ~/.local/bin).
+SELF="$0"
+while [ -L "$SELF" ]; do
+  TARGET=$(readlink "$SELF")
+  case "$TARGET" in /*) SELF="$TARGET" ;; *) SELF="$(dirname "$SELF")/$TARGET" ;; esac
+done
+DIR=$(cd "$(dirname "$SELF")/.." && pwd)
+exec node "$DIR/src/cli.ts" "$@"

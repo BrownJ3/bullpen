@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Bullpen icon: white bull on prussian blue (#14213d), snout in orange (#fca311). Bull drawn in a 1254px space, scaled to the 1024 grid. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f3157"/>
+      <stop offset="1" stop-color="#14213d"/>
+    </linearGradient>
+    <linearGradient id="hide" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fafafa"/>
+      <stop offset="1" stop-color="#ececec"/>
+    </linearGradient>
+    <linearGradient id="snout" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fdb84a"/>
+      <stop offset="1" stop-color="#fca311"/>
+    </linearGradient>
+    <filter id="tileShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+    <filter id="lift" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#tileShadow)"><rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)"/></g>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="#fff" stroke-opacity="0.06" stroke-width="3"/>
+
+  <g transform="translate(512 512) scale(0.80) translate(-627 -615)">
+    <!-- horns, head and ears as one silhouette -->
+    <path filter="url(#lift)" fill="url(#hide)" stroke="url(#hide)" stroke-width="6" stroke-linejoin="round" d="
+      M 385 262
+      C 330 322 300 420 356 462
+      Q 380 478 450 478 L 804 478 Q 874 478 898 462
+      C 954 420 924 322 869 262
+      C 990 330 1062 432 1040 500
+      C 1020 566 930 604 826 596
+      L 896 652 Q 918 686 872 710 L 830 724
+      L 748 884 L 506 884
+      L 424 724 L 382 710 Q 336 686 358 652
+      L 428 596
+      C 324 604 234 566 214 500
+      C 192 432 264 330 385 262 Z"/>
+    <!-- slight shade on the underside of the horns -->
+    <path fill="#000" opacity="0.06" d="M 214 500 C 234 566 324 604 428 596 L 440 576 C 340 580 262 556 214 500 Z"/>
+    <path fill="#000" opacity="0.06" d="M 1040 500 C 1020 566 930 604 826 596 L 814 576 C 914 580 992 556 1040 500 Z"/>
+    <!-- eyes -->
+    <path fill="#14213d" d="M 455 637 L 536 684 Q 552 694 554 714 L 558 760 L 522 714 Q 504 700 482 688 Z"/>
+    <path fill="#14213d" d="M 799 637 L 718 684 Q 702 694 700 714 L 696 760 L 732 714 Q 750 700 772 688 Z"/>
+    <!-- snout -->
+    <polygon filter="url(#lift)" fill="url(#snout)" stroke="url(#snout)" stroke-width="26" stroke-linejoin="round"
+      points="540,842 714,842 752,890 718,956 536,956 502,890"/>
+    <path fill="#000000" d="M 540 878 Q 566 874 584 888 L 598 922 Q 576 930 558 922 Z"/>
+    <path fill="#000000" d="M 714 878 Q 688 874 670 888 L 656 922 Q 678 930 696 922 Z"/>
+  </g>
+</svg>

@@ -1,0 +1,2156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bullpen</title>
+<link rel="icon" type="image/svg+xml" href="/icon.svg?v=4">
+<script>
+  // Harbor is the default; "graphite" means the original grey theme.
+  (function () { let p = "harbor"; try { p = localStorage.getItem("bp-palette") || "harbor"; } catch {} if (p !== "graphite") document.documentElement.dataset.palette = p; })();
+</script>
+<link rel="stylesheet" href="/vendor/xterm.css">
+<script src="/vendor/xterm.js" defer></script>
+<script src="/vendor/addon-fit.js" defer></script>
+<link rel="apple-touch-icon" href="/icon.png?v=4">
+<style>
+:root {
+  /* Neutral gray scale, light to dark */
+  --gray-0: #ffffff;
+  --gray-50: #f7f7f7;
+  --gray-100: #efefef;
+  --gray-150: #e6e6e6;
+  --gray-200: #dddddd;
+  --gray-300: #c8c8c8;
+  --gray-400: #a3a3a3;
+  --gray-500: #8a8a8a;
+  --gray-600: #6b6b6b;
+  --gray-700: #4a4a4a;
+  --gray-750: #3a3a3a;
+  --gray-800: #2b2b2b;
+  --gray-850: #222222;
+  --gray-900: #1b1b1b;
+  --gray-950: #121212;
+  --blue: #0000ff;
+
+  --bg: var(--gray-50);
+  --panel: var(--gray-0);
+  --sidebar: var(--gray-100);
+  --line: var(--gray-150);
+  --line-strong: var(--gray-300);
+  --text: var(--gray-900);
+  --muted: var(--gray-600);
+  --faint: var(--gray-500);
+  --code: var(--gray-100);
+  --accent: var(--blue);          /* fills, borders, focus */
+  --accent-ink: var(--blue);      /* accent-colored text */
+  --on-accent: #ffffff;
+  --accent-soft: #e8e8ff;
+  --warn: #9a5b00;
+  --warn-soft: #fbf0dc;
+  --danger: #b3261e;
+  --danger-soft: #f9e3e1;
+  --ok: #1f7a35;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.08);
+  --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: var(--gray-900);
+    --panel: var(--gray-850);
+    --sidebar: var(--gray-950);
+    --line: var(--gray-800);
+    --line-strong: var(--gray-750);
+    --text: var(--gray-100);
+    --muted: var(--gray-400);
+    --faint: var(--gray-600);
+    --code: var(--gray-800);
+    /* #0000ff is too dark to read as text on dark gray, so text uses a lighter tint of the same blue */
+    --accent-ink: #8080ff;
+    --accent-soft: #1c1c45;
+    --warn: #e0a54b;
+    --warn-soft: #2f2617;
+    --danger: #f08a80;
+    --danger-soft: #3a201d;
+    --ok: #74c487;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+    color-scheme: dark;
+  }
+}
+/* ---------- palettes (pick one in the sidebar footer; Harbor is the default, "graphite" is the original above) ----------
+   Source colours: black #000000, prussian blue #14213d, orange #fca311, alabaster #e5e5e5, white #ffffff.
+   Orange text on white is hard to read (2:1), so light themes use a darker orange for accent-coloured text;
+   orange fills carry black text (10:1). */
+:root { --term-bg: #121212; --term-fg: #e6e6e6; --term-cursor: #8080ff; }
+:root[data-palette="night"], :root[data-palette="harbor"] { --term-bg: #0b1427; --term-fg: #e5e5e5; --term-cursor: #fca311; }
+:root[data-palette="paper"] { --term-bg: #ffffff; --term-fg: #14213d; --term-cursor: #a86700; }
+:root[data-palette="night"] {
+  --bg: #000000; --panel: #14213d; --sidebar: #0b1427; --code: #1c2c4f;
+  --line: #22335a; --line-strong: #34497a;
+  --text: #e5e5e5; --muted: #a8b0c2; --faint: #6f7a93;
+  --accent: #fca311; --accent-ink: #fca311; --on-accent: #000000; --accent-soft: rgba(252, 163, 17, 0.14);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 28px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+:root[data-palette="paper"] {
+  --bg: #ffffff; --panel: #ffffff; --sidebar: #e5e5e5; --code: #f1f1f1;
+  --line: #e5e5e5; --line-strong: #c9ccd3;
+  --text: #14213d; --muted: #4b5670; --faint: #858da0;
+  --accent: #fca311; --accent-ink: #a86700; --on-accent: #000000; --accent-soft: #fff1d6;
+  --warn: #9a5b00; --warn-soft: #fbf0dc; --danger: #b3261e; --danger-soft: #f9e3e1; --ok: #1f7a35;
+  --shadow: 0 1px 2px rgba(20, 33, 61, 0.08), 0 8px 24px rgba(20, 33, 61, 0.10);
+  color-scheme: light;
+}
+:root[data-palette="harbor"] {
+  /* prussian sidebar, light workspace */
+  --bg: #e5e5e5; --panel: #ffffff; --sidebar: #14213d; --code: #f1f1f1;
+  --line: #d9d9d9; --line-strong: #bfc3cc;
+  --text: #14213d; --muted: #4b5670; --faint: #858da0;
+  --accent: #fca311; --accent-ink: #a86700; --on-accent: #000000; --accent-soft: #fff1d6;
+  --warn: #9a5b00; --warn-soft: #fbf0dc; --danger: #b3261e; --danger-soft: #f9e3e1; --ok: #1f7a35;
+  --shadow: 0 1px 2px rgba(20, 33, 61, 0.08), 0 8px 24px rgba(20, 33, 61, 0.12);
+  color-scheme: light;
+}
+:root[data-palette="harbor"] .sidebar {
+  --text: #e5e5e5; --muted: #aab3c6; --faint: #7d89a3; --panel: #1f3157;
+  --line: #24365e; --line-strong: #34497a; --code: #1f3157; --accent-ink: #fca311; --accent-soft: rgba(252, 163, 17, 0.16);
+  color: var(--text);
+}
+:root[data-palette="harbor"] .sidebar input, :root[data-palette="harbor"] .sidebar .proj-filter { background: #1b2a4c; color: var(--text); }
+/* Monogram colours are tuned for dark backgrounds; deepen them on light ones. */
+:root[data-palette="paper"] .monogram, :root[data-palette="harbor"] .main .monogram, :root[data-palette="harbor"] dialog .monogram { filter: brightness(0.55) saturate(1.6); }
+.palette-pick { border: 0; background: transparent; color: var(--faint); font-size: 12px; padding: 0; cursor: pointer; }
+.palette-pick:hover { color: var(--text); }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--sans); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
+
+.app { display: grid; grid-template-columns: 272px 1fr; height: 100%; }
+
+/* ---------- sidebar ---------- */
+.sidebar { background: var(--sidebar); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.brand { display: flex; align-items: center; gap: 9px; padding: 12px 14px 8px; font-weight: 650; font-size: 15px; letter-spacing: -0.01em; }
+.brand img { width: 30px; height: 30px; margin: -3px; }
+.side-foot > span:first-child { display: flex; align-items: center; }
+.side-foot .conn { display: inline-block; margin-right: 7px; }
+.start-logo { display: block; width: 88px; height: 88px; margin: 0 auto 6px; }
+.conn { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.conn.on { background: var(--ok); }
+.side-scroll { overflow-y: auto; flex: 1; padding: 4px 8px 16px; }
+.section-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 8px 6px; color: var(--muted); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+.icon-btn { border: 0; background: transparent; color: var(--muted); border-radius: 6px; width: 24px; height: 24px; display: grid; place-items: center; font-size: 16px; line-height: 1; }
+.icon-btn:hover { background: var(--line); color: var(--text); }
+.row { display: flex; gap: 10px; align-items: center; width: 100%; padding: 7px 8px; border: 0; border-radius: 8px; background: transparent; text-align: left; }
+.row:hover { background: color-mix(in srgb, var(--line) 70%, transparent); }
+.row.active { background: var(--panel); box-shadow: 0 0 0 1px var(--line); }
+.row-main { min-width: 0; flex: 1; }
+.row-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-sub { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mono-badge { flex: none; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font-weight: 700; font-size: 13px; color: #fff; }
+.status { flex: none; display: flex; align-items: center; gap: 6px; }
+.pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.25; } }
+.count { background: var(--warn-soft); color: var(--warn); border-radius: 999px; font-size: 11px; font-weight: 700; padding: 1px 7px; }
+.side-empty { color: var(--faint); font-size: 12.5px; padding: 4px 8px 8px; }
+.side-foot { border-top: 1px solid var(--line); padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; color: var(--faint); font-size: 12px; }
+
+/* ---------- projects (T3-style folders) ---------- */
+.section-head .head-actions { display: flex; gap: 2px; }
+.proj-filter { width: calc(100% - 16px); margin: 2px 8px 6px; border: 1px solid var(--line); background: var(--panel); border-radius: 7px; padding: 4px 8px; font-size: 12.5px; color: var(--text); }
+.proj-filter:focus { outline: none; border-color: var(--accent); }
+.folder { margin-bottom: 1px; }
+.folder-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 6px 5px 8px; border: 0; border-radius: 8px; background: transparent; text-align: left; font-weight: 600; font-size: 13px; }
+.folder-head:hover { background: color-mix(in srgb, var(--line) 70%, transparent); }
+.folder-head .chev { width: 10px; color: var(--faint); font-size: 10px; transition: transform 0.12s; }
+.folder-head.no-threads .chev { visibility: hidden; }
+.folder-head.no-threads .title { font-weight: 500; color: var(--muted); }
+.folder-head.no-threads:hover .title { color: var(--text); }
+.folder.collapsed .chev { transform: rotate(-90deg); }
+.folder-head .title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.folder-head .meta { display: flex; align-items: center; gap: 6px; color: var(--faint); font-size: 11.5px; font-weight: 500; }
+.folder-head .hover { display: none; gap: 2px; }
+.folder-head:hover .hover, .folder-head:focus-within .hover { display: flex; }
+.folder-head:hover .meta { display: none; }
+.folder-head .icon-btn { width: 22px; height: 22px; font-size: 13px; }
+.folder-head .icon-btn.on { color: var(--accent-ink); }
+.proj-icon { flex: none; width: 18px; height: 18px; border-radius: 5px; object-fit: contain; }
+.monogram { flex: none; width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center; font-size: 8.5px; font-weight: 800; letter-spacing: -0.02em; }
+.folder-body { padding-left: 18px; }
+.folder.collapsed .folder-body { display: none; }
+.trow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 8px; border: 0; border-radius: 7px; background: transparent; text-align: left; font-size: 13px; color: var(--muted); }
+.trow:hover { background: color-mix(in srgb, var(--line) 70%, transparent); color: var(--text); }
+.trow.active { background: var(--panel); box-shadow: 0 0 0 1px var(--line); color: var(--text); }
+.trow .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trow .when { color: var(--faint); font-size: 11px; flex: none; }
+.more-link { border: 0; background: none; color: var(--faint); font-size: 12px; padding: 3px 8px; }
+.more-link:hover { color: var(--accent-ink); }
+.sdot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.sdot.attention { background: var(--warn); }
+.sdot.working { background: var(--accent); animation: pulse 1.2s infinite; }
+.sdot.failed { background: var(--danger); }
+
+/* ---------- agent gallery ---------- */
+.gallery-tools { display: flex; flex-direction: column; gap: 8px; }
+.dept-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.dept-tabs button { border: 1px solid var(--line); background: var(--bg); color: var(--muted); border-radius: 999px; padding: 3px 11px; font-size: 12.5px; }
+.dept-tabs button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.gallery-scroll { max-height: min(58vh, 560px); overflow-y: auto; padding: 2px; }
+.dept-head { display: flex; align-items: baseline; gap: 10px; margin: 14px 2px 8px; }
+.dept-head:first-child { margin-top: 2px; }
+.dept-head h4 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+.dept-head .count { color: var(--faint); font-size: 12px; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.tpl { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--bg); }
+.tpl-head { display: flex; align-items: center; gap: 10px; }
+.tpl-emoji { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-size: 18px; background: var(--code); flex: none; }
+.tpl-name { font-weight: 650; }
+.tpl-handle { color: var(--faint); font-size: 12px; font-family: var(--mono); }
+.tpl-desc { color: var(--muted); font-size: 13px; flex: 1; }
+.tpl-actions { display: flex; align-items: center; gap: 10px; }
+.tpl-actions .added { color: var(--ok); font-size: 13px; font-weight: 600; }
+
+/* ---------- import dialog ---------- */
+#import-dialog { width: min(640px, calc(100vw - 32px)); }
+.import-tools { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.import-list { max-height: min(56vh, 520px); overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; }
+.import-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); font-weight: 400; color: var(--text); font-size: 13.5px; flex-direction: row; }
+.import-row:last-child { border-bottom: 0; }
+.import-row .row-main { min-width: 0; }
+.import-row .faint { color: var(--faint); font-size: 12px; }
+.import-row .pin { border: 0; background: none; color: var(--faint); font-size: 15px; padding: 2px 4px; }
+.import-row .pin.on { color: var(--accent-ink); }
+.import-row .pin:disabled { visibility: hidden; }
+.proj-divider { height: 1px; background: var(--line); margin: 6px 8px; }
+.archived-toggle { display: block; border: 0; background: none; color: var(--faint); font-size: 12px; padding: 8px 8px 4px; }
+.archived-toggle:hover { color: var(--text); }
+.folder.archived .folder-head { opacity: 0.55; }
+.pin-mark { color: var(--accent-ink); font-size: 11px; }
+.menu { position: fixed; z-index: 30; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 10px; box-shadow: var(--shadow); padding: 4px; min-width: 190px; }
+.menu button { display: block; width: 100%; text-align: left; border: 0; background: none; border-radius: 6px; padding: 6px 10px; font-size: 13px; color: var(--text); }
+.menu button:hover { background: var(--accent-soft); }
+.menu button.danger { color: var(--danger); }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+.import-group { padding: 8px 12px 4px; color: var(--muted); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; background: var(--bg); }
+
+/* ---------- resume list on the start screen ---------- */
+.resume { margin-top: 22px; }
+.resume h3 { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 6px 4px; }
+.resume .row { padding: 7px 10px; }
+.resume .go { color: var(--accent-ink); font-size: 12.5px; flex: none; }
+.imported-note { border: 1px dashed var(--line-strong); border-radius: 10px; padding: 10px 14px; color: var(--muted); font-size: 13px; }
+
+/* ---------- work area: conversation + files panel + terminal drawer ---------- */
+.workarea { flex: 1; display: flex; min-height: 0; }
+.center { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.tool-toggle { display: inline-flex; align-items: center; gap: 6px; }
+.tool-toggle.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+.kbd { font-family: var(--mono); font-size: 10.5px; color: var(--faint); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+
+.drawer { flex: none; display: flex; flex-direction: column; border-top: 1px solid var(--line-strong); background: var(--term-bg); min-height: 120px; position: relative; }
+.drawer[hidden], .files[hidden], .browser[hidden] { display: none; }
+.browser { flex: none; width: var(--browser-w, 560px); display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--bg); position: relative; min-height: 0; }
+.browser-bar { display: flex; align-items: center; gap: 4px; padding: 7px 8px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.browser-bar .addr { flex: 1; min-width: 0; border: 1px solid var(--line-strong); background: var(--bg); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; color: var(--text); font-family: var(--mono); }
+.browser-bar .addr:focus { outline: none; border-color: var(--accent); }
+.browser-bar select { border: 1px solid var(--line); background: var(--bg); color: var(--muted); border-radius: 7px; font-size: 12px; padding: 3px 4px; }
+.browser-bar .icon-btn:disabled { opacity: 0.35; cursor: default; }
+.bframe-wrap { flex: 1; min-height: 0; overflow: auto; display: flex; justify-content: center; background: var(--bg); }
+.bframe-wrap iframe { border: 0; background: #fff; width: 100%; height: 100%; }
+.bframe-wrap.device { padding: 14px 0; }
+.bframe-wrap.device iframe { border-radius: 14px; box-shadow: 0 0 0 1px var(--line-strong), var(--shadow); height: calc(100% - 4px); flex: none; }
+.launcher { padding: 18px 18px 24px; overflow: auto; }
+.launcher h4 { margin: 16px 0 6px; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.launcher h4:first-child { margin-top: 0; }
+.launcher .row { padding: 8px 10px; border: 1px solid var(--line); background: var(--panel); margin-bottom: 6px; border-radius: 10px; }
+.launcher .row .go { color: var(--accent-ink); font-size: 12.5px; flex: none; }
+.launcher .note { color: var(--faint); font-size: 12.5px; margin: 6px 2px; }
+.launcher .waiting { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; padding: 8px 2px; }
+.drawer-grip { position: absolute; top: -4px; left: 0; right: 0; height: 8px; cursor: ns-resize; z-index: 2; }
+.drawer-bar { display: flex; align-items: center; gap: 2px; padding: 4px 8px; border-bottom: 1px solid color-mix(in srgb, var(--term-fg) 14%, transparent); }
+.drawer-bar .tab { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: color-mix(in srgb, var(--term-fg) 60%, transparent); font-size: 12px; padding: 4px 6px 4px 10px; border-radius: 6px; }
+.drawer-bar .tab.on { background: color-mix(in srgb, var(--term-fg) 12%, transparent); color: var(--term-fg); }
+.drawer-bar .tab .x { opacity: 0.5; padding: 0 3px; border-radius: 4px; }
+.drawer-bar .tab .x:hover { opacity: 1; background: color-mix(in srgb, var(--term-fg) 16%, transparent); }
+.drawer-bar .icon-btn { color: color-mix(in srgb, var(--term-fg) 60%, transparent); }
+.drawer-bar .icon-btn:hover { background: color-mix(in srgb, var(--term-fg) 12%, transparent); color: var(--term-fg); }
+.drawer-body { flex: 1; min-height: 0; padding: 6px 4px 4px 10px; }
+.drawer-body .xterm-host { width: 100%; height: 100%; }
+.drawer-body .xterm-host[hidden] { display: none; }
+
+.files { flex: none; width: var(--files-w, 340px); display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--panel); position: relative; min-height: 0; }
+.files-grip { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 2; }
+.files-head { display: flex; align-items: center; gap: 6px; padding: 10px 10px 8px 14px; border-bottom: 1px solid var(--line); min-height: 44px; }
+.files-head .ttl { font-weight: 650; font-size: 13px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.files-tree { flex: 1; overflow: auto; padding: 6px 4px 12px; font-size: 13px; }
+.frow { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: none; text-align: left; padding: 3px 8px; border-radius: 6px; color: var(--text); white-space: nowrap; }
+.frow:hover { background: color-mix(in srgb, var(--line) 70%, transparent); }
+.frow.sel { background: var(--accent-soft); }
+.frow .chev { width: 10px; flex: none; color: var(--faint); font-size: 10px; }
+.frow .ic { width: 14px; flex: none; text-align: center; color: var(--faint); font-size: 12px; }
+.frow .nm { overflow: hidden; text-overflow: ellipsis; }
+.frow.ignored .nm { color: var(--faint); }
+.frow.dir .nm { font-weight: 500; }
+.files-note { color: var(--faint); font-size: 12px; padding: 4px 10px; }
+.preview { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.preview-bar { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.preview-bar .path { font-family: var(--mono); font-size: 12px; color: var(--muted); flex: 1 1 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.preview-body { flex: 1; overflow: auto; }
+.code { font-family: var(--mono); font-size: 12px; line-height: 1.55; padding: 8px 0; white-space: pre; tab-size: 2; }
+.code .ln { display: inline-block; width: 3.4em; padding-right: 10px; text-align: right; color: var(--faint); user-select: none; }
+.preview-body img { max-width: 100%; display: block; margin: 12px auto; background: repeating-conic-gradient(var(--line) 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
+.preview-empty { color: var(--faint); padding: 20px; font-size: 13px; }
+
+/* ---------- team card (a lead's goal, its tasks, list or board) ---------- */
+.team { border: 1px solid var(--line-strong); border-radius: 14px; background: var(--panel); overflow: hidden; }
+.team-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.team-head .t-title { flex: 1; min-width: 200px; }
+.team-head .t-title b { display: block; font-size: 14px; }
+.team-head .t-title span { color: var(--muted); font-size: 12.5px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 600; white-space: nowrap; background: var(--code); color: var(--muted); }
+.pill.working, .pill.planning { background: var(--accent-soft); color: var(--accent-ink); }
+.pill.done, .pill.accepted { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.pill.stuck, .pill.parked, .pill.needs { background: var(--warn-soft); color: var(--warn); }
+.pill.failed { background: var(--danger-soft); color: var(--danger); }
+.pill.submitted { background: color-mix(in srgb, #7c5cff 16%, transparent); color: #8f74ff; }
+.pill.changes { background: var(--warn-soft); color: var(--warn); }
+.seg-mini { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg-mini button { border: 0; background: transparent; padding: 3px 9px; font-size: 12px; color: var(--muted); }
+.seg-mini button.on { background: var(--code); color: var(--text); font-weight: 600; }
+.team-note { padding: 8px 14px; font-size: 13px; color: var(--warn); background: var(--warn-soft); border-bottom: 1px solid var(--line); }
+.team-progress { height: 3px; background: var(--line); }
+.team-progress i { display: block; height: 100%; background: var(--accent); transition: width 0.4s; }
+.trows { padding: 4px 0; }
+.trow2 { border-bottom: 1px solid var(--line); }
+.trow2:last-child { border-bottom: 0; }
+.trow2-main { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 14px; border: 0; background: none; text-align: left; color: var(--text); }
+.trow2-main:hover { background: color-mix(in srgb, var(--line) 45%, transparent); }
+.trow2 .ref { font-family: var(--mono); font-size: 11.5px; color: var(--faint); width: 22px; flex: none; }
+.trow2 .who { display: flex; align-items: center; gap: 6px; width: 170px; flex: none; min-width: 0; font-size: 12.5px; color: var(--muted); }
+.trow2 .who span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trow2 .who .mono-badge { width: 20px; height: 20px; border-radius: 6px; font-size: 10px; }
+.trow2 .what { flex: 1; min-width: 0; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trow2 .what small { color: var(--faint); margin-left: 6px; }
+.trow2 .el { color: var(--faint); font-size: 11.5px; width: 44px; text-align: right; flex: none; }
+.trow2-detail { padding: 0 14px 12px 46px; font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
+.trow2-detail .sum { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border-radius: 8px; padding: 8px 10px; max-height: 260px; overflow: auto; }
+.trow2-detail .lbl { color: var(--faint); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; }
+.trow2-detail .files { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.trow2-detail .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.needs { margin: 0 14px 10px 46px; border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-soft); border-radius: 10px; padding: 8px 10px; font-size: 13px; }
+.needs pre { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; max-height: 120px; overflow: auto; }
+.board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 10px; }
+.bcol { background: var(--bg); border-radius: 10px; padding: 8px; min-height: 80px; }
+.bcol h5 { margin: 0 0 6px; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); display: flex; justify-content: space-between; }
+.bcard { background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 8px; margin-bottom: 6px; font-size: 12.5px; cursor: pointer; }
+.bcard:hover { border-color: var(--line-strong); }
+.bcard .b-top { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11.5px; margin-bottom: 4px; }
+.bcard .b-top .mono-badge { width: 18px; height: 18px; border-radius: 5px; font-size: 9px; }
+.bcard .badge { margin-top: 6px; }
+.team-foot { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-top: 1px solid var(--line); color: var(--faint); font-size: 12px; }
+@media (max-width: 760px) { .board { grid-template-columns: 1fr 1fr; } .trow2 .who { width: 110px; } }
+
+/* ---------- main ---------- */
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.topbar { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); min-height: 58px; }
+.topbar h1 { font-size: 15px; margin: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.chip { font-size: 11.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+.spacer { flex: 1; }
+.btn { border: 1px solid var(--line-strong); background: var(--panel); border-radius: 8px; padding: 5px 12px; font-size: 13px; white-space: nowrap; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.btn.danger { color: var(--danger); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+
+.transcript { flex: 1; overflow-y: auto; padding: 24px 20px 12px; }
+.column { max-width: 780px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.msg-user { align-self: flex-end; max-width: 85%; background: var(--accent-soft); border-radius: 14px 14px 4px 14px; padding: 9px 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg-user .mention { color: var(--accent-ink); font-weight: 600; }
+.msg-assistant { white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg-assistant pre, .reply-body pre { background: var(--code); border-radius: 8px; padding: 10px 12px; overflow-x: auto; white-space: pre; margin: 6px 0; }
+.msg-assistant code, .reply-body code { background: var(--code); border-radius: 4px; padding: 1px 4px; }
+.msg-assistant pre code, .reply-body pre code { background: none; padding: 0; }
+.streaming::after { content: "▍"; color: var(--accent-ink); animation: pulse 1s infinite; }
+details.reasoning summary, details.tool summary { cursor: pointer; list-style: none; }
+details.reasoning summary::-webkit-details-marker, details.tool summary::-webkit-details-marker { display: none; }
+.reasoning { color: var(--muted); font-size: 13px; }
+.reasoning > div { white-space: pre-wrap; border-left: 2px solid var(--line); padding: 4px 0 4px 12px; margin-top: 6px; }
+.tool { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.tool summary { display: flex; align-items: center; gap: 8px; padding: 7px 12px; font-size: 13px; }
+.tool-name { font-family: var(--mono); font-size: 12.5px; font-weight: 600; }
+.tool-sum { color: var(--muted); font-family: var(--mono); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.tool pre { margin: 0; padding: 10px 12px; border-top: 1px solid var(--line); max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dot.running { background: var(--accent); animation: pulse 1.2s infinite; }
+.dot.completed { background: var(--ok); }
+.dot.failed { background: var(--danger); }
+.approval { border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-soft); border-radius: 12px; padding: 12px 14px; }
+.approval.resolved { opacity: 0.65; background: transparent; border-color: var(--line); padding: 8px 14px; }
+.approval-title { font-weight: 600; margin-bottom: 6px; }
+.approval pre { margin: 0 0 10px; background: var(--panel); border-radius: 8px; padding: 8px 10px; max-height: 200px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.approval-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.reply { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 10px 14px 12px; }
+.reply.failed { border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.reply-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-weight: 600; }
+.reply-head .mono-badge { width: 22px; height: 22px; border-radius: 6px; font-size: 11px; }
+.reply-head .muted { font-weight: 400; color: var(--muted); font-size: 12.5px; }
+.reply-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.checkpoint { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 12px; }
+.checkpoint::before, .checkpoint::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.link { border: 0; background: none; padding: 0; color: var(--accent-ink); font-size: 12px; }
+.link:hover { text-decoration: underline; }
+.error-item { color: var(--danger); background: var(--danger-soft); border-radius: 10px; padding: 8px 12px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.run-meta { color: var(--faint); font-size: 12px; text-align: center; }
+
+.composer-wrap { padding: 8px 20px 18px; }
+.composer { position: relative; max-width: 780px; margin: 0 auto; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 14px; box-shadow: var(--shadow); display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 14px; }
+.composer:focus-within { border-color: var(--accent); }
+.composer textarea { flex: 1; border: 0; outline: 0; resize: none; background: transparent; max-height: 220px; min-height: 24px; padding: 4px 0; }
+.hint { max-width: 780px; margin: 6px auto 0; color: var(--faint); font-size: 12px; }
+.popup { position: absolute; left: 10px; bottom: calc(100% + 6px); background: var(--panel); border: 1px solid var(--line-strong); border-radius: 10px; box-shadow: var(--shadow); min-width: 280px; max-width: 420px; padding: 4px; z-index: 5; }
+.popup .row { padding: 6px 8px; }
+.popup .row.sel { background: var(--accent-soft); }
+
+.empty { margin: auto; text-align: center; max-width: 440px; padding: 40px 20px; }
+.empty h2 { font-size: 20px; margin: 0 0 8px; letter-spacing: -0.01em; }
+.empty p { color: var(--muted); margin: 0 0 20px; }
+.empty .actions { display: flex; gap: 8px; justify-content: center; }
+
+/* ---------- start screen ---------- */
+.start { margin: auto; width: min(720px, 100%); padding: 40px 20px 12vh; }
+.start h2 { font-size: 24px; letter-spacing: -0.02em; margin: 0 0 18px; text-align: center; font-weight: 600; }
+.start .composer { box-shadow: var(--shadow); flex-direction: column; align-items: stretch; padding: 12px 12px 10px 16px; }
+.start textarea { min-height: 72px; font-size: 15px; }
+.start-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-strong); background: var(--bg); border-radius: 999px; padding: 4px 12px; font-size: 13px; max-width: 320px; }
+.pill:hover { border-color: var(--muted); }
+.pill .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pill .faint { color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 999px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 4px 12px; font-size: 13px; color: var(--muted); }
+.seg button.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+.more { display: none; gap: 8px; margin-top: 10px; }
+.more.open { display: grid; grid-template-columns: 1fr 1fr; }
+.more input, .more select { width: 100%; }
+.agent-chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 18px; color: var(--muted); font-size: 13px; align-items: center; }
+.agent-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 3px 10px 3px 4px; font-size: 13px; }
+.agent-chip .mono-badge { width: 20px; height: 20px; border-radius: 999px; font-size: 10px; }
+.agent-chip:hover { border-color: var(--line-strong); }
+
+/* ---------- folder picker ---------- */
+#picker form { gap: 10px; }
+.picker-search { width: 100%; }
+.picker-list { max-height: min(52vh, 460px); overflow-y: auto; margin: 0 -8px; }
+.picker-group { color: var(--muted); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; padding: 10px 10px 4px; }
+.picker-list .row { padding: 6px 10px; }
+.picker-list .row.sel { background: var(--accent-soft); }
+.folder-ic { flex: none; width: 28px; height: 28px; border-radius: 8px; background: var(--code); display: grid; place-items: center; color: var(--muted); }
+.crumbs { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12.5px; color: var(--muted); min-width: 0; }
+.crumbs span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
+.picker-empty { color: var(--faint); padding: 14px 10px; font-size: 13px; }
+.new-project { display: flex; flex-direction: column; gap: 12px; padding: 4px 8px 8px; }
+.new-project .where { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+.new-project .where code { background: var(--code); border-radius: 4px; padding: 1px 6px; }
+.check { flex-direction: row; align-items: flex-start; gap: 8px; font-weight: 400; color: var(--text); font-size: 13px; }
+.check input { margin-top: 3px; }
+.check .faint { color: var(--faint); }
+.field-btn { display: flex; align-items: center; gap: 8px; width: 100%; border: 1px solid var(--line-strong); background: var(--bg); border-radius: 8px; padding: 6px 10px; text-align: left; font-weight: 400; color: var(--text); }
+.field-btn:hover { border-color: var(--muted); }
+.field-btn .faint { color: var(--faint); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- dialogs ---------- */
+dialog { border: 1px solid var(--line-strong); border-radius: 14px; background: var(--panel); color: var(--text); padding: 0; width: min(560px, calc(100vw - 32px)); box-shadow: var(--shadow); }
+dialog::backdrop { background: rgba(20, 18, 12, 0.35); }
+dialog form { padding: 18px 20px 16px; display: flex; flex-direction: column; gap: 12px; }
+dialog h3 { margin: 0; font-size: 16px; }
+dialog .sub { color: var(--muted); font-size: 13px; margin: -6px 0 0; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+label .opt { font-weight: 400; color: var(--faint); }
+input[type=text], select, textarea.field { border: 1px solid var(--line-strong); background: var(--bg); border-radius: 8px; padding: 7px 10px; font-weight: 400; color: var(--text); font-size: 14px; }
+textarea.field { min-height: 160px; resize: vertical; line-height: 1.45; }
+input:focus, select:focus, textarea.field:focus { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); border-color: var(--accent); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.prefix { display: flex; align-items: center; border: 1px solid var(--line-strong); background: var(--bg); border-radius: 8px; padding-left: 10px; color: var(--muted); }
+.prefix input { border: 0 !important; background: transparent !important; flex: 1; outline: none !important; }
+.dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.form-error { color: var(--danger); font-size: 13px; min-height: 0; }
+.diff { max-height: 70vh; overflow: auto; margin: 0; padding: 12px; background: var(--bg); border-radius: 8px; white-space: pre; }
+.diff .add { color: var(--ok); }
+.diff .del { color: var(--danger); }
+.diff .hunk { color: var(--accent-ink); }
+dialog.wide { width: min(900px, calc(100vw - 32px)); }
+
+.toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 20; }
+.toast { background: var(--text); color: var(--bg); border-radius: 10px; padding: 9px 14px; font-size: 13px; box-shadow: var(--shadow); max-width: 360px; cursor: pointer; }
+.toast.err { background: var(--danger); color: #fff; }
+
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .sidebar { max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
+  .topbar, .transcript, .composer-wrap { padding-left: 16px; padding-right: 16px; }
+  .grid2 { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><img src="/icon.svg?v=4" alt="">Bullpen</div>
+    <div class="side-scroll">
+      <div class="section-head">Agents <button class="icon-btn" id="new-agent" title="New agent" aria-label="New agent">+</button></div>
+      <div id="agents"></div>
+      <div class="section-head">Projects <span class="head-actions">
+        <button class="icon-btn" id="import-projects" title="Choose projects" aria-label="Choose projects">☰</button>
+        <button class="icon-btn" id="new-thread" title="New thread" aria-label="New thread">+</button></span></div>
+      <div id="threads"></div>
+    </div>
+    <div class="side-foot"><span><span class="conn" id="conn" title="disconnected"></span><span id="conn-text">Connecting…</span></span><select class="palette-pick" id="palette-pick" title="Colour theme" aria-label="Colour theme">
+      <option value="harbor">Harbor</option><option value="night">Night</option><option value="paper">Paper</option><option value="graphite">Graphite</option>
+    </select><button class="link" id="stop-server" title="Stop the Bullpen server">Stop server</button></div>
+  </aside>
+  <main class="main" id="main"></main>
+</div>
+
+<dialog id="agent-dialog">
+  <form method="dialog" id="agent-form">
+    <h3 id="agent-dialog-title">New agent</h3>
+    <p class="sub">A specialist with its own conversation and memory. It isn't tied to a project: @mention it in any thread and it works in that thread's project. Other agents can consult it too.</p>
+    <div class="grid2">
+      <label>Name <span class="opt">anything you like</span>
+        <input type="text" name="name" required maxlength="60" placeholder="Code Reviewer" autocomplete="off">
+      </label>
+      <label>Mention as <span class="opt">used in @mentions</span>
+        <span class="prefix">@<input type="text" name="handle" maxlength="32" placeholder="code-reviewer" autocomplete="off" spellcheck="false"></span>
+      </label>
+    </div>
+    <label>Description <span class="opt">One line: when should others call it?</span>
+      <input type="text" name="description" placeholder="Reviews diffs for bugs and risky changes">
+    </label>
+    <label>Instructions
+      <textarea class="field" name="instructions" required placeholder="You are a meticulous code reviewer. When asked, read the relevant files, then list concrete problems ordered by severity…"></textarea>
+    </label>
+    <div class="grid2">
+      <label>Provider
+        <select name="provider"><option value="claude">Claude</option><option value="codex">Codex</option></select>
+      </label>
+      <label>Model <span class="opt">optional</span>
+        <input type="text" name="model" placeholder="provider default">
+      </label>
+    </div>
+    <label class="check"><input type="checkbox" name="canLead"> <span>Can lead a team <span class="faint">— hands tracked tasks to other agents, reviews them, and reports back when you @mention it in a project thread</span></span></label>
+    <label>Permissions <span class="opt">What it may do in the projects it's called into</span>
+      <select name="runtimeMode">
+        <option value="approval-required">Ask before acting</option>
+        <option value="auto-accept-edits">Auto-accept edits</option>
+        <option value="full-access">Full access</option>
+      </select>
+    </label>
+    <div class="form-error" id="agent-error"></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn danger" id="agent-delete" hidden>Delete agent</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="submit" class="btn primary" id="agent-submit">Create agent</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="picker">
+  <form method="dialog" id="picker-form">
+    <h3>Choose a project folder</h3>
+    <input type="text" class="picker-search" id="picker-search" placeholder="Search projects, or type a path like ~/code/app" autocomplete="off">
+    <div class="crumbs" id="picker-crumbs" hidden></div>
+    <div class="picker-list" id="picker-list"></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn" id="picker-new">New project…</button>
+      <button type="button" class="btn" id="picker-browse">Browse folders…</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="button" class="btn primary" id="picker-use" hidden>Use this folder</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="diff-dialog" class="wide">
+  <form method="dialog">
+    <h3 id="diff-title">Changes</h3>
+    <pre class="diff mono" id="diff-body"></pre>
+    <div class="dialog-actions"><button class="btn" data-close>Close</button></div>
+  </form>
+</dialog>
+
+<dialog id="agent-gallery" class="wide">
+  <form method="dialog">
+    <h3>Recruit agents</h3>
+    <p class="sub">Specialists grouped by what they do. Each keeps its own memory, works in whatever project you @mention it from, knows which teammates to hand work to, and can be edited later.</p>
+    <div class="gallery-tools">
+      <input type="search" class="picker-search" id="gallery-filter" placeholder="Search agents" autocomplete="off">
+      <div class="dept-tabs" id="gallery-depts"></div>
+    </div>
+    <div class="gallery-scroll" id="gallery-list"></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn" id="gallery-custom">Create your own…</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" data-close>Done</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="import-dialog">
+  <form method="dialog" id="import-form">
+    <h3>Projects in your sidebar</h3>
+    <p class="sub">Tick the projects you want to see. Unticked ones are archived: hidden from the sidebar, not deleted. ★ pins a project to the top.</p>
+    <input type="search" class="picker-search" id="import-filter" placeholder="Filter projects" autocomplete="off">
+    <div class="import-tools">
+      <button type="button" class="link" id="import-all">Tick all</button>·
+      <button type="button" class="link" id="import-none">Untick all</button>·
+      <button type="button" class="link" id="import-add-folder">Add a folder…</button>
+      <span class="spacer"></span><span id="import-count"></span>
+    </div>
+    <div class="import-list" id="import-list"><div class="picker-empty">Scanning…</div></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="submit" class="btn primary" id="import-go">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toasts" id="toasts"></div>
+
+<script>
+"use strict";
+
+// ---------- token ----------
+// `npm run client -- ui` opens /#token=…; the fragment never reaches the server. Keep it for this tab only.
+(function takeToken() {
+  const m = location.hash.match(/token=([0-9a-f]+)/);
+  if (m) {
+    try { sessionStorage.setItem("bp-token", m[1]); } catch {}
+    history.replaceState(null, "", location.pathname);
+  }
+})();
+let TOKEN = "";
+try { TOKEN = sessionStorage.getItem("bp-token") || ""; } catch {}
+
+// ---------- tiny DOM helper ----------
+function h(tag, attrs, ...children) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of children.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : String(c));
+  return el;
+}
+const $ = (id) => document.getElementById(id);
+
+function hue(name) { let x = 0; for (const ch of name) x = (x * 31 + ch.charCodeAt(0)) % 360; return x; }
+function badge(name) {
+  name = name.replace(/^@/, "");
+  return h("span", { class: "mono-badge", style: `background:hsl(${hue(name)} 42% 44%)` }, (Array.from(name)[0] || "?").toUpperCase());
+}
+function ago(iso) {
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+function short(v, n = 140) {
+  const s = typeof v === "string" ? v : JSON.stringify(v);
+  return !s ? "" : s.length > n ? s.slice(0, n) + "…" : s;
+}
+function pretty(v) { return typeof v === "string" ? v : JSON.stringify(v, null, 2); }
+
+/** Text with ``` fences and `inline code` rendered; everything else stays plain text. */
+function richText(text) {
+  const frag = document.createDocumentFragment();
+  const parts = text.split(/```[^\n]*\n?/);
+  parts.forEach((part, i) => {
+    if (i % 2 === 1) { frag.append(h("pre", {}, h("code", {}, part.replace(/\n$/, "")))); return; }
+    // Markdown-lite outside code blocks: `code`, **bold**, and "#" headings (rendered bold). Text only, no HTML.
+    part.split(/(`[^`\n]+`)/).forEach((seg) => {
+      if (/^`[^`]+`$/.test(seg)) { frag.append(h("code", {}, seg.slice(1, -1))); return; }
+      seg = seg.replace(/^#{1,6}\s+(.+)$/gm, "**$1**");
+      seg.split(/(\*\*[^*\n]+\*\*)/).forEach((bit) => {
+        if (/^\*\*[^*]+\*\*$/.test(bit)) frag.append(h("strong", {}, bit.slice(2, -2)));
+        else if (bit) frag.append(bit);
+      });
+    });
+  });
+  return frag;
+}
+/** User text with @mentions of known agents highlighted. */
+function mentionText(text) {
+  const frag = document.createDocumentFragment();
+  text.split(/(@[a-z][a-z0-9-]{1,31})/).forEach((seg) => {
+    if (seg.startsWith("@") && agentByName(seg.slice(1))) frag.append(h("span", { class: "mention" }, seg));
+    else if (seg) frag.append(seg);
+  });
+  return frag;
+}
+
+function toast(text, opts = {}) {
+  const el = h("div", { class: "toast" + (opts.error ? " err" : ""), onclick: () => { el.remove(); opts.onclick?.(); } }, text);
+  $("toasts").append(el);
+  setTimeout(() => el.remove(), opts.error ? 7000 : 5000);
+}
+
+// ---------- RPC over WebSocket ----------
+let ws, nextId = 1, retry = 0;
+const calls = new Map();
+const subs = new Map(); // subscription -> handler
+function call(method, params) {
+  return new Promise((resolve, reject) => {
+    if (!ws || ws.readyState !== 1) return reject(new Error("Not connected"));
+    const id = nextId++;
+    calls.set(id, { resolve, reject });
+    ws.send(JSON.stringify({ id, method, params }));
+  });
+}
+const dispatch = (cmd) => call("dispatch", cmd);
+
+function connect() {
+  if (!TOKEN) { renderNoToken(); return; }
+  ws = new WebSocket(`ws://${location.host}`, ["bullpen", `token.${TOKEN}`]);
+  ws.onopen = async () => {
+    retry = 0;
+    $("conn").classList.add("on"); $("conn").title = "connected"; $("conn-text").textContent = "Server running";
+    subs.clear();
+    resetTerminalViews(); // their subscriptions died with the old connection
+    await loadSidebar();
+    if (state.threadId) openThread(state.threadId, true);
+    else renderMain();
+  };
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if ("subscription" in msg) return subs.get(msg.subscription)?.("items" in msg ? msg.items : msg);
+    const c = calls.get(msg.id); if (!c) return;
+    calls.delete(msg.id);
+    "error" in msg ? c.reject(new Error(msg.error)) : c.resolve(msg.result);
+  };
+  ws.onclose = (ev) => {
+    $("conn").classList.remove("on"); $("conn").title = "disconnected"; $("conn-text").textContent = "Not connected";
+    if (state.stopping) return renderStopped();
+    for (const c of calls.values()) c.reject(new Error("Disconnected"));
+    calls.clear();
+    if (ev.code === 1006 && retry > 3 && !state.everConnected) return renderNoToken();
+    setTimeout(connect, Math.min(5000, 300 * 2 ** retry++));
+  };
+}
+
+// ---------- state ----------
+const state = {
+  threads: new Map(),
+  agents: new Map(),
+  projects: new Map(),
+  projectFilter: "",
+  showArchived: (() => { try { return !!localStorage.getItem("bp-show-archived"); } catch { return false; } })(),
+  showAll: new Set(),
+  approvals: new Map(), // threadId -> Map(requestId -> item)
+  threadId: null,
+  sub: null,
+  thread: null,
+  runs: new Map(),
+  items: new Map(),
+  order: [],
+  seq: 0,
+  everConnected: false,
+};
+const agentByName = (name) => [...state.agents.values()].find((a) => a.name === name);
+
+function trackApproval(item) {
+  let m = state.approvals.get(item.threadId);
+  if (!m) state.approvals.set(item.threadId, (m = new Map()));
+  if (item.status === "pending") m.set(item.requestId, item); else m.delete(item.requestId);
+}
+
+async function loadSidebar() {
+  const snap = await call("subscribeSidebar");
+  state.everConnected = true;
+  state.threads = new Map(snap.threads.map((t) => [t.id, t]));
+  state.agents = new Map(snap.agents.map((a) => [a.id, a]));
+  state.projects = new Map(snap.projects.map((p) => [p.id, p]));
+  state.approvals = new Map();
+  snap.pendingApprovals.forEach(trackApproval);
+  subs.set(snap.subscription, (events) => {
+    for (const { event: e } of events) {
+      if (e.type === "thread.upserted") {
+        const before = state.threads.get(e.thread.id);
+        state.threads.set(e.thread.id, e.thread);
+        if ((e.thread.team?.needsYou ?? 0) > (before?.team?.needsYou ?? 0) && e.thread.id !== state.threadId) {
+          toast(`A team in “${e.thread.title}” needs you`, { onclick: () => openThread(e.thread.id) });
+        }
+      }
+      else if (e.type === "agent.upserted") state.agents.set(e.agent.id, e.agent);
+      else if (e.type === "agent.deleted") state.agents.delete(e.agentId);
+      else if (e.type === "project.upserted") state.projects.set(e.project.id, e.project);
+      else if (e.type === "project.removed") state.projects.delete(e.projectId);
+      else if (e.type === "turn-item.upserted" && e.item.kind === "approval_request") {
+        const wasPending = state.approvals.get(e.item.threadId)?.has(e.item.requestId);
+        trackApproval(e.item);
+        if (e.item.status === "pending" && !wasPending && e.item.threadId !== state.threadId) {
+          const t = state.threads.get(e.item.threadId);
+          toast(`${t?.title ?? "A thread"} needs approval for ${e.item.tool}`, { onclick: () => openThread(e.item.threadId) });
+        }
+      } else if (e.type === "turn-item.upserted" && e.item.kind === "agent_reply" && e.item.status !== "running" && e.item.threadId !== state.threadId) {
+        toast(`@${e.item.agentName} answered in ${state.threads.get(e.item.threadId)?.title ?? "a thread"}`, { onclick: () => openThread(e.item.threadId) });
+      }
+    }
+    renderSidebar();
+    if (state.threadId) { state.thread = state.threads.get(state.threadId) ?? state.thread; renderTopbar(); }
+  });
+  renderSidebar();
+}
+
+// ---------- sidebar ----------
+function threadStatus(t) {
+  const pending = (state.approvals.get(t.id)?.size ?? 0) + (t.team?.needsYou ?? 0);
+  return h("span", { class: "status" },
+    pending ? h("span", { class: "count", title: `${pending} waiting for approval` }, pending) : null,
+    t.status === "running" || t.team?.active ? h("span", { class: "pulse", title: t.team?.active ? "a team is working" : "working" }) : null);
+}
+function renderSidebar() {
+  const agents = [...state.agents.values()].sort((a, b) => a.name.localeCompare(b.name));
+  $("agents").replaceChildren(...(agents.length ? agents.map((a) => {
+    const home = state.threads.get(a.homeThreadId);
+    return h("button", { class: "row" + (state.threadId === a.homeThreadId ? " active" : ""), onclick: () => openThread(a.homeThreadId) },
+      badge(agentLabel(a)),
+      h("span", { class: "row-main" }, h("div", { class: "row-title" }, agentLabel(a)), h("div", { class: "row-sub" }, a.displayName ? "@" + a.name + (a.description ? " · " + a.description : "") : a.description || a.provider + (a.model ? " · " + a.model : ""))),
+      home ? threadStatus(home) : null);
+  }) : [h("div", { class: "side-empty" }, "No agents yet. Create one, then @mention it anywhere.")]));
+
+  renderProjects();
+}
+
+// ---------- projects in the sidebar (T3 "folder" mode) ----------
+const collapsed = {
+  get() { try { return new Set(JSON.parse(localStorage.getItem("bp-collapsed") || "[]")); } catch { return new Set(); } },
+  toggle(id) { const s = collapsed.get(); s.has(id) ? s.delete(id) : s.add(id); try { localStorage.setItem("bp-collapsed", JSON.stringify([...s])); } catch {} },
+};
+/** T3's monogram: first letter, plus a digit or the last word's first letter or the last letter. */
+function monogram(name) {
+  const words = name.replace(/([a-z])([A-Z])/g, "$1 $2").split(/[\s\-_.]+/).filter(Boolean);
+  const first = (words[0] || name || "?")[0];
+  const digit = name.match(/\d/)?.[0];
+  const second = digit ?? (words.length > 1 ? words[words.length - 1][0] : (name.length > 1 ? name[name.length - 1] : ""));
+  const hueN = hue(name);
+  return h("span", { class: "monogram", style: `background:hsl(${hueN} 70% 50% / 0.16);color:hsl(${hueN} 75% 62%)` }, (first + second).toUpperCase());
+}
+function projectIcon(p) {
+  const mono = monogram(p.title);
+  const img = h("img", { class: "proj-icon", src: `/project-icon/${p.id}`, alt: "", loading: "lazy" });
+  img.addEventListener("error", () => img.replaceWith(mono));
+  return img;
+}
+const activity = (t) => t.updatedAt || t.createdAt;
+/** When you last worked in a project: its newest thread, or its last Claude Code session, or when it was added. */
+const lastWork = ({ p, threads }) => [threads[0] ? activity(threads[0]) : "", p.lastUsedAt || ""].sort().pop();
+/** The most urgent thing in a set of threads: needs you > working > failed. */
+function urgency(threads) {
+  if (threads.some((t) => state.approvals.get(t.id)?.size || t.team?.needsYou)) return "attention";
+  if (threads.some((t) => t.status === "running" || t.team?.active)) return "working";
+  return null;
+}
+function renderProjects() {
+  const homes = new Set([...state.agents.values()].map((a) => a.homeThreadId));
+  const threads = [...state.threads.values()].filter((t) => !homes.has(t.id));
+  const byPath = new Map();
+  for (const t of threads) { if (!byPath.has(t.cwd)) byPath.set(t.cwd, []); byPath.get(t.cwd).push(t); }
+  for (const list of byPath.values()) list.sort((a, b) => activity(b).localeCompare(activity(a)));
+  const q = state.projectFilter.trim().toLowerCase();
+  const showArchived = state.showArchived;
+  const archivedCount = [...state.projects.values()].filter((p) => p.archivedAt).length;
+  const projects = [...state.projects.values()]
+    .filter((p) => !p.archivedAt || showArchived)
+    .map((p) => ({ p, threads: byPath.get(p.path) ?? [] }))
+    .filter(({ p }) => !q || p.title.toLowerCase().includes(q) || p.path.toLowerCase().includes(q))
+    .sort((a, b) =>
+      (a.p.archivedAt ? 1 : 0) - (b.p.archivedAt ? 1 : 0) ||
+      (b.p.pinnedAt ? 1 : 0) - (a.p.pinnedAt ? 1 : 0) ||
+      (a.p.pinnedAt && b.p.pinnedAt ? a.p.pinnedAt.localeCompare(b.p.pinnedAt) : 0) ||
+      lastWork(b).localeCompare(lastWork(a)));
+  const closed = collapsed.get();
+  const children = [];
+  if (state.projects.size > 8) {
+    const filter = h("input", { class: "proj-filter", type: "search", placeholder: "Filter projects", value: state.projectFilter });
+    filter.addEventListener("input", () => { state.projectFilter = filter.value; renderProjects(); const f = $("threads").querySelector(".proj-filter"); f?.focus(); f?.setSelectionRange(f.value.length, f.value.length); });
+    children.push(filter);
+  }
+  let prev = null;
+  for (const { p, threads: list } of projects) {
+    // A line under the pinned projects, and above the archived ones.
+    if (prev && ((prev.pinnedAt && !p.pinnedAt) || (!prev.archivedAt && p.archivedAt))) children.push(h("div", { class: "proj-divider" }));
+    prev = p;
+    const isClosed = closed.has(p.id);
+    const hasActive = list.some((t) => t.id === state.threadId);
+    const u = urgency(list);
+    const shown = state.showAll.has(p.id) ? list : list.slice(0, 5);
+    const empty = !list.length;
+    const folder = h("div", { class: "folder" + ((isClosed && !hasActive) || empty ? " collapsed" : "") + (p.archivedAt ? " archived" : "") },
+      h("div", { class: "folder-head" + (empty ? " no-threads" : ""), role: "button", tabindex: "0",
+          title: empty ? `${p.path}\nClick to start working here` : p.path,
+          onclick: () => { if (empty) newThread(p.path); else { collapsed.toggle(p.id); renderProjects(); } },
+          oncontextmenu: (ev) => { ev.preventDefault(); projectMenu(p, ev.clientX, ev.clientY); } },
+        h("span", { class: "chev" }, "▾"),
+        projectIcon(p),
+        h("span", { class: "title" }, p.title),
+        h("span", { class: "meta" }, ...[isClosed && u ? h("span", { class: "sdot " + u }) : null, isClosed && list.length ? String(list.length) : null, p.pinnedAt ? h("span", { class: "pin-mark", title: "Pinned" }, "★") : null].filter(Boolean)),
+        h("span", { class: "hover" },
+          h("button", { class: "icon-btn" + (p.pinnedAt ? " on" : ""), title: p.pinnedAt ? "Unpin" : "Pin to top",
+            onclick: (ev) => { ev.stopPropagation(); dispatch({ type: "project.update", projectId: p.id, pinned: !p.pinnedAt }).catch(fail); } }, p.pinnedAt ? "★" : "☆"),
+          h("button", { class: "icon-btn", title: `New thread in ${p.title}`,
+            onclick: (ev) => { ev.stopPropagation(); newThread(p.path); } }, "+"),
+          h("button", { class: "icon-btn", title: "More", "aria-label": "More actions",
+            onclick: (ev) => { ev.stopPropagation(); const r = ev.currentTarget.getBoundingClientRect(); projectMenu(p, r.left, r.bottom + 4); } }, "⋯"))),
+      h("div", { class: "folder-body" },
+        ...shown.map((t) => {
+          const st = state.approvals.get(t.id)?.size || t.team?.needsYou ? "attention" : t.status === "running" || t.team?.active ? "working" : null;
+          return h("button", { class: "trow" + (state.threadId === t.id ? " active" : ""), onclick: () => openThread(t.id), title: t.title },
+            st ? h("span", { class: "sdot " + st }) : null,
+            h("span", { class: "t" }, t.title),
+            h("span", { class: "when" }, ago(activity(t)).replace(" ago", "")));
+        }),
+        list.length > shown.length ? h("button", { class: "more-link", onclick: () => { state.showAll.add(p.id); renderProjects(); } }, `Show ${list.length - shown.length} more`) : null));
+    children.push(folder);
+  }
+  if (!state.projects.size) {
+    children.push(h("div", { class: "side-empty" }, "No projects yet. ",
+      h("button", { class: "link", onclick: openImport }, "Choose projects"), " or start a thread."));
+  } else if (!projects.length) {
+    children.push(h("div", { class: "side-empty" }, q ? "No matching projects." : "Every project is archived. ",
+      q ? null : h("button", { class: "link", onclick: openImport }, "Choose projects")));
+  }
+  if (archivedCount && !q) {
+    children.push(h("button", { class: "archived-toggle", onclick: () => { state.showArchived = !state.showArchived; try { localStorage.setItem("bp-show-archived", state.showArchived ? "1" : ""); } catch {} renderProjects(); } },
+      state.showArchived ? `Hide archived (${archivedCount})` : `Archived (${archivedCount})`));
+  }
+  $("threads").replaceChildren(...children);
+}
+let openMenu = null;
+function closeMenu() { openMenu?.remove(); openMenu = null; }
+document.addEventListener("click", closeMenu);
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeMenu(); });
+function projectMenu(p, x, y) {
+  closeMenu();
+  const act = (fn) => (ev) => { ev.stopPropagation(); closeMenu(); fn(); };
+  const update = (patch) => dispatch({ type: "project.update", projectId: p.id, ...patch }).catch(fail);
+  const menu = h("div", { class: "menu", role: "menu" },
+    h("button", { onclick: act(() => newThread(p.path)) }, "New thread here"),
+    h("button", { onclick: act(() => update({ pinned: !p.pinnedAt })) }, p.pinnedAt ? "Unpin" : "Pin to top"),
+    h("button", { onclick: act(() => update({ archived: !p.archivedAt })) }, p.archivedAt ? "Unarchive" : "Archive (hide)"),
+    h("button", { onclick: act(() => navigator.clipboard?.writeText(p.path).then(() => toast("Path copied."))) }, "Copy path"),
+    h("hr"),
+    h("button", { class: "danger", onclick: act(() => removeProject(p)) }, "Remove from Bullpen…"));
+  document.body.append(menu);
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.min(x, innerWidth - r.width - 8) + "px";
+  menu.style.top = Math.min(y, innerHeight - r.height - 8) + "px";
+  openMenu = menu;
+}
+async function removeProject(p) {
+  if (!confirm(`Remove ${p.title} from the sidebar? Its threads and files are kept; it comes back if you start a thread there.`)) return;
+  try { await dispatch({ type: "project.remove", projectId: p.id }); } catch (err) { fail(err); }
+}
+
+// ---------- project manager: choose what shows in the sidebar ----------
+let importRows = [];
+async function openImport() {
+  $("import-filter").value = "";
+  $("import-list").replaceChildren(h("div", { class: "picker-empty" }, "Scanning your folders…"));
+  $("import-dialog").showModal();
+  try { importRows = await call("importCandidates"); } catch (err) { $("import-dialog").close(); return fail(err); }
+  for (const r of importRows) { r.show = r.added && !r.archived; r.pin = r.pinned; }
+  renderImport();
+}
+function renderImport() {
+  const q = $("import-filter").value.trim().toLowerCase();
+  const match = (r) => !q || r.name.toLowerCase().includes(q) || r.where.toLowerCase().includes(q);
+  const groups = [
+    ["In Documents", (r) => r.location === "documents"],
+    ["In your home folder", (r) => r.location === "home"],
+    ["Elsewhere", (r) => r.location === "elsewhere"],
+  ];
+  const children = [];
+  for (const [title, inGroup] of groups) {
+    const rows = importRows.filter((r) => inGroup(r) && match(r));
+    if (!rows.length) continue;
+    children.push(h("div", { class: "import-group" }, `${title} (${rows.length})`));
+    for (const r of rows) {
+      const box = h("input", { type: "checkbox", checked: r.show });
+      box.addEventListener("change", () => { r.show = box.checked; if (!r.show) r.pin = false; renderImport(); });
+      const pin = h("button", { type: "button", class: "pin" + (r.pin ? " on" : ""), title: r.pin ? "Unpin" : "Pin to top", disabled: !r.show },
+        r.pin ? "★" : "☆");
+      pin.addEventListener("click", (ev) => { ev.preventDefault(); r.pin = !r.pin; renderImport(); });
+      const info = [r.where, r.sessions ? `${r.sessions} Claude session${r.sessions === 1 ? "" : "s"}` : null, r.lastUsedAt ? `used ${ago(r.lastUsedAt)}` : null, r.archived ? "archived" : null].filter(Boolean).join(" · ");
+      children.push(h("label", { class: "import-row" }, box, monogram(r.name),
+        h("span", { class: "row-main", style: "flex:1" }, h("div", { class: "row-title" }, r.name), h("div", { class: "faint" }, info)), pin));
+    }
+  }
+  if (!children.length) children.push(h("div", { class: "picker-empty" }, q ? "No matching folders." : "Nothing found."));
+  $("import-list").replaceChildren(...children);
+  updateImportCount();
+}
+function importChanges() {
+  return {
+    add: importRows.filter((r) => r.show && !r.added),
+    archive: importRows.filter((r) => !r.show && r.added && !r.archived),
+    unarchive: importRows.filter((r) => r.show && r.archived),
+    pin: importRows.filter((r) => r.added && r.pin !== r.pinned),
+    newPins: importRows.filter((r) => !r.added && r.show && r.pin),
+  };
+}
+function updateImportCount() {
+  const shown = importRows.filter((r) => r.show).length;
+  const c = importChanges();
+  const changes = c.add.length + c.archive.length + c.unarchive.length + c.pin.length + c.newPins.length;
+  $("import-count").textContent = `${shown} shown`;
+  $("import-go").textContent = changes ? `Save ${changes} change${changes === 1 ? "" : "s"}` : "Save";
+  $("import-go").disabled = !changes;
+}
+const setImport = (fn) => {
+  const q = $("import-filter").value.trim().toLowerCase();
+  for (const r of importRows) if (!q || r.name.toLowerCase().includes(q) || r.where.toLowerCase().includes(q)) { r.show = fn(r); if (!r.show) r.pin = false; }
+  renderImport();
+};
+$("import-all").addEventListener("click", () => setImport(() => true));
+$("import-none").addEventListener("click", () => setImport(() => false));
+$("import-filter").addEventListener("input", renderImport);
+$("import-add-folder").addEventListener("click", async () => {
+  const path = await pickFolder();
+  if (!path) return;
+  try {
+    await dispatch({ type: "project.add", path });
+    importRows = await call("importCandidates");
+    for (const r of importRows) { r.show = r.added && !r.archived; r.pin = r.pinned; }
+    renderImport();
+    toast(`Added ${folderName(path)}.`);
+  } catch (err) { fail(err); }
+});
+$("import-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const c = importChanges();
+  try {
+    if (c.add.length) await dispatch({ type: "project.import", projects: c.add.map((r) => ({ path: r.path, lastUsedAt: r.lastUsedAt })) });
+    if (c.archive.length || c.unarchive.length) {
+      await dispatch({ type: "project.bulk", archive: c.archive.map((r) => r.projectId), unarchive: c.unarchive.map((r) => r.projectId) });
+    }
+    for (const r of c.pin) await dispatch({ type: "project.update", projectId: r.projectId, pinned: r.pin });
+    if (c.newPins.length) {
+      // Freshly added projects: look up their ids, then pin.
+      const fresh = await call("importCandidates");
+      for (const r of c.newPins) {
+        const id = fresh.find((f) => f.path === r.path)?.projectId;
+        if (id) await dispatch({ type: "project.update", projectId: id, pinned: true });
+      }
+    }
+    $("import-dialog").close();
+    const parts = [c.add.length && `${c.add.length} added`, c.archive.length && `${c.archive.length} archived`, c.unarchive.length && `${c.unarchive.length} restored`, (c.pin.length + c.newPins.length) && "pins updated"].filter(Boolean);
+    toast(parts.join(", ") + ".");
+  } catch (err) { fail(err); }
+});
+$("import-projects").addEventListener("click", openImport);
+
+// ---------- main pane ----------
+function renderNoToken() {
+  $("main").replaceChildren(h("div", { class: "empty" },
+    h("h2", {}, "Open this page from the terminal"),
+    h("p", {}, "The UI needs the server's access token. Open the Bullpen app, or run:"),
+    h("pre", { class: "mono" }, "bullpen")));
+}
+
+function renderStopped() {
+  $("main").replaceChildren(h("div", { class: "empty" },
+    h("h2", {}, "Bullpen is stopped"),
+    h("p", {}, "Your threads and agents are saved. To start it again, open the Bullpen app, or run:"),
+    h("pre", { class: "mono" }, "bullpen"),
+    h("div", { class: "actions" }, h("button", { class: "btn", onclick: () => { state.stopping = false; connect(); } }, "Reconnect"))));
+}
+
+function renderMain() {
+  if (!state.threadId) { renderStart(); return; }
+  $("main").replaceChildren(
+    h("div", { class: "topbar", id: "topbar" }),
+    h("div", { class: "workarea" },
+      h("div", { class: "center" },
+        h("div", { class: "transcript", id: "transcript" }, h("div", { class: "column", id: "column" })),
+        h("div", { class: "composer-wrap" },
+          h("div", { class: "composer", id: "composer" },
+            h("textarea", { id: "input", rows: 1, placeholder: "Message… type @ to bring in an agent" }),
+            h("button", { class: "btn primary", id: "send" }, "Send")),
+          h("div", { class: "hint", id: "hint" })),
+        h("div", { class: "drawer", id: "drawer", hidden: true })),
+      h("aside", { class: "files", id: "files", hidden: true }),
+      h("aside", { class: "browser", id: "browser", hidden: true })));
+  setupComposer();
+  renderTopbar();
+  syncPanels();
+}
+
+function renderTopbar() {
+  const t = state.thread; const bar = $("topbar"); if (!t || !bar) return;
+  const agent = t.agentId ? state.agents.get(t.agentId) : null;
+  const modes = { "approval-required": "asks first", "auto-accept-edits": "auto-edits", "full-access": "full access" };
+  bar.replaceChildren(...[
+    agent ? badge(agentLabel(agent)) : null,
+    h("div", { style: "min-width:0" },
+      h("h1", {}, agent ? agentLabel(agent) + (agent.displayName ? `  ·  @${agent.name}` : "") : t.title),
+      h("div", { class: "chips" },
+        h("span", { class: "chip" }, t.provider + (t.model ? " · " + t.model : "")),
+        h("span", { class: "chip" }, modes[t.runtimeMode]),
+        agent
+          ? h("span", { class: "chip", title: `Memory: ${t.cwd}/MEMORY.md` }, "works in the caller's project")
+          : h("span", { class: "chip mono", title: t.cwd }, t.cwd.replace(/^\/Users\/[^/]+/, "~")))),
+    h("span", { class: "spacer" }),
+    t.status === "running" ? h("button", { class: "btn", onclick: () => dispatch({ type: "run.interrupt", threadId: t.id }).catch(fail) }, "Interrupt") : null,
+    h("button", { class: "btn tool-toggle" + (ui.files ? " on" : ""), title: "Files (⌘⇧E)", onclick: () => togglePanel("files") }, "Files"),
+    h("button", { class: "btn tool-toggle" + (ui.browser ? " on" : ""), title: "Browser (⌘⇧B)", onclick: () => togglePanel("browser") }, "Browser"),
+    h("button", { class: "btn tool-toggle" + (ui.terminal ? " on" : ""), title: "Terminal (⌃`)", onclick: () => togglePanel("terminal") }, "Terminal"),
+    agent ? h("button", { class: "btn", title: "Start this agent's conversation over. Its settings are kept.", onclick: () => resetAgent(agent) }, "Reset context") : null,
+    agent ? h("button", { class: "btn", onclick: () => openAgentDialog(agent) }, "Edit") : null,
+  ].filter(Boolean));
+  const hint = $("hint");
+  if (hint) hint.textContent = agent
+    ? `You're talking to ${agentLabel(agent)} directly. Its context carries over to every thread that calls it.`
+    : state.agents.size ? "A message with @name goes to that agent; this thread's agent sees the answer on your next message." : "";
+  $("send") && ($("send").disabled = false);
+}
+
+async function openThread(threadId, reconnecting = false) {
+  if (state.sub && !reconnecting) call("unsubscribe", { subscription: state.sub }).catch(() => {});
+  if (state.threadId !== threadId) { state.items = new Map(); state.order = []; state.runs = new Map(); state.seq = 0; }
+  state.threadId = threadId;
+  history.replaceState(null, "", `#/t/${threadId}`);
+  renderSidebar();
+  if (!reconnecting || !$("column")) renderMain();
+  const res = await call("subscribeThread", reconnecting && state.seq ? { threadId, afterSequence: state.seq } : { threadId }).catch(fail);
+  if (!res) return;
+  state.sub = res.subscription;
+  subs.set(res.subscription, (events) => events.forEach(apply));
+  if (res.mode === "snapshot") {
+    const s = res.snapshot;
+    state.thread = s.thread; state.seq = s.sequence;
+    state.runs = new Map(s.runs.map((r) => [r.id, r]));
+    state.items = new Map(); state.order = [];
+    for (const item of s.turnItems) { state.items.set(item.id, item); state.order.push(item.id); }
+    renderTopbar(); renderTranscript(true);
+  }
+  // Panels drawn before the connection was up (page load, reconnect) need their data now.
+  if (ui.terminal || ui.files || ui.browser) { if (ui.files && !fx.cache.size) fx.threadId = null; syncPanels(); }
+  $("input")?.focus();
+}
+
+function apply({ sequence, event: e }) {
+  if (sequence <= state.seq) return;
+  state.seq = sequence;
+  if (e.type === "thread.upserted") { state.thread = e.thread; renderTopbar(); }
+  else if (e.type === "run.upserted") { state.runs.set(e.run.id, e.run); if (e.run.status !== "running") renderRunMeta(e.run); }
+  else if (e.type === "turn-item.upserted") {
+    if (!state.items.has(e.item.id)) state.order.push(e.item.id);
+    state.items.set(e.item.id, e.item);
+    upsertItemEl(e.item);
+  }
+}
+
+// ---------- transcript ----------
+function nearBottom() { const t = $("transcript"); return !t || t.scrollHeight - t.scrollTop - t.clientHeight < 120; }
+function toBottom() { const t = $("transcript"); if (t) t.scrollTop = t.scrollHeight; }
+
+function renderTranscript() {
+  const col = $("column"); if (!col) return;
+  col.replaceChildren();
+  if (state.thread?.importedFrom) {
+    const imp = state.thread.importedFrom;
+    col.append(h("div", { class: "imported-note" },
+      `Continues a Claude Code session last used ${ago(imp.at)}. Its earlier messages aren't shown here, but Claude remembers them; just keep going.`));
+  }
+  if (!state.order.length && !state.thread?.importedFrom) {
+    const agent = state.thread?.agentId ? state.agents.get(state.thread.agentId) : null;
+    col.append(h("div", { class: "empty" }, h("p", {}, agent
+      ? `Say hello to ${agentLabel(agent)}, or mention it as @${agent.name} from any thread. Everything it learns here stays in its context.`
+      : "Describe the problem. Type @ to pull in one of your agents.")));
+  }
+  for (const id of state.order) { const el = itemEl(state.items.get(id)); if (el) col.append(el); }
+  for (const run of state.runs.values()) if (run.status !== "running") renderRunMeta(run, false);
+  toBottom();
+}
+
+function upsertItemEl(item) {
+  const stick = nearBottom();
+  const col = $("column"); if (!col) return;
+  col.querySelector(":scope > .empty")?.remove();
+  const el = itemEl(item);
+  const old = col.querySelector(`[data-id="${CSS.escape(item.id)}"]`);
+  if (old && el) old.replaceWith(el); else if (old) old.remove(); else if (el) col.append(el);
+  if (stick) toBottom();
+}
+
+function renderRunMeta(run, scroll = true) {
+  const col = $("column"); if (!col) return;
+  const id = `meta:${run.id}`;
+  col.querySelector(`[data-id="${CSS.escape(id)}"]`)?.remove();
+  const parts = [run.status === "completed" ? "Done" : run.status === "interrupted" ? "Interrupted" : "Failed"];
+  if (run.costUsd != null) parts.push(`$${run.costUsd.toFixed(4)}`);
+  if (run.endedAt) parts.push(`${Math.max(1, Math.round((new Date(run.endedAt) - new Date(run.startedAt)) / 1000))}s`);
+  const el = h("div", { class: "run-meta", "data-id": id }, parts.join(" · "));
+  // place after the last item of that run
+  const runEls = [...col.querySelectorAll(`[data-run="${CSS.escape(run.id)}"]`)];
+  const last = runEls.at(-1);
+  if (last) last.after(el); else col.append(el);
+  if (scroll && nearBottom()) toBottom();
+}
+
+function itemEl(item) {
+  const base = { "data-id": item.id, "data-run": item.runId };
+  switch (item.kind) {
+    case "user_message":
+      return h("div", { ...base, class: "msg-user" }, mentionText(item.text));
+    case "assistant_message":
+      return h("div", { ...base, class: "msg-assistant" + (item.streaming ? " streaming" : "") }, richText(item.text));
+    case "reasoning":
+      return h("details", { ...base, class: "reasoning" }, h("summary", {}, item.streaming ? "Thinking…" : "Thought"), h("div", {}, item.text));
+    case "tool_call": {
+      const name = item.tool.replace(/^mcp__harness__/, "");
+      const isAsk = name === "ask_agent" && item.input && item.input.agent;
+      return h("details", { ...base, class: "tool" },
+        h("summary", {}, h("span", { class: "dot " + item.status }),
+          h("span", { class: "tool-name" }, isAsk ? `asked @${String(item.input.agent).replace(/^@/, "")}` : name),
+          h("span", { class: "tool-sum" }, isAsk ? short(item.input.question, 120) : short(item.input, 120))),
+        h("pre", {}, pretty(item.input) + (item.output ? "\n\n── result ──\n" + item.output : "")));
+    }
+    case "approval_request": {
+      if (item.status === "resolved") {
+        const words = { accept: "Allowed", acceptForSession: "Allowed for session", decline: "Declined", cancel: "Cancelled" };
+        return h("div", { ...base, class: "approval resolved" }, `${words[item.decision] ?? "Resolved"}: ${item.tool} `, h("span", { class: "mono", style: "color:var(--muted)" }, short(item.input, 90)));
+      }
+      const answer = (decision) => dispatch({ type: "runtime-request.respond", threadId: item.threadId, requestId: item.requestId, decision }).catch(fail);
+      return h("div", { ...base, class: "approval" },
+        h("div", { class: "approval-title" }, `Allow ${item.tool}?`),
+        h("pre", { class: "mono" }, pretty(item.input)),
+        h("div", { class: "approval-actions" },
+          h("button", { class: "btn primary", onclick: () => answer("accept") }, "Allow"),
+          h("button", { class: "btn", onclick: () => answer("acceptForSession") }, "Allow for session"),
+          h("button", { class: "btn", onclick: () => answer("decline") }, "Deny"),
+          h("button", { class: "btn danger", onclick: () => answer("cancel") }, "Stop turn")));
+    }
+    case "agent_reply": {
+      const agent = state.agents.get(item.agentId);
+      return h("div", { ...base, class: "reply" + (item.status === "failed" ? " failed" : "") },
+        h("div", { class: "reply-head" }, badge(agent ? agentLabel(agent) : item.agentName), agent ? agentLabel(agent) : "@" + item.agentName,
+          h("span", { class: "muted" }, item.status === "running" ? "working on it…" : item.status === "failed" ? "couldn't answer" : item.delivered ? "shared with this thread's agent" : ""),
+          item.status === "running" && agent ? h("button", { class: "link", onclick: () => openThread(agent.homeThreadId) }, "watch") : null),
+        item.status === "running" ? h("div", { class: "pulse" }) : h("div", { class: "reply-body" }, richText(item.text)));
+    }
+    case "team_goal":
+      return h("div", base, teamCard(item));
+    case "checkpoint":
+      return h("div", { ...base, class: "checkpoint" },
+        `Checkpoint ${item.ordinal} · ${item.filesChanged} file${item.filesChanged === 1 ? "" : "s"} changed`,
+        item.filesChanged ? h("button", { class: "link", onclick: () => showDiff(item.ordinal - 1, item.ordinal) }, "View diff") : null,
+        item.filesChanged ? h("button", { class: "link", onclick: () => rollback(item.ordinal - 1) }, "Restore files to before") : null);
+    case "error":
+      return h("div", { ...base, class: "error-item" }, item.message);
+  }
+  return null;
+}
+
+// ---------- tool panels (T3: ThreadTerminalDrawer + FileExplorerPane) ----------
+const ui = (() => {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem("bp-panels") || "{}"); } catch {}
+  return { files: !!saved.files, terminal: !!saved.terminal, browser: !!saved.browser, drawerH: saved.drawerH || 280, filesW: saved.filesW || 340, browserW: saved.browserW || 560, device: saved.device || "full" };
+})();
+const saveUi = () => { try { localStorage.setItem("bp-panels", JSON.stringify(ui)); } catch {} };
+function togglePanel(which) { ui[which] = !ui[which]; saveUi(); renderTopbar(); syncPanels(); }
+function syncPanels() {
+  const drawer = $("drawer"), files = $("files");
+  if (!drawer || !files) return;
+  drawer.hidden = !ui.terminal; drawer.style.height = ui.drawerH + "px";
+  files.hidden = !ui.files; files.style.setProperty("--files-w", ui.filesW + "px");
+  if (ui.terminal) renderDrawer(); else for (const v of termViews.values()) v.host.hidden = true;
+  if (ui.files) renderFiles();
+  const browser = $("browser");
+  if (browser) {
+    browser.hidden = !ui.browser;
+    // Never take more than half the window, so the conversation stays usable on small screens.
+    browser.style.setProperty("--browser-w", Math.min(ui.browserW, Math.max(320, Math.round(innerWidth * 0.5))) + "px");
+    if (ui.browser) renderBrowser();
+  }
+}
+document.addEventListener("keydown", (ev) => {
+  if (!state.threadId) return;
+  if (ev.ctrlKey && ev.key === "`") { ev.preventDefault(); togglePanel("terminal"); }
+  if ((ev.metaKey || ev.ctrlKey) && ev.shiftKey && (ev.key === "e" || ev.key === "E")) { ev.preventDefault(); togglePanel("files"); }
+  if ((ev.metaKey || ev.ctrlKey) && ev.shiftKey && (ev.key === "b" || ev.key === "B")) { ev.preventDefault(); togglePanel("browser"); }
+});
+/** Drag a grip to resize the drawer (height) or the files panel (width). */
+function grip(el, axis, onMove) {
+  el.addEventListener("pointerdown", (ev) => {
+    ev.preventDefault();
+    const start = axis === "y" ? ev.clientY : ev.clientX;
+    const move = (e) => onMove((axis === "y" ? e.clientY : e.clientX) - start);
+    const up = () => { removeEventListener("pointermove", move); removeEventListener("pointerup", up); saveUi(); };
+    addEventListener("pointermove", move); addEventListener("pointerup", up);
+  });
+}
+
+// ---- terminal drawer: shells live on the server, one or more per thread ----
+const termViews = new Map(); // terminalId -> { xterm, fit, host, sub, threadId }
+const activeTerm = new Map(); // threadId -> terminalId
+const opening = new Map(); // threadId -> pending terminal.open
+function resetTerminalViews() {
+  for (const v of termViews.values()) { v.xterm.dispose(); v.host.remove(); }
+  termViews.clear();
+}
+function termTheme() {
+  const css = getComputedStyle(document.documentElement);
+  const v = (n) => css.getPropertyValue(n).trim();
+  return { background: v("--term-bg"), foreground: v("--term-fg"), cursor: v("--term-cursor"), cursorAccent: v("--term-bg"), selectionBackground: "rgba(252,163,17,0.3)" };
+}
+async function renderDrawer() {
+  const drawer = $("drawer"); const threadId = state.threadId;
+  if (!drawer || !threadId) return;
+  if (!window.Terminal) { drawer.replaceChildren(h("div", { class: "preview-empty" }, "Loading terminal…")); setTimeout(renderDrawer, 300); return; }
+  let list;
+  try { list = await call("terminal.list", { threadId }); } catch (err) { return fail(err); }
+  if (threadId !== state.threadId) return;
+  if (!list.length) {
+    // Two renders can race here on first open; share one "open" per thread.
+    opening.set(threadId, opening.get(threadId) ?? call("terminal.open", { threadId }).finally(() => setTimeout(() => opening.delete(threadId), 1000)));
+    try { await opening.get(threadId); list = await call("terminal.list", { threadId }); } catch (err) { return fail(err); }
+  }
+  let active = activeTerm.get(threadId);
+  if (!list.some((t) => t.id === active)) active = list[list.length - 1].id;
+  activeTerm.set(threadId, active);
+  let body = drawer.querySelector(".drawer-body");
+  if (!body) {
+    body = h("div", { class: "drawer-body" });
+    const g = h("div", { class: "drawer-grip", title: "Drag to resize" });
+    let startH = 0;
+    g.addEventListener("pointerdown", () => { startH = ui.drawerH; });
+    grip(g, "y", (dy) => { ui.drawerH = Math.max(120, Math.min(innerHeight - 220, startH - dy)); drawer.style.height = ui.drawerH + "px"; });
+    drawer.replaceChildren(g, h("div", { class: "drawer-bar" }), body);
+  }
+  drawer.querySelector(".drawer-bar").replaceChildren(
+    ...list.map((t) => h("button", { class: "tab" + (t.id === active ? " on" : ""), onclick: () => { activeTerm.set(threadId, t.id); renderDrawer(); } },
+      t.title + (t.exitCode !== undefined ? " (exited)" : ""),
+      h("span", { class: "x", title: "Close terminal", onclick: async (ev) => {
+        ev.stopPropagation();
+        await call("terminal.close", { terminalId: t.id }).catch(() => {});
+        const v = termViews.get(t.id); if (v) { v.xterm.dispose(); v.host.remove(); termViews.delete(t.id); }
+        if ((await call("terminal.list", { threadId }).catch(() => [])).length === 0) { ui.terminal = false; saveUi(); renderTopbar(); syncPanels(); }
+        else renderDrawer();
+      } }, "×"))),
+    h("button", { class: "icon-btn", title: "New terminal", onclick: async () => {
+      try { const t = await call("terminal.open", { threadId }); activeTerm.set(threadId, t.id); renderDrawer(); } catch (err) { fail(err); }
+    } }, "+"),
+    h("span", { class: "spacer" }),
+    h("button", { class: "icon-btn", title: "Hide terminal (⌃`)", onclick: () => togglePanel("terminal") }, "⌄"));
+  for (const v of termViews.values()) v.host.hidden = true;
+  const view = termViews.get(active) ?? (await attachTerminal(active, threadId, body));
+  if (!view || threadId !== state.threadId) return;
+  if (view.host.parentElement !== body) body.append(view.host);
+  view.host.hidden = false;
+  requestAnimationFrame(() => { try { view.fit.fit(); } catch {} view.xterm.focus(); });
+}
+async function attachTerminal(terminalId, threadId, body) {
+  const host = h("div", { class: "xterm-host" });
+  body.append(host);
+  const xterm = new window.Terminal({
+    fontFamily: getComputedStyle(document.documentElement).getPropertyValue("--mono"), fontSize: 12.5, lineHeight: 1.2,
+    cursorBlink: true, scrollback: 5000, allowProposedApi: false, theme: termTheme(),
+  });
+  const fit = new window.FitAddon.FitAddon();
+  xterm.loadAddon(fit);
+  xterm.open(host);
+  let res;
+  try { res = await call("terminal.attach", { terminalId }); } catch (err) { xterm.dispose(); host.remove(); fail(err); return null; }
+  xterm.write(res.history);
+  subs.set(res.subscription, (msg) => {
+    if (msg.data) xterm.write(msg.data);
+    if (msg.exitCode !== undefined) { xterm.write(`\r\n\x1b[2m[process exited with code ${msg.exitCode}]\x1b[0m\r\n`); if (threadId === state.threadId && ui.terminal) renderDrawer(); }
+  });
+  xterm.onData((data) => call("terminal.input", { terminalId, data }).catch(() => {}));
+  let resizeTimer;
+  const sendSize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => call("terminal.resize", { terminalId, cols: xterm.cols, rows: xterm.rows }).catch(() => {}), 80); };
+  xterm.onResize(sendSize);
+  new ResizeObserver(() => { if (!host.hidden && host.offsetHeight) { try { fit.fit(); } catch {} } }).observe(host);
+  const view = { xterm, fit, host, sub: res.subscription, threadId };
+  termViews.set(terminalId, view);
+  sendSize();
+  return view;
+}
+// Re-theme open terminals when the palette changes.
+new MutationObserver(() => { for (const v of termViews.values()) v.xterm.options.theme = termTheme(); })
+  .observe(document.documentElement, { attributes: true, attributeFilter: ["data-palette"] });
+
+// ---- file explorer: lazy folder tree + preview, confined to the thread's folder ----
+const fx = { threadId: null, open: new Set([""]), cache: new Map(), preview: null, sel: null };
+async function loadDir(path) {
+  if (!fx.cache.has(path)) fx.cache.set(path, await call("files.list", { threadId: state.threadId, path }));
+  return fx.cache.get(path);
+}
+async function renderFiles() {
+  const panel = $("files"); if (!panel || !state.threadId) return;
+  if (fx.threadId !== state.threadId) { fx.threadId = state.threadId; fx.open = new Set([""]); fx.cache.clear(); fx.preview = null; fx.sel = null; }
+  const t = state.thread;
+  const g = h("div", { class: "files-grip", title: "Drag to resize" });
+  let startW = 0;
+  g.addEventListener("pointerdown", () => { startW = ui.filesW; });
+  grip(g, "x", (dx) => { ui.filesW = Math.max(240, Math.min(innerWidth - 520, startW - dx)); panel.style.setProperty("--files-w", ui.filesW + "px"); });
+  const head = h("div", { class: "files-head" },
+    h("span", { class: "ttl", title: t?.cwd }, t ? folderName(t.cwd) : "Files"),
+    h("button", { class: "icon-btn", title: "Refresh", onclick: () => { fx.cache.clear(); renderFiles(); } }, "↻"),
+    h("button", { class: "icon-btn", title: "Hide files (⌘⇧E)", onclick: () => togglePanel("files") }, "×"));
+  if (fx.preview) { panel.replaceChildren(g, head, renderPreview()); return; }
+  const tree = h("div", { class: "files-tree" });
+  panel.replaceChildren(g, head, tree);
+  try { await renderDirInto(tree, "", 0); } catch (err) { tree.replaceChildren(h("div", { class: "files-note" }, err.message)); }
+}
+async function renderDirInto(container, path, depth) {
+  const entries = await loadDir(path);
+  if (!entries.length && depth === 0) container.append(h("div", { class: "files-note" }, "This folder is empty."));
+  for (const e of entries) {
+    const isOpen = fx.open.has(e.path);
+    const row = h("button", { class: "frow" + (e.dir ? " dir" : "") + (e.ignored ? " ignored" : "") + (fx.sel === e.path ? " sel" : ""),
+      style: `padding-left:${8 + depth * 14}px`, title: e.path + (e.ignored ? " (git-ignored)" : ""),
+      onclick: async () => {
+        if (e.dir) { isOpen ? fx.open.delete(e.path) : fx.open.add(e.path); renderFiles(); }
+        else { fx.sel = e.path; await openPreview(e.path); }
+      } },
+      h("span", { class: "chev" }, e.dir ? (isOpen ? "▾" : "▸") : ""),
+      h("span", { class: "ic" }, e.dir ? "▤" : "·"),
+      h("span", { class: "nm" }, e.name));
+    container.append(row);
+    if (e.dir && isOpen) await renderDirInto(container, e.path, depth + 1);
+  }
+}
+async function openPreview(path) {
+  fx.preview = { path, data: null };
+  renderFiles();
+  try { fx.preview.data = await call("files.read", { threadId: state.threadId, path }); }
+  catch (err) { fx.preview.data = { kind: "error", message: err.message }; }
+  if (fx.preview?.path === path) renderFiles();
+}
+function fmtSize(n) { return n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : n > 1024 ? Math.round(n / 1024) + " KB" : n + " B"; }
+function renderPreview() {
+  const { path, data } = fx.preview;
+  const mention = () => {
+    const input = $("input"); if (!input) return;
+    input.value = (input.value ? input.value.replace(/\s*$/, " ") : "") + "`" + path + "` ";
+    input.dispatchEvent(new Event("input")); input.focus();
+  };
+  const bar = h("div", { class: "preview-bar" },
+    h("button", { class: "btn", onclick: () => { fx.preview = null; renderFiles(); } }, "← Files"),
+    h("button", { class: "btn", title: "Add this file's path to your message", onclick: mention }, "Mention"),
+    h("button", { class: "btn", title: "Show in Finder", onclick: () => call("files.reveal", { threadId: state.threadId, path, how: "reveal" }).catch(fail) }, "Reveal"),
+    h("button", { class: "btn", title: "Open with its default app", onclick: () => call("files.reveal", { threadId: state.threadId, path, how: "open" }).catch(fail) }, "Open"),
+    h("div", { class: "path", title: path }, path + (data?.size !== undefined ? `  ·  ${fmtSize(data.size)}` : "")));
+  let body;
+  if (!data) body = h("div", { class: "preview-empty" }, "Loading…");
+  else if (data.kind === "error") body = h("div", { class: "preview-empty" }, data.message);
+  else if (data.kind === "image") body = h("img", { src: data.dataUrl, alt: path });
+  else if (data.kind === "binary") body = h("div", { class: "preview-empty" }, "Binary file. Use Open to view it in its app.");
+  else if (data.kind === "too-large") body = h("div", { class: "preview-empty" }, `Too large to preview (${fmtSize(data.size)}). Use Open to view it.`);
+  else {
+    const lines = data.text.split("\n");
+    const shown = lines.slice(0, 4000);
+    body = h("div", { class: "code" }, ...shown.map((l, i) => h("div", {}, h("span", { class: "ln" }, String(i + 1)), l || " ")),
+      lines.length > shown.length || data.truncated ? h("div", { class: "preview-empty" }, "Preview cut short. Use Open to see the whole file.") : null);
+  }
+  return h("div", { class: "preview" }, bar, h("div", { class: "preview-body" }, body));
+}
+
+// ---- browser: preview a project's site (iframe; T3 uses Electron/server-side browsers instead) ----
+const bx = {
+  urls: (() => { try { return JSON.parse(localStorage.getItem("bp-browser-urls") || "{}"); } catch { return {}; } })(),
+  hist: new Map(), // threadId -> { stack: [], i }
+  waiting: null, // { threadId, label, until }
+};
+const DEVICES = { full: null, tablet: 820, phone: 390 };
+function normalizeUrl(text) {
+  let u = text.trim();
+  if (!u) return null;
+  if (/^\d+$/.test(u)) u = "localhost:" + u;
+  if (!/^[a-z]+:\/\//i.test(u)) u = (/^(localhost|127\.|\[::1\]|[\w-]+\.local)/i.test(u) ? "http://" : "https://") + u;
+  try {
+    const url = new URL(u);
+    if (url.origin === location.origin) { toast("That's Bullpen itself; open a project's site instead.", { error: true }); return null; }
+    return url.href;
+  } catch { toast("That doesn't look like a web address.", { error: true }); return null; }
+}
+function browserGo(text, push = true) {
+  const url = normalizeUrl(text); if (!url) return;
+  const id = state.threadId;
+  bx.urls[id] = url; try { localStorage.setItem("bp-browser-urls", JSON.stringify(bx.urls)); } catch {}
+  if (push) {
+    const h0 = bx.hist.get(id) ?? { stack: [], i: -1 };
+    h0.stack = h0.stack.slice(0, h0.i + 1); h0.stack.push(url); h0.i = h0.stack.length - 1;
+    bx.hist.set(id, h0);
+  }
+  bx.waiting = null;
+  renderBrowser();
+}
+function browserHome() { delete bx.urls[state.threadId]; try { localStorage.setItem("bp-browser-urls", JSON.stringify(bx.urls)); } catch {} renderBrowser(); }
+function renderBrowser() {
+  const panel = $("browser"); if (!panel || !state.threadId) return;
+  const id = state.threadId, url = bx.urls[id];
+  const hist = bx.hist.get(id) ?? { stack: url ? [url] : [], i: url ? 0 : -1 };
+  bx.hist.set(id, hist);
+  const g = h("div", { class: "files-grip", title: "Drag to resize" });
+  let startW = 0;
+  g.addEventListener("pointerdown", () => { startW = ui.browserW; });
+  g.addEventListener("pointerdown", () => { startW = panel.getBoundingClientRect().width; }, { capture: true });
+  grip(g, "x", (dx) => { ui.browserW = Math.max(320, Math.min(innerWidth - 480, startW - dx)); panel.style.setProperty("--browser-w", ui.browserW + "px"); });
+  const addr = h("input", { class: "addr", value: url ?? "", placeholder: "localhost:3000 or any address", spellcheck: "false" });
+  addr.addEventListener("keydown", (ev) => { if (ev.key === "Enter") browserGo(addr.value); });
+  const step = (d) => { const hh = bx.hist.get(id); hh.i += d; bx.urls[id] = hh.stack[hh.i]; renderBrowser(); };
+  const device = h("select", { title: "Width" },
+    h("option", { value: "full" }, "Fit"), h("option", { value: "tablet" }, "Tablet"), h("option", { value: "phone" }, "Phone"));
+  device.value = ui.device;
+  device.addEventListener("change", () => { ui.device = device.value; saveUi(); renderBrowser(); });
+  const bar = h("div", { class: "browser-bar" },
+    h("button", { class: "icon-btn", title: "Back", disabled: hist.i <= 0, onclick: () => step(-1) }, "←"),
+    h("button", { class: "icon-btn", title: "Forward", disabled: hist.i >= hist.stack.length - 1, onclick: () => step(1) }, "→"),
+    h("button", { class: "icon-btn", title: "Reload", disabled: !url, onclick: () => { const f = panel.querySelector("iframe"); if (f) f.src = f.src; } }, "↻"),
+    h("button", { class: "icon-btn", title: "Project sites", onclick: browserHome }, "⌂"),
+    addr, device,
+    h("button", { class: "icon-btn", title: "Open in your browser", disabled: !url, onclick: () => window.open(url, "_blank", "noopener") }, "↗"),
+    h("button", { class: "icon-btn", title: "Hide browser (⌘⇧B)", onclick: () => togglePanel("browser") }, "×"));
+  if (!url) { panel.replaceChildren(g, bar, renderLauncher()); return; }
+  const w = DEVICES[ui.device];
+  // Sandboxed, and never Bullpen's own origin: the page can run but can't navigate or script Bullpen.
+  const frame = h("iframe", { src: url, title: "Project preview", referrerpolicy: "no-referrer",
+    sandbox: "allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-pointer-lock",
+    style: w ? `width:${w}px` : "" });
+  panel.replaceChildren(g, bar, h("div", { class: "bframe-wrap" + (w ? " device" : "") }, frame));
+}
+function renderLauncher() {
+  const box = h("div", { class: "launcher" }, h("div", { class: "note" }, "Looking for this project's sites…"));
+  const id = state.threadId;
+  call("preview.info", { threadId: id }).then((info) => {
+    if (id !== state.threadId || bx.urls[id]) return;
+    const mine = info.servers.filter((x) => x.inProject), others = info.servers.filter((x) => !x.inProject);
+    const kids = [];
+    if (bx.waiting?.threadId === id) {
+      kids.push(h("div", { class: "waiting" }, h("span", { class: "pulse" }), `Starting “${bx.waiting.label}” in the terminal… this page opens it when it's up.`));
+    }
+    if (mine.length) {
+      kids.push(h("h4", {}, "Running in this project"));
+      for (const x of mine) kids.push(h("button", { class: "row", onclick: () => browserGo(x.url) },
+        h("span", { class: "row-main" }, h("div", { class: "row-title" }, `localhost:${x.port}`), h("div", { class: "row-sub" }, x.command)), h("span", { class: "go" }, "Open →")));
+    }
+    if (info.scripts.length && !bx.waiting) {
+      kids.push(h("h4", {}, "Start a dev server"));
+      for (const sc of info.scripts) kids.push(h("button", { class: "row", onclick: () => startDevServer(sc) },
+        h("span", { class: "row-main" }, h("div", { class: "row-title mono" }, sc.label), h("div", { class: "row-sub" }, "Runs in a new terminal, then opens here")), h("span", { class: "go" }, "Start →")));
+    }
+    if (info.staticUrl) {
+      kids.push(h("h4", {}, "Static site"));
+      const entry = info.staticUrl.split(`/t/${id}/`)[1];
+      kids.push(h("button", { class: "row", onclick: () => browserGo(info.staticUrl) },
+        h("span", { class: "row-main" }, h("div", { class: "row-title mono" }, entry), h("div", { class: "row-sub" }, "Served by Bullpen from the project folder")), h("span", { class: "go" }, "Open →")));
+    }
+    if (others.length) {
+      kids.push(h("h4", {}, "Other servers on this Mac"));
+      for (const x of others) kids.push(h("button", { class: "row", onclick: () => browserGo(x.url) },
+        h("span", { class: "row-main" }, h("div", { class: "row-title" }, `localhost:${x.port}`), h("div", { class: "row-sub" }, x.command)), h("span", { class: "go" }, "Open →")));
+    }
+    if (!mine.length && !info.scripts.length && !info.staticUrl) kids.unshift(h("div", { class: "note" }, "Nothing to preview found in this project. Type an address above, or ask the agent to start the app."));
+    kids.push(h("div", { class: "note" }, "Local addresses (localhost) work best. Many public sites refuse to be shown inside another page; use ↗ for those."));
+    box.replaceChildren(...kids);
+  }).catch((err) => box.replaceChildren(h("div", { class: "note" }, err.message)));
+  return box;
+}
+async function startDevServer(sc) {
+  const threadId = state.threadId;
+  let before;
+  try { before = new Set((await call("preview.info", { threadId })).servers.filter((x) => x.inProject).map((x) => x.port)); } catch { before = new Set(); }
+  try {
+    const t = await call("terminal.open", { threadId });
+    await call("terminal.input", { terminalId: t.id, data: sc.command + "\r" });
+    activeTerm.set(threadId, t.id);
+    if (!ui.terminal) { ui.terminal = true; saveUi(); renderTopbar(); }
+    syncPanels();
+  } catch (err) { return fail(err); }
+  bx.waiting = { threadId, label: sc.label, until: Date.now() + 120_000 };
+  if (state.threadId === threadId) renderBrowser();
+  while (bx.waiting?.threadId === threadId && Date.now() < bx.waiting.until) {
+    await new Promise((r) => setTimeout(r, 1500));
+    let info; try { info = await call("preview.info", { threadId }); } catch { continue; }
+    const fresh = info.servers.find((x) => x.inProject && !before.has(x.port));
+    if (fresh) {
+      bx.waiting = null;
+      if (state.threadId === threadId) browserGo(fresh.url); else { bx.urls[threadId] = fresh.url; }
+      toast(`Dev server is up on localhost:${fresh.port}.`);
+      return;
+    }
+  }
+  if (bx.waiting?.threadId === threadId) { bx.waiting = null; toast("The dev server didn't show up yet; check the terminal.", { error: true }); if (state.threadId === threadId) renderBrowser(); }
+}
+
+// ---------- team card ----------
+const teamUi = new Map(); // goalId -> { board: bool, open: Set(taskId) }
+const GOAL_LABEL = { planning: "Planning", working: "Working", paused: "Paused", stuck: "Needs you", done: "Done", cancelled: "Stopped", failed: "Failed" };
+const TASK_LABEL = { queued: "Queued", waiting: "Waiting", working: "Working", submitted: "In review", changes: "Reworking", accepted: "Accepted", parked: "Parked", paused: "Paused", cancelled: "Cancelled" };
+function since(iso) {
+  if (!iso) return "";
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  return s < 60 ? `${Math.floor(s)}s` : s < 3600 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}`;
+}
+function elapsed(task) {
+  const end = task.endedAt ? new Date(task.endedAt).getTime() : Date.now();
+  return task.startedAt ? since(new Date(Date.now() - (end - new Date(task.startedAt).getTime())).toISOString()) : "";
+}
+function taskPill(t) {
+  const label = t.status === "waiting" && t.dependsOn.length ? `After ${t.dependsOn.join(", ")}` : TASK_LABEL[t.status];
+  return h("span", { class: "pill " + t.status }, t.status === "working" ? h("span", { class: "pulse" }) : null, label + (t.approvals.length ? " · needs you" : ""));
+}
+function teamCard(g) {
+  const u = teamUi.get(g.goalId) ?? { board: false, open: new Set() };
+  teamUi.set(g.goalId, u);
+  const rerender = () => upsertItemEl(state.items.get(`team:${g.goalId}`));
+  const accepted = g.tasks.filter((t) => t.status === "accepted").length;
+  const counted = g.tasks.filter((t) => t.status !== "cancelled").length || 1;
+  const open = ["planning", "working", "paused", "stuck"].includes(g.status);
+  const lead = state.agents.get(g.leadAgentId);
+  const needs = g.tasks.reduce((n, t) => n + t.approvals.length + (t.status === "parked" ? 1 : 0), 0) + (g.status === "stuck" ? 1 : 0);
+  const head = h("div", { class: "team-head" },
+    badge(g.leadName),
+    h("div", { class: "t-title" }, h("b", {}, g.title), h("span", {}, `${g.leadName} is leading · ${g.tasks.length} task${g.tasks.length === 1 ? "" : "s"} · ${accepted} accepted`)),
+    h("span", { class: "pill " + (needs && open ? "needs" : g.status) }, open && g.status === "working" ? h("span", { class: "pulse" }) : null,
+      (needs && open ? `Needs you (${needs})` : GOAL_LABEL[g.status]) + (open ? ` · ${since(g.startedAt)}` : "")),
+    h("span", { class: "seg-mini" },
+      h("button", { class: u.board ? "" : "on", onclick: () => { u.board = false; rerender(); } }, "List"),
+      h("button", { class: u.board ? "on" : "", onclick: () => { u.board = true; rerender(); } }, "Board")),
+    open ? h("button", { class: "btn danger", onclick: () => { if (confirm("Stop this team? Running tasks are interrupted; finished work stays.")) dispatch({ type: "goal.cancel", goalId: g.goalId }).catch(fail); } }, "Stop") : null);
+  const note = g.note && open ? h("div", { class: "team-note" }, g.note) : null;
+  const progress = h("div", { class: "team-progress" }, h("i", { style: `width:${Math.round((accepted / counted) * 100)}%` }));
+  const body = u.board ? teamBoard(g, u, rerender) : teamList(g, u, rerender);
+  const foot = h("div", { class: "team-foot" },
+    "Agents work in this project in parallel; edits and safe commands run without asking, anything else waits for you here.",
+    h("span", { class: "spacer" }),
+    lead ? h("button", { class: "link", onclick: () => openThread(lead.homeThreadId) }, "Watch the lead") : null);
+  return h("div", { class: "team" }, head, note, progress, body, open ? foot : null);
+}
+function approvalBox(t) {
+  return t.approvals.map((a) => {
+    const answer = (decision) => dispatch({ type: "runtime-request.respond", threadId: a.threadId, requestId: a.requestId, decision }).catch(fail);
+    return h("div", { class: "needs" },
+      h("b", {}, `${t.agentName} wants to use ${a.tool}`),
+      h("pre", { class: "mono" }, pretty(a.input)),
+      h("div", { class: "approval-actions" },
+        h("button", { class: "btn primary", onclick: () => answer("accept") }, "Allow"),
+        h("button", { class: "btn", onclick: () => answer("acceptForSession") }, "Allow for session"),
+        h("button", { class: "btn", onclick: () => answer("decline") }, "Deny")));
+  });
+}
+function taskDetail(t) {
+  return h("div", { class: "trow2-detail" },
+    t.error ? h("div", { class: "error-item" }, t.error) : null,
+    t.reviewNotes ? h("div", {}, h("div", { class: "lbl" }, "Sent back with"), h("div", { class: "sum" }, t.reviewNotes)) : null,
+    t.summary ? h("div", {}, h("div", { class: "lbl" }, "Submission"), h("div", { class: "sum" }, richText(t.summary))) : null,
+    t.filesTouched?.length ? h("div", {}, h("div", { class: "lbl" }, "Files touched"), h("div", { class: "files" }, t.filesTouched.join("  ·  "))) : null,
+    h("div", { class: "acts" },
+      t.runThreadId ? h("button", { class: "btn", onclick: () => openThread(t.runThreadId) }, `Watch ${t.agentName}`) : null,
+      ["parked", "paused"].includes(t.status) ? h("button", { class: "btn primary", onclick: () => dispatch({ type: "task.retry", taskId: t.id }).catch(fail) }, "Retry") : null));
+}
+function teamList(g, u, rerender) {
+  return h("div", { class: "trows" }, ...g.tasks.map((t) => {
+    const isOpen = u.open.has(t.id);
+    return h("div", { class: "trow2" },
+      h("button", { class: "trow2-main", onclick: () => { isOpen ? u.open.delete(t.id) : u.open.add(t.id); rerender(); } },
+        h("span", { class: "ref" }, t.ref),
+        h("span", { class: "who" }, badge(t.agentName), h("span", {}, t.agentName)),
+        h("span", { class: "what" }, t.title, t.round ? h("small", {}, "sent back once") : null, t.autoAccept ? h("small", { title: "Accepted on submission, without a review turn" }, "no review") : null),
+        taskPill(t),
+        h("span", { class: "el", "data-since": t.status === "working" ? t.startedAt : "" }, elapsed(t))),
+      ...approvalBox(t),
+      isOpen ? taskDetail(t) : null);
+  }), g.tasks.length ? null : h("div", { class: "files-note" }, "The lead is planning…"));
+}
+function teamBoard(g, u, rerender) {
+  const cols = [
+    ["To do", ["queued", "waiting", "paused", "parked"]],
+    ["Working", ["working", "changes"]],
+    ["In review", ["submitted"]],
+    ["Done", ["accepted", "cancelled"]],
+  ];
+  return h("div", { class: "board" }, ...cols.map(([title, sts]) => {
+    const list = g.tasks.filter((t) => sts.includes(t.status));
+    return h("div", { class: "bcol" }, h("h5", {}, title, h("span", {}, String(list.length))),
+      ...list.map((t) => h("div", { class: "bcard", onclick: () => { u.board = false; u.open.add(t.id); rerender(); } },
+        h("div", { class: "b-top" }, h("span", { class: "mono" }, t.ref), badge(t.agentName), h("span", {}, t.agentName)),
+        h("div", {}, t.title),
+        h("div", { class: "badge" }, taskPill(t)))));
+  }));
+}
+// Keep "working for 3m" timers fresh without re-rendering.
+setInterval(() => {
+  for (const el of document.querySelectorAll(".trow2 .el[data-since]")) {
+    const iso = el.getAttribute("data-since");
+    if (iso) el.textContent = since(iso);
+  }
+}, 15000);
+
+// ---------- composer with @ autocomplete ----------
+/** Auto-growing textarea with @agent autocomplete; Enter calls onSubmit, Shift+Enter is a newline. */
+function attachMentions(input, composer, onSubmit) {
+  let popup = null, matches = [], sel = 0;
+  const grow = () => { input.style.height = "auto"; input.style.height = Math.min(220, input.scrollHeight) + "px"; };
+  const mentionAtCursor = () => {
+    const upto = input.value.slice(0, input.selectionStart);
+    const m = upto.match(/(?:^|[^\w@])@([a-z0-9-]*)$/);
+    return m ? { query: m[1], start: input.selectionStart - m[1].length - 1 } : null;
+  };
+  const close = () => { popup?.remove(); popup = null; };
+  const pick = (agent) => {
+    const m = mentionAtCursor(); if (!m) return;
+    const before = input.value.slice(0, m.start), after = input.value.slice(input.selectionStart);
+    input.value = `${before}@${agent.name} ${after}`;
+    const pos = before.length + agent.name.length + 2;
+    input.setSelectionRange(pos, pos); close(); input.focus(); grow();
+  };
+  const update = () => {
+    const m = mentionAtCursor();
+    const self = state.thread?.agentId;
+    matches = m ? [...state.agents.values()].filter((a) => a.id !== self && a.name.startsWith(m.query)).sort((a, b) => a.name.localeCompare(b.name)) : [];
+    if (!matches.length) return close();
+    sel = Math.min(sel, matches.length - 1);
+    const el = h("div", { class: "popup" }, matches.map((a, i) =>
+      h("button", { class: "row" + (i === sel ? " sel" : ""), type: "button", onmousedown: (ev) => { ev.preventDefault(); pick(a); } },
+        badge(agentLabel(a)), h("span", { class: "row-main" }, h("div", { class: "row-title" }, a.displayName ? `${a.displayName}  @${a.name}` : "@" + a.name), h("div", { class: "row-sub" }, a.description || a.provider)))));
+    popup ? popup.replaceWith(el) : composer.append(el);
+    popup = el;
+  };
+  input.addEventListener("input", () => { grow(); sel = 0; update(); });
+  input.addEventListener("click", update);
+  input.addEventListener("blur", () => setTimeout(close, 100));
+  input.addEventListener("keydown", (ev) => {
+    if (popup) {
+      if (ev.key === "ArrowDown") { sel = (sel + 1) % matches.length; update(); ev.preventDefault(); return; }
+      if (ev.key === "ArrowUp") { sel = (sel - 1 + matches.length) % matches.length; update(); ev.preventDefault(); return; }
+      if (ev.key === "Enter" || ev.key === "Tab") { pick(matches[sel]); ev.preventDefault(); return; }
+      if (ev.key === "Escape") { close(); return; }
+    }
+    if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); onSubmit(); }
+  });
+}
+
+function setupComposer() {
+  const input = $("input"), send = $("send");
+  const submit = async () => {
+    const text = input.value.trim(); if (!text) return;
+    send.disabled = true;
+    try {
+      await dispatch({ type: "message.send", threadId: state.threadId, text });
+      input.value = ""; input.dispatchEvent(new Event("input"));
+    } catch (err) { fail(err); }
+    send.disabled = false; input.focus();
+  };
+  attachMentions(input, $("composer"), submit);
+  send.addEventListener("click", submit);
+}
+
+// ---------- dialogs ----------
+function fail(err) { toast(err?.message ?? String(err), { error: true }); }
+for (const btn of document.querySelectorAll("[data-close]")) btn.addEventListener("click", () => btn.closest("dialog").close());
+
+let editingAgent = null, editingTemplate = null, handleTouched = false;
+/** Same rule as the server: "Code Reviewer 🐛" → "code-reviewer". */
+function toHandle(text) {
+  let h = text.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/^@/, "").replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32).replace(/-+$/, "");
+  if (/^[0-9]/.test(h)) h = ("a-" + h).slice(0, 32);
+  return h.length >= 2 ? h : "agent";
+}
+const agentLabel = (a) => a.displayName || "@" + a.name;
+function openAgentDialog(agent = null, template = null) {
+  editingAgent = agent; editingTemplate = template; handleTouched = !!agent;
+  const f = $("agent-form");
+  f.reset();
+  $("agent-error").textContent = "";
+  $("agent-dialog-title").textContent = agent ? `Edit ${agentLabel(agent)}` : template ? `Add ${template.name}` : "New agent";
+  $("agent-submit").textContent = agent ? "Save" : "Create agent";
+  $("agent-delete").hidden = !agent;
+  f.elements.provider.disabled = !!agent;
+  if (template) {
+    f.elements.name.value = template.name;
+    f.elements.handle.value = template.handle;
+    f.elements.description.value = template.description;
+    f.elements.instructions.value = template.instructions;
+    f.elements.runtimeMode.value = template.runtimeMode;
+    f.elements.canLead.checked = template.id === "lead";
+    handleTouched = true;
+  }
+  if (agent) {
+    f.elements.name.value = agent.displayName || agent.name;
+    f.elements.handle.value = agent.name;
+    f.elements.description.value = agent.description;
+    f.elements.instructions.value = agent.instructions;
+    f.elements.provider.value = agent.provider;
+    f.elements.model.value = agent.model ?? "";
+    f.elements.runtimeMode.value = agent.runtimeMode;
+    f.elements.canLead.checked = !!agent.canLead;
+  }
+  $("agent-dialog").showModal();
+}
+$("agent-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target, v = (n) => f.elements[n].value.trim();
+  try {
+    if (editingAgent) {
+      await dispatch({ type: "agent.update", agentId: editingAgent.id, displayName: v("name"), handle: v("handle") || toHandle(v("name")), canLead: f.elements.canLead.checked, description: v("description"), instructions: v("instructions"), model: v("model"), runtimeMode: v("runtimeMode") });
+      toast(`Saved. ${v("name")} picks up the change on its next turn.`);
+    } else {
+      const res = await dispatch({ type: "agent.create", name: v("name"), handle: v("handle") || undefined, templateId: editingTemplate?.id, canLead: f.elements.canLead.checked, description: v("description"), instructions: v("instructions"), provider: v("provider"), model: v("model") || undefined, runtimeMode: v("runtimeMode") });
+      openThread(res.threadId);
+    }
+    $("agent-dialog").close();
+  } catch (err) { $("agent-error").textContent = err.message; }
+});
+// The @handle follows the name until you edit it yourself.
+$("agent-form").elements.name.addEventListener("input", (ev) => {
+  if (!handleTouched) $("agent-form").elements.handle.value = ev.target.value.trim() ? toHandle(ev.target.value) : "";
+});
+$("agent-form").elements.handle.addEventListener("input", () => { handleTouched = true; });
+$("agent-form").elements.handle.addEventListener("blur", (ev) => { if (ev.target.value.trim()) ev.target.value = toHandle(ev.target.value); });
+
+// ---------- gallery of ready-made agents ----------
+let templates = null, departments = [], galleryDept = "";
+async function openAgentGallery() {
+  $("agent-gallery").showModal();
+  if (!templates) {
+    $("gallery-list").replaceChildren(h("div", { class: "picker-empty" }, "Loading…"));
+    try { ({ templates, departments } = await call("listAgentTemplates")); } catch (err) { $("agent-gallery").close(); return fail(err); }
+  }
+  $("gallery-filter").value = "";
+  renderGallery();
+}
+function renderGallery() {
+  const have = new Set([...state.agents.values()].map((a) => a.templateId).filter(Boolean));
+  const q = $("gallery-filter").value.trim().toLowerCase();
+  const match = (t) => (!galleryDept || t.department === galleryDept) &&
+    (!q || [t.name, t.handle, t.description, t.department].some((x) => x.toLowerCase().includes(q)));
+  $("gallery-depts").replaceChildren(...["", ...departments].map((d) =>
+    h("button", { type: "button", class: d === galleryDept ? "on" : "", onclick: () => { galleryDept = d; renderGallery(); } },
+      d || `All (${templates.length})`)));
+  const card = (t) => {
+    const added = have.has(t.id);
+    const add = h("button", { type: "button", class: "btn primary" }, "Recruit");
+    add.addEventListener("click", async () => { add.disabled = true; await recruit([t]); });
+    return h("div", { class: "tpl" },
+      h("div", { class: "tpl-head" }, h("span", { class: "tpl-emoji" }, t.emoji),
+        h("div", {}, h("div", { class: "tpl-name" }, t.name), h("div", { class: "tpl-handle" }, "@" + t.handle))),
+      h("div", { class: "tpl-desc" }, t.description),
+      h("div", { class: "tpl-actions" },
+        added ? h("span", { class: "added" }, "✓ On the team") : add,
+        h("button", { type: "button", class: "link", onclick: () => { $("agent-gallery").close(); openAgentDialog(null, t); } }, added ? "Add another, customized…" : "Customize first…")));
+  };
+  const kids = [];
+  for (const dept of departments) {
+    const list = templates.filter((t) => t.department === dept && match(t));
+    if (!list.length) continue;
+    const missing = list.filter((t) => !have.has(t.id));
+    kids.push(h("div", { class: "dept-head" }, h("h4", {}, dept), h("span", { class: "count" }, `${list.length - missing.length}/${list.length} recruited`),
+      missing.length > 1 ? h("button", { type: "button", class: "link", onclick: (ev) => { ev.target.disabled = true; recruit(missing); } }, `Recruit all ${missing.length}`) : null));
+    kids.push(h("div", { class: "gallery" }, ...list.map(card)));
+  }
+  if (!kids.length) kids.push(h("div", { class: "picker-empty" }, "No agents match."));
+  $("gallery-list").replaceChildren(...kids);
+}
+async function recruit(list) {
+  let ok = 0;
+  for (const t of list) {
+    try {
+      await dispatch({ type: "agent.create", name: t.name, handle: t.handle, templateId: t.id, description: t.description, instructions: t.instructions, runtimeMode: t.runtimeMode });
+      ok++;
+    } catch (err) { fail(err); }
+  }
+  await new Promise((r) => setTimeout(r, 200));
+  renderGallery();
+  if (ok === 1) toast(`${list[0].name} joined. Mention it with @${[...state.agents.values()].find((a) => a.templateId === list[0].id)?.name ?? list[0].handle}.`);
+  else if (ok) toast(`${ok} agents joined the team.`);
+}
+$("gallery-filter").addEventListener("input", () => renderGallery());
+$("gallery-custom").addEventListener("click", () => { $("agent-gallery").close(); openAgentDialog(); });
+
+$("agent-delete").addEventListener("click", async () => {
+  if (!editingAgent || !confirm(`Delete ${agentLabel(editingAgent)}? Its conversation stays as an ordinary thread.`)) return;
+  try { await dispatch({ type: "agent.delete", agentId: editingAgent.id }); $("agent-dialog").close(); } catch (err) { $("agent-error").textContent = err.message; }
+});
+async function resetAgent(agent) {
+  if (!confirm(`Start ${agentLabel(agent)}'s conversation over? It forgets everything said so far; its instructions stay.`)) return;
+  try { await dispatch({ type: "agent.reset", agentId: agent.id }); toast(`${agentLabel(agent)} starts fresh on its next turn.`); } catch (err) { fail(err); }
+}
+
+async function showDiff(from, to) {
+  try {
+    const text = await call("getDiff", { threadId: state.threadId, fromOrdinal: from, toOrdinal: to });
+    $("diff-title").textContent = `Changes in turn ${to}`;
+    $("diff-body").replaceChildren(...(text || "(no changes)").split("\n").map((line) =>
+      h("div", { class: line.startsWith("+") && !line.startsWith("+++") ? "add" : line.startsWith("-") && !line.startsWith("---") ? "del" : line.startsWith("@@") ? "hunk" : "" }, line || " ")));
+    $("diff-dialog").showModal();
+  } catch (err) { fail(err); }
+}
+async function rollback(ordinal) {
+  if (!confirm(`Restore this thread's files to checkpoint ${ordinal}? A safety snapshot is taken first; the conversation is not rewound.`)) return;
+  try { const r = await dispatch({ type: "checkpoint.rollback", threadId: state.threadId, ordinal }); toast(`Files restored. Undo with: git checkout ${r.undoRef} -- .`); } catch (err) { fail(err); }
+}
+
+$("new-agent").addEventListener("click", () => openAgentGallery());
+$("palette-pick").value = document.documentElement.dataset.palette || "graphite";
+$("palette-pick").addEventListener("change", (ev) => {
+  const v = ev.target.value;
+  if (v !== "graphite") document.documentElement.dataset.palette = v; else delete document.documentElement.dataset.palette;
+  try { localStorage.setItem("bp-palette", v); } catch {}
+});
+$("stop-server").addEventListener("click", async () => {
+  const busy = [...state.threads.values()].filter((t) => t.status === "running").length;
+  if (!confirm(busy ? `Stop the server? ${busy} thread(s) are working and will be interrupted.` : "Stop the Bullpen server? Agents can't be reached until it starts again.")) return;
+  state.stopping = true;
+  try { await call("shutdown"); } catch {}
+});
+$("new-thread").addEventListener("click", () => newThread());
+
+// ---------- preferences (this browser only) ----------
+const prefs = {
+  get() { try { return JSON.parse(localStorage.getItem("bp-prefs") || "{}"); } catch { return {}; } },
+  set(patch) { try { localStorage.setItem("bp-prefs", JSON.stringify({ ...prefs.get(), ...patch })); } catch {} },
+};
+const folderName = (p) => (p || "").split("/").filter(Boolean).pop() || p;
+const tildePath = (p) => (p || "").replace(/^\/Users\/[^/]+/, "~");
+const folderIcon = () => h("span", { class: "folder-ic", "aria-hidden": "true" }, "▤");
+
+// ---------- folder picker ----------
+let pickerResolve = null;
+function pickFolder() {
+  return new Promise(async (resolve) => {
+    pickerResolve = resolve;
+    pickerData = null;
+    $("picker-search").value = "";
+    pickerShowProjects();
+    $("picker").showModal();
+    $("picker-search").focus();
+  });
+}
+function pickerDone(path) {
+  const r = pickerResolve; pickerResolve = null;
+  if ($("picker").open) $("picker").close();
+  r?.(path);
+}
+$("picker").addEventListener("close", () => pickerDone(null));
+
+let pickerData = null, pickerSel = 0, pickerRows = [], browsing = null, creating = false;
+async function pickerShowProjects() {
+  browsing = null; creating = false;
+  $("picker-crumbs").hidden = true; $("picker-use").hidden = true; $("picker-browse").hidden = false;
+  $("picker-new").hidden = false; $("picker-new").textContent = "New project…"; $("picker-search").hidden = false;
+  if (!pickerData) {
+    $("picker-list").replaceChildren(h("div", { class: "picker-empty" }, "Looking for projects…"));
+    for (let i = 0; i < 20 && !(ws && ws.readyState === 1); i++) await new Promise((r) => setTimeout(r, 250));
+    try { pickerData = await call("listProjects"); } catch (err) { return fail(err); }
+  }
+  pickerRender();
+}
+function pickerRender() {
+  const q = $("picker-search").value.trim().toLowerCase();
+  const list = $("picker-list");
+  pickerRows = [];
+  const groups = [];
+  if (browsing) {
+    const dirs = browsing.dirs.filter((d) => !q || d.name.toLowerCase().includes(q));
+    groups.push(["", dirs]);
+  } else if (q.startsWith("/") || q.startsWith("~")) {
+    list.replaceChildren(h("div", { class: "picker-empty" }, "Press Enter to open this folder."));
+    return;
+  } else {
+    const match = (p) => !q || p.name.toLowerCase().includes(q) || p.where.toLowerCase().includes(q);
+    groups.push(["Recent", pickerData.recent.filter(match)], ["Projects on this Mac", pickerData.found.filter(match)]);
+  }
+  const children = [];
+  for (const [title, items] of groups) {
+    if (!items.length) continue;
+    if (title) children.push(h("div", { class: "picker-group" }, title));
+    for (const p of items) {
+      const i = pickerRows.length;
+      pickerRows.push(p);
+      children.push(h("button", { type: "button", class: "row" + (i === pickerSel ? " sel" : ""), "data-i": i,
+        onclick: () => (browsing ? pickerBrowse(p.path) : pickerDone(p.path)),
+        ondblclick: () => browsing && pickerDone(p.path) },
+        folderIcon(), h("span", { class: "row-main" }, h("div", { class: "row-title" }, p.name), h("div", { class: "row-sub" }, p.where))));
+    }
+  }
+  if (!pickerRows.length) children.push(h("div", { class: "picker-empty" }, browsing ? "No subfolders." : "No matching projects. Try Browse folders…, or type a path."));
+  list.replaceChildren(...children);
+  list.querySelector(".sel")?.scrollIntoView({ block: "nearest" });
+}
+async function pickerBrowse(path) {
+  try { browsing = await call("listDirs", { path }); } catch (err) { return fail(err); }
+  pickerSel = 0;
+  $("picker-search").value = "";
+  $("picker-search").placeholder = "Filter folders";
+  creating = false;
+  $("picker-browse").hidden = true; $("picker-use").hidden = false; $("picker-search").hidden = false;
+  $("picker-new").hidden = false; $("picker-new").textContent = "New folder here…";
+  $("picker-crumbs").hidden = false;
+  $("picker-crumbs").replaceChildren(...[
+    browsing.parent ? h("button", { type: "button", class: "btn", onclick: () => pickerBrowse(browsing.parent) }, "↑ Up") : null,
+    h("span", { title: browsing.path }, browsing.display)].filter(Boolean));
+  pickerRender();
+}
+$("picker-browse").addEventListener("click", () => pickerBrowse("~"));
+
+/** Inline form: name a new folder, created in the folder being browsed or the usual projects folder. */
+function pickerNewProject() {
+  const parent = browsing ? { path: browsing.path, display: browsing.display } : pickerData?.defaultParent;
+  if (!parent) return;
+  creating = true;
+  $("picker-search").hidden = true; $("picker-crumbs").hidden = true;
+  $("picker-new").hidden = true; $("picker-browse").hidden = true; $("picker-use").hidden = true;
+  const name = h("input", { type: "text", placeholder: "my-new-project", autocomplete: "off", spellcheck: "false" });
+  const git = h("input", { type: "checkbox", checked: true });
+  const err = h("div", { class: "form-error" });
+  const create = h("button", { type: "button", class: "btn primary" }, "Create and use");
+  const submit = async () => {
+    if (!name.value.trim()) { name.focus(); return; }
+    create.disabled = true; err.textContent = "";
+    try {
+      const made = await call("createFolder", { parent: parent.path, name: name.value, git: git.checked });
+      pickerDone(made.path);
+    } catch (e) { err.textContent = e.message; create.disabled = false; name.focus(); }
+  };
+  name.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); submit(); } });
+  create.addEventListener("click", submit);
+  $("picker-list").replaceChildren(h("div", { class: "new-project" },
+    h("label", {}, "Folder name", name),
+    h("div", { class: "where" }, "Created in", h("code", { title: parent.path }, parent.display),
+      h("button", { type: "button", class: "link", onclick: () => pickerBrowse(parent.path) }, "Change")),
+    h("label", { class: "check" }, git, h("span", {}, "Start it as a git repository ", h("span", { class: "faint" }, "(needed for checkpoints, diffs and restore)"))),
+    err,
+    h("div", { class: "dialog-actions" },
+      h("button", { type: "button", class: "btn", onclick: () => (browsing ? pickerBrowse(browsing.path) : pickerShowProjects()) }, "Back"),
+      create)));
+  name.focus();
+}
+$("picker-new").addEventListener("click", pickerNewProject);
+$("picker-use").addEventListener("click", () => browsing && pickerDone(browsing.path));
+$("picker-search").addEventListener("input", () => { pickerSel = 0; pickerRender(); });
+$("picker-search").addEventListener("keydown", (ev) => {
+  const q = $("picker-search").value.trim();
+  if (ev.key === "ArrowDown") { pickerSel = Math.min(pickerSel + 1, pickerRows.length - 1); pickerRender(); ev.preventDefault(); }
+  else if (ev.key === "ArrowUp") { pickerSel = Math.max(pickerSel - 1, 0); pickerRender(); ev.preventDefault(); }
+  else if (ev.key === "Enter") {
+    ev.preventDefault();
+    if (!browsing && (q.startsWith("/") || q.startsWith("~"))) return pickerBrowse(q);
+    const row = pickerRows[pickerSel];
+    if (row) browsing ? pickerBrowse(row.path) : pickerDone(row.path);
+  }
+});
+
+// ---------- start screen: type what you want, pick a project, go ----------
+function newThread(projectPath) {
+  if (projectPath) prefs.set({ cwd: projectPath });
+  if (state.sub) call("unsubscribe", { subscription: state.sub }).catch(() => {});
+  state.sub = null; state.threadId = null; state.thread = null;
+  history.replaceState(null, "", location.pathname);
+  renderSidebar(); renderMain();
+}
+function renderStart() {
+  const p = prefs.get();
+  let cwd = p.cwd || "", provider = p.provider || "claude";
+  const input = h("textarea", { rows: 3, placeholder: "What do you want to work on? Type @ to bring in an agent." });
+  const projectBtn = h("button", { type: "button", class: "pill", title: "Project folder" });
+  const renderProject = () => projectBtn.replaceChildren(...["▤ ",
+    cwd ? h("span", { class: "name" }, folderName(cwd)) : h("span", { class: "faint" }, "Choose project"),
+    cwd ? h("span", { class: "faint" }, tildePath(cwd).replace(/\/[^/]*$/, "")) : null, " ▾"].filter(Boolean));
+  // Past Claude Code sessions in the chosen project, to pick one back up.
+  const resumeBox = h("div", { class: "resume" });
+  const loadResume = async () => {
+    resumeBox.replaceChildren();
+    if (!cwd) return;
+    const forPath = cwd;
+    let sessions = [];
+    try { sessions = await call("pastSessions", { path: forPath }); } catch { return; }
+    if (forPath !== cwd || !sessions.length) return;
+    resumeBox.replaceChildren(
+      h("h3", {}, `Pick up a Claude Code session in ${folderName(cwd)}`),
+      ...sessions.slice(0, 6).map((ss) => h("button", { type: "button", class: "row", title: ss.title, onclick: async () => {
+        try {
+          const { threadId } = await dispatch({ type: "thread.create", cwd: forPath, provider: "claude", runtimeMode: mode.value, resumeClaudeSession: ss });
+          openThread(threadId);
+        } catch (err) { fail(err); }
+      } },
+        h("span", { class: "row-main" }, h("div", { class: "row-title" }, ss.title), h("div", { class: "row-sub" }, `${ago(ss.updatedAt)} · ${ss.sizeKb > 1024 ? (ss.sizeKb / 1024).toFixed(1) + " MB" : ss.sizeKb + " KB"}`)),
+        h("span", { class: "go" }, "Resume →"))));
+  };
+  renderProject();
+  projectBtn.addEventListener("click", async () => {
+    const path = await pickFolder();
+    if (path) { cwd = path; prefs.set({ cwd }); renderProject(); loadResume(); }
+    input.focus();
+  });
+  const seg = h("span", { class: "seg" }, ["claude", "codex"].map((name) =>
+    h("button", { type: "button", class: name === provider ? "on" : "", onclick: (ev) => {
+      provider = name; prefs.set({ provider });
+      for (const b of seg.children) b.classList.toggle("on", b === ev.currentTarget);
+      model.value = prefs.get()["model_" + provider] || "";
+    } }, name === "claude" ? "Claude" : "Codex")));
+  const model = h("input", { type: "text", placeholder: "Model (provider default)", value: p["model_" + provider] || "" });
+  const mode = h("select", {},
+    h("option", { value: "approval-required" }, "Ask before acting"),
+    h("option", { value: "auto-accept-edits" }, "Auto-accept edits"),
+    h("option", { value: "full-access" }, "Full access"));
+  mode.value = p.mode || "approval-required";
+  const more = h("div", { class: "more" }, model, mode);
+  const moreBtn = h("button", { type: "button", class: "link", onclick: () => more.classList.toggle("open") }, "Options");
+  const go = h("button", { type: "button", class: "btn primary" }, "Start");
+  const composer = h("div", { class: "composer" }, input,
+    h("div", { class: "start-bar" }, projectBtn, seg, moreBtn, h("span", { class: "spacer" }), go), more);
+
+  const submit = async () => {
+    const text = input.value.trim();
+    if (!cwd) { projectBtn.click(); return; }
+    if (!text) { input.focus(); return; }
+    go.disabled = true;
+    prefs.set({ mode: mode.value, ["model_" + provider]: model.value.trim() });
+    try {
+      const { threadId } = await dispatch({ type: "thread.create", cwd, provider, model: model.value.trim() || undefined, runtimeMode: mode.value });
+      await dispatch({ type: "message.send", threadId, text });
+      openThread(threadId);
+    } catch (err) { fail(err); go.disabled = false; }
+  };
+  go.addEventListener("click", submit);
+  attachMentions(input, composer, submit);
+
+  const agents = [...state.agents.values()].sort((a, b) => a.name.localeCompare(b.name));
+  $("main").replaceChildren(h("div", { class: "start" },
+    h("img", { class: "start-logo", src: "/icon.svg?v=4", alt: "" }),
+    h("h2", {}, "What are we working on?"),
+    composer,
+    resumeBox,
+    agents.length
+      ? h("div", { class: "agent-chips" }, "Bring in:", agents.map((a) => h("button", { type: "button", class: "agent-chip", title: a.description,
+          onclick: () => { input.value = (input.value ? input.value.replace(/\s*$/, " ") : "") + "@" + a.name + " "; input.focus(); } }, badge(agentLabel(a)), agentLabel(a))),
+          h("button", { type: "button", class: "link", onclick: () => openAgentGallery() }, "+ Add agents"))
+      : h("div", { class: "agent-chips" }, h("button", { type: "button", class: "link", onclick: () => openAgentGallery() }, "Add agents"), "to keep specialists on call across threads.")));
+  input.focus();
+  loadResume();
+}
+
+// ---------- start ----------
+const routed = location.hash.match(/^#\/t\/([\w-]+)/);
+if (routed) state.threadId = routed[1];
+renderMain();
+connect();
+</script>
+</body>
+</html>
