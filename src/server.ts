@@ -265,6 +265,20 @@ wss.on("connection", (socket: WebSocket) => {
           staticUrl: entry ? `http://127.0.0.1:${PREVIEW_PORT}/t/${req.params.threadId}/${entry}` : undefined,
         };
       }
+      case "inbox": {
+        const latest = store.getSetting<unknown>("briefing.latest", null);
+        const since = new Date(Date.now() - 24 * 3600_000).toISOString();
+        return {
+          latest,
+          recent: orchestrator.briefing(since),
+          runs: store.jobRunsSince(since).slice(0, 50),
+          pausedUntil: store.getSetting<string | null>("jobs.pausedUntil", null),
+        };
+      }
+      case "teams":
+        return orchestrator.teams();
+      case "jobRuns":
+        return store.jobRunsFor(req.params.jobId, 30);
       case "createFolder":
         try {
           return await createFolder(req.params.parent, req.params.name, req.params.git);
@@ -353,6 +367,12 @@ wss.on("connection", (socket: WebSocket) => {
         ev.type === "agent.upserted" ||
         ev.type === "agent.deleted" ||
         ev.type === "project.upserted" ||
+        ev.type === "job.upserted" ||
+        ev.type === "job.deleted" ||
+        ev.type === "jobrun.upserted" ||
+        ev.type === "lesson.upserted" ||
+        ev.type === "lesson.deleted" ||
+        ev.type === "setting.upserted" ||
         ev.type === "project.removed" ||
         (ev.type === "turn-item.upserted" && (ev.item.kind === "approval_request" || ev.item.kind === "agent_reply"))
       ) {
@@ -368,6 +388,13 @@ wss.on("connection", (socket: WebSocket) => {
       threads: store.listThreads(),
       agents: store.listAgents(),
       projects: store.listProjects(),
+      jobs: store.listJobs(),
+      lessons: store.listLessons().filter((l) => l.status !== "rejected"),
+      settings: {
+        briefingTime: store.getSetting("briefing.time", "08:00"),
+        briefingEnabled: store.getSetting("briefing.enabled", true),
+        notifications: store.getSetting("notifications", true),
+      },
       pendingApprovals: store.pendingApprovals(),
     };
   }

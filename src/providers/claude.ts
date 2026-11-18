@@ -112,6 +112,7 @@ class ClaudeSession implements ProviderSession {
   readonly #baseMode: PermissionMode;
   /** The current turn is a team task: edits in the project and safe commands don't need approval. */
   #teamTurn = false;
+  readonly #ownFolder: string | undefined;
   #sessionId: string | undefined;
   /** Project folder added for the current turn (consults run in the caller's project). */
   #extraDir: string | undefined;
@@ -140,6 +141,7 @@ class ClaudeSession implements ProviderSession {
     this.#threadId = input.threadId;
     this.#cwd = input.cwd;
     this.#baseMode = permissionModeFor(input.runtimeMode);
+    this.#ownFolder = input.ownFolder;
     this.#sessionId = input.resumeNativeSessionId;
     this.#options = {
       cwd: input.cwd,
@@ -222,6 +224,12 @@ class ClaudeSession implements ProviderSession {
 
   /** Team mode: edits inside the project folder and read-only/test/build commands run without asking. */
   #teamAllows(tool: string, input: Record<string, unknown>): boolean {
+    // An agent's own folder (its MEMORY.md and scratch files) is always writable without asking.
+    if (this.#ownFolder && EDIT_TOOLS.has(tool)) {
+      const target = String(input.file_path ?? input.notebook_path ?? "");
+      const abs = target ? resolve(this.#ownFolder, target) : "";
+      if (abs && abs.startsWith(this.#ownFolder + sep)) return true;
+    }
     if (process.env.BULLPEN_DEBUG) console.error(`[team] ${tool} team=${this.#teamTurn} root=${this.#extraDir ?? this.#cwd} input=${JSON.stringify(input).slice(0, 120)}`);
     if (!this.#teamTurn) return false;
     if (tool === "Bash") return isSafeCommand(input.command);

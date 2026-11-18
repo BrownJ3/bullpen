@@ -47,6 +47,8 @@ export interface TeamHost {
   ): Promise<ConsultOutcome>;
   interrupt(homeThreadId: string, runId: string): Promise<void>;
   transcript(threadId: string): string;
+  /** Suggest a lasting lesson for an agent (the person approves it). */
+  proposeLesson(agentId: string | undefined, text: string, source: { kind: "review"; threadId?: string; note?: string }): void;
 }
 
 type ReplyItem = Extract<TurnItem, { kind: "agent_reply" }>;
@@ -114,7 +116,7 @@ export class Team {
   }
 
   /** "@lead build X" in a project thread. */
-  startGoal(thread: Thread, lead: Agent, request: string, reply: ReplyItem) {
+  startGoal(thread: Thread, lead: Agent, request: string, reply: ReplyItem): string {
     const goal: Goal = {
       id: randomUUID(),
       threadId: thread.id,
@@ -130,6 +132,7 @@ export class Team {
     this.#saveGoal(goal);
     const context = this.#host.transcript(thread.id);
     this.#wake(goal.id, { text: this.#planPrompt(goal, thread, context), reply });
+    return goal.id;
   }
 
   /** The person @mentioned the lead again while its goal is open. */
@@ -219,6 +222,11 @@ export class Team {
           task: { description: "Task ref, e.g. T2." },
           decision: { description: "'accept' or 'changes'." },
           notes: { description: "For 'changes': all the fixes needed, specific and complete. Optional for 'accept'.", optional: true },
+          lesson: {
+            description:
+              "Optional: a one-line general rule this agent should follow from now on, in every project (not a task-specific fix), e.g. 'Use the project's logger, never console.log'. The person approves it first.",
+            optional: true,
+          },
         },
         run: async (a) => {
           const goal = goalOf();
@@ -324,6 +332,9 @@ export class Team {
     if (!task) return { isError: true, text: `No task ${a.task}.` };
     if (task.status !== "submitted") return { isError: true, text: `${task.ref} is ${task.status}, not waiting for review.` };
     const decision = (a.decision ?? "").toLowerCase();
+    if (a.lesson?.trim()) {
+      this.#host.proposeLesson(task.agentId, a.lesson.trim(), { kind: "review", threadId: goal.threadId, note: `From the review of ${task.ref} "${task.title}"` });
+    }
     if (decision.startsWith("acc")) {
       this.#saveTask({ ...task, status: "accepted", endedAt: now() });
       this.#pump(goal.id);
@@ -751,6 +762,51 @@ export class Team {
   }
 
   /** Upsert the team card in the goal's thread, and the thread's sidebar status. */
+  /** The team card for one goal: what the lead's thread shows and what the Teams page lists. */
+  card(goal: Goal, tasks = this.#store.listTasks(goal.id)): GoalCard {
+    const ref = new Map(tasks.map((t) => [t.id, t.ref]));
+    const lead = this.#store.getAgent(goal.leadAgentId);
+    return {
+      goalId: goal.id,
+      title: goal.title,
+      status: goal.status,
+      leadAgentId: goal.leadAgentId,
+      leadName: lead?.displayName ?? (lead ? `@${lead.name}` : "Lead"),
+      note: goal.note,
+      resumeAt: goal.resumeAt,
+      startedAt: goal.createdAt,
+      endedAt: goal.endedAt,
+      tasks: tasks.map((t) => {
+        const owner = this.#store.getAgent(t.agentId);
+        const approvals =
+          t.status === "working" && t.runThreadId && t.runId
+            ? this.#store.pendingApprovalsFor(t.runThreadId, t.runId).flatMap((a) =>
+                a.kind === "approval_request" ? [{ requestId: a.requestId, threadId: a.threadId, tool: a.tool, input: a.input }] : [],
+              )
+            : [];
+        return {
+          id: t.id,
+          ref: t.ref,
+          agentId: t.agentId,
+          agentName: owner?.displayName ?? (owner ? `@${owner.name}` : "?"),
+          title: t.title,
+          status: t.status,
+          autoAccept: t.autoAccept,
+          dependsOn: t.dependsOn.map((d) => ref.get(d) ?? "?"),
+          summary: t.result ? clip(t.result, 1500) : undefined,
+          reviewNotes: t.reviewNotes,
+          filesTouched: t.filesTouched,
+          error: t.error,
+          round: t.round,
+          startedAt: t.startedAt,
+          endedAt: t.endedAt,
+          runThreadId: t.runThreadId ?? owner?.homeThreadId,
+          approvals,
+        };
+      }),
+    };
+  }
+
   #publish(goalId: string) {
     const goal = this.#store.getGoal(goalId);
     if (!goal) return;
@@ -758,47 +814,7 @@ export class Team {
     const thread = this.#store.getThread(goal.threadId);
     if (!thread) return;
     if (tasks.length || !["planning", "done"].includes(goal.status)) {
-      const ref = new Map(tasks.map((t) => [t.id, t.ref]));
-      const lead = this.#store.getAgent(goal.leadAgentId);
-      const card: GoalCard = {
-        goalId: goal.id,
-        title: goal.title,
-        status: goal.status,
-        leadAgentId: goal.leadAgentId,
-        leadName: lead?.displayName ?? (lead ? `@${lead.name}` : "Lead"),
-        note: goal.note,
-        resumeAt: goal.resumeAt,
-        startedAt: goal.createdAt,
-        endedAt: goal.endedAt,
-        tasks: tasks.map((t) => {
-          const owner = this.#store.getAgent(t.agentId);
-          const approvals =
-            t.status === "working" && t.runThreadId && t.runId
-              ? this.#store.pendingApprovalsFor(t.runThreadId, t.runId).flatMap((a) =>
-                  a.kind === "approval_request" ? [{ requestId: a.requestId, threadId: a.threadId, tool: a.tool, input: a.input }] : [],
-                )
-              : [];
-          return {
-            id: t.id,
-            ref: t.ref,
-            agentId: t.agentId,
-            agentName: owner?.displayName ?? (owner ? `@${owner.name}` : "?"),
-            title: t.title,
-            status: t.status,
-            autoAccept: t.autoAccept,
-            dependsOn: t.dependsOn.map((d) => ref.get(d) ?? "?"),
-            summary: t.result ? clip(t.result, 1500) : undefined,
-            reviewNotes: t.reviewNotes,
-            filesTouched: t.filesTouched,
-            error: t.error,
-            round: t.round,
-            startedAt: t.startedAt,
-            endedAt: t.endedAt,
-            runThreadId: t.runThreadId ?? owner?.homeThreadId,
-            approvals,
-          };
-        }),
-      };
+      const card = this.card(goal, tasks);
       this.#store.commit(goal.threadId, [
         {
           type: "turn-item.upserted",

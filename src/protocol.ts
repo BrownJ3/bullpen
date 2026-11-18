@@ -4,7 +4,7 @@
 // server -> client   { id, result } | { id, error }            (responses)
 //                    { subscription, items: StoredEvent[] }      (pushes for subscribeThread)
 
-import type { Agent, Command, Project, Run, StoredEvent, Thread, TurnItem } from "./types.ts";
+import type { Agent, Command, Job, Lesson, Project, Run, StoredEvent, Thread, TurnItem } from "./types.ts";
 
 export type Request =
   | { id: number; method: "dispatch"; params: Command }
@@ -35,6 +35,10 @@ export type Request =
   | { id: number; method: "files.reveal"; params: { threadId: string; path: string; how: "reveal" | "open" } }
   /** For the Browser panel: running servers, dev scripts, and a static index.html if there is one. */
   | { id: number; method: "preview.info"; params: { threadId: string } }
+  /** The Inbox: briefing since the last one (or the last day), plus everything waiting on the person. */
+  | { id: number; method: "inbox"; params?: undefined }
+  | { id: number; method: "teams"; params?: undefined }
+  | { id: number; method: "jobRuns"; params: { jobId: string } }
   | { id: number; method: "createFolder"; params: { parent: string; name: string; git: boolean } }
   /** Threads, agents and pending approvals, then live thread/agent/approval events across all threads. */
   | { id: number; method: "subscribeSidebar"; params?: undefined }
@@ -55,6 +59,9 @@ export interface SidebarSnapshot {
   threads: Thread[];
   agents: Agent[];
   projects: Project[];
+  jobs: Job[];
+  lessons: Lesson[];
+  settings: { briefingTime: string; briefingEnabled: boolean; notifications: boolean };
   pendingApprovals: TurnItem[];
 }
 

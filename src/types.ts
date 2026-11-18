@@ -25,6 +25,8 @@ export interface Thread {
   createdAt: string;
   /** Last time anything happened (a message, a finished run); sidebar ordering. */
   updatedAt?: string;
+  /** Set on a standing job's thread (its runs and results live there). */
+  jobId?: string;
   /** A team is working on a goal started in this thread (for sidebar status). */
   team?: { active: number; needsYou: number };
   /** Set when this thread continues a session started outside Bullpen (e.g. in Claude Code). */
@@ -121,6 +123,65 @@ export interface Agent {
   homeThreadId: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// ---------- Standing jobs (agents that work on a schedule or on events) ----------
+
+export type JobTrigger =
+  | { kind: "daily"; time: string; days?: number[] } // "HH:MM", days 0=Sun..6=Sat (all when omitted)
+  | { kind: "interval"; hours: number }
+  | { kind: "commit"; branch: string } // new commits on a branch
+  | { kind: "manual" };
+
+export interface Job {
+  id: string;
+  name: string;
+  agentId: string;
+  project: string;
+  /** What to do each time, in the person's words. */
+  instructions: string;
+  trigger: JobTrigger;
+  /** "team": the agent leads a team goal (needs canLead); "solo": it does the work itself. */
+  mode: "solo" | "team";
+  enabled: boolean;
+  threadId: string;
+  nextRunAt?: string;
+  lastRunAt?: string;
+  lastStatus?: JobRunStatus;
+  /** For commit triggers: the last commit already handled. */
+  lastCommit?: string;
+  runCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type JobRunStatus = "running" | "done" | "needs-you" | "failed" | "paused";
+
+export interface JobRun {
+  id: string;
+  jobId: string;
+  /** Why it ran: "schedule", "commit abc123", "manual". */
+  reason: string;
+  status: JobRunStatus;
+  summary?: string;
+  /** Lines the agent marked "NEEDS YOU:". */
+  needsYou: string[];
+  goalId?: string;
+  startedAt: string;
+  endedAt?: string;
+}
+
+// ---------- Lessons (agents learn from your corrections) ----------
+
+export interface Lesson {
+  id: string;
+  /** The agent it applies to; undefined = every agent and thread. */
+  agentId?: string;
+  text: string;
+  status: "proposed" | "approved" | "rejected";
+  source: { kind: "agent" | "review" | "manual"; threadId?: string; note?: string };
+  createdAt: string;
+  decidedAt?: string;
 }
 
 // ---------- Teams (modeled on AgentOffice: delegate → submit → one-round review → report) ----------
@@ -240,6 +301,12 @@ export type DomainEvent =
   | { type: "agent.deleted"; agentId: string }
   | { type: "project.upserted"; project: Project }
   | { type: "goal.upserted"; goal: Goal }
+  | { type: "job.upserted"; job: Job }
+  | { type: "job.deleted"; jobId: string }
+  | { type: "jobrun.upserted"; run: JobRun }
+  | { type: "lesson.upserted"; lesson: Lesson }
+  | { type: "lesson.deleted"; lessonId: string }
+  | { type: "setting.upserted"; key: string; value: unknown }
   | { type: "task.upserted"; task: TeamTask }
   | { type: "project.removed"; projectId: string };
 
@@ -273,6 +340,32 @@ export type Command =
   | { type: "goal.cancel"; goalId: string }
   /** Try a parked or paused task again. */
   | { type: "task.retry"; taskId: string }
+  | {
+      type: "job.create";
+      name: string;
+      agentId: string;
+      project: string;
+      instructions: string;
+      trigger: JobTrigger;
+      mode?: "solo" | "team";
+      enabled?: boolean;
+    }
+  | {
+      type: "job.update";
+      jobId: string;
+      name?: string;
+      agentId?: string;
+      instructions?: string;
+      trigger?: JobTrigger;
+      mode?: "solo" | "team";
+      enabled?: boolean;
+    }
+  | { type: "job.delete"; jobId: string }
+  | { type: "job.run"; jobId: string }
+  | { type: "lesson.add"; agentId?: string; text: string }
+  | { type: "lesson.decide"; lessonId: string; decision: "approve" | "reject"; text?: string }
+  | { type: "lesson.delete"; lessonId: string }
+  | { type: "settings.update"; briefingTime?: string; briefingEnabled?: boolean; notifications?: boolean }
   | { type: "message.send"; threadId: string; text: string }
   | { type: "run.interrupt"; threadId: string }
   | { type: "runtime-request.respond"; threadId: string; requestId: string; decision: Decision }
@@ -337,6 +430,8 @@ export interface OpenSessionInput {
   runtimeMode: RuntimeMode;
   model?: string;
   resumeNativeSessionId?: string;
+  /** A named agent's own folder (memory, scratch): it may always edit files there without asking. */
+  ownFolder?: string;
   /** Extra system/developer instructions (a named agent's prompt). */
   instructions?: string;
   tools?: HarnessTool[];

@@ -3,7 +3,7 @@
 // subscribers. Events are full-row upserts, so the projector is a trivial switch.
 
 import { DatabaseSync } from "node:sqlite";
-import type { Agent, Checkpoint, Goal, Project, TeamTask, DomainEvent, Run, StoredEvent, Thread, TurnItem } from "./types.ts";
+import type { Agent, Checkpoint, Goal, Job, JobRun, Lesson, Project, TeamTask, DomainEvent, Run, StoredEvent, Thread, TurnItem } from "./types.ts";
 
 type Listener = (event: StoredEvent) => void;
 
@@ -44,6 +44,13 @@ export class Store {
       CREATE TABLE IF NOT EXISTS projects (
         id TEXT PRIMARY KEY, path TEXT NOT NULL UNIQUE, payload_json TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, payload_json TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS job_runs (
+        id TEXT PRIMARY KEY, job_id TEXT NOT NULL, started_at TEXT NOT NULL, payload_json TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS job_runs_job ON job_runs(job_id, started_at);
+      CREATE TABLE IF NOT EXISTS lessons (id TEXT PRIMARY KEY, payload_json TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS goals (
         id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, status TEXT NOT NULL, payload_json TEXT NOT NULL
       );
@@ -154,6 +161,32 @@ export class Store {
           )
           .run(event.task.id, event.task.goalId, JSON.stringify(event.task));
         return;
+      case "job.upserted":
+        this.#db.prepare(`INSERT INTO jobs (id, payload_json) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload_json = excluded.payload_json`)
+          .run(event.job.id, JSON.stringify(event.job));
+        return;
+      case "job.deleted":
+        this.#db.prepare("DELETE FROM jobs WHERE id = ?").run(event.jobId);
+        return;
+      case "jobrun.upserted":
+        this.#db
+          .prepare(
+            `INSERT INTO job_runs (id, job_id, started_at, payload_json) VALUES (?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET payload_json = excluded.payload_json`,
+          )
+          .run(event.run.id, event.run.jobId, event.run.startedAt, JSON.stringify(event.run));
+        return;
+      case "lesson.upserted":
+        this.#db.prepare(`INSERT INTO lessons (id, payload_json) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload_json = excluded.payload_json`)
+          .run(event.lesson.id, JSON.stringify(event.lesson));
+        return;
+      case "lesson.deleted":
+        this.#db.prepare("DELETE FROM lessons WHERE id = ?").run(event.lessonId);
+        return;
+      case "setting.upserted":
+        this.#db.prepare(`INSERT INTO settings (key, value_json) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json`)
+          .run(event.key, JSON.stringify(event.value));
+        return;
       case "project.removed":
         this.#db.prepare("DELETE FROM projects WHERE id = ?").run(event.projectId);
         return;
@@ -176,6 +209,44 @@ export class Store {
     return this.#rows("SELECT payload_json FROM threads ORDER BY created_at DESC");
   }
 
+  listJobs(): Job[] {
+    return this.#rows<Job>("SELECT payload_json FROM jobs").sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  getJob(id: string): Job | undefined {
+    return this.#rows<Job>("SELECT payload_json FROM jobs WHERE id = ?", id)[0];
+  }
+
+  getJobRun(id: string): JobRun | undefined {
+    return this.#rows<JobRun>("SELECT payload_json FROM job_runs WHERE id = ?", id)[0];
+  }
+
+  /** Runs started since `iso` (all jobs), newest first. */
+  jobRunsSince(iso: string): JobRun[] {
+    return this.#rows("SELECT payload_json FROM job_runs WHERE started_at >= ? ORDER BY started_at DESC", iso);
+  }
+
+  jobRunsFor(jobId: string, limit = 20): JobRun[] {
+    return this.#rows("SELECT payload_json FROM job_runs WHERE job_id = ? ORDER BY started_at DESC LIMIT ?", jobId, limit);
+  }
+
+  runningJobRuns(): JobRun[] {
+    return this.#rows("SELECT payload_json FROM job_runs WHERE json_extract(payload_json, '$.status') = 'running'");
+  }
+
+  listLessons(): Lesson[] {
+    return this.#rows<Lesson>("SELECT payload_json FROM lessons").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  getLesson(id: string): Lesson | undefined {
+    return this.#rows<Lesson>("SELECT payload_json FROM lessons WHERE id = ?", id)[0];
+  }
+
+  getSetting<T>(key: string, fallback: T): T {
+    const row = this.#db.prepare("SELECT value_json FROM settings WHERE key = ?").get(key) as { value_json: string } | undefined;
+    return row ? (JSON.parse(row.value_json) as T) : fallback;
+  }
+
   getGoal(id: string): Goal | undefined {
     return this.#rows<Goal>("SELECT payload_json FROM goals WHERE id = ?", id)[0];
   }
@@ -183,6 +254,11 @@ export class Store {
   /** Goals not finished yet (planning, working, paused, stuck). */
   openGoals(): Goal[] {
     return this.#rows("SELECT payload_json FROM goals WHERE status IN ('planning','working','paused','stuck')");
+  }
+
+  /** Every goal, newest first (the Teams page filters these). */
+  allGoals(): Goal[] {
+    return this.#rows<Goal>("SELECT payload_json FROM goals").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
   goalsForThread(threadId: string): Goal[] {

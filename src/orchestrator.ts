@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HOME } from "./home.ts";
+import { Jobs } from "./jobs.ts";
 import { Team, isLimitError, type ConsultOutcome } from "./team.ts";
 import * as checkpoints from "./checkpoints.ts";
 import { expandHome } from "./projects.ts";
@@ -18,6 +19,7 @@ import type {
   Agent,
   Checkpoint,
   Command,
+  Lesson,
   Project,
   DomainEvent,
   HarnessTool,
@@ -50,6 +52,10 @@ const MENTION = /(?:^|[^\w@])@([a-z][a-z0-9-]{1,31})(?![\w-])/g;
 const MAX_CONSULT_DEPTH = 3;
 /** How much of the calling thread an @mentioned agent gets to see. */
 const MENTION_CONTEXT_CHARS = 8000;
+/** Messages that sound like the person correcting how an agent works (a lesson may be worth keeping). */
+const CORRECTION = /\b(no[,.!]|nope|don'?t|do not|never|always|instead|stop|wrong|not like that|we use|we don'?t|i prefer|prefer|please use|should (be|use)|from now on|remember)\b/i;
+const LESSON_HINT =
+  "(If this message corrects how you work in a way worth remembering beyond this task, call propose_lesson with a one-line rule; the person approves it.)";
 
 type ConsultResult = ConsultOutcome;
 
@@ -67,6 +73,7 @@ export class Orchestrator {
   readonly #staleSessions = new Set<string>();
 
   readonly #team: Team;
+  readonly #jobs: Jobs;
   /** Hooks for a run that a team task is waiting on (to time it out and map its approvals). */
   readonly #runHooks = new Map<string, (homeThreadId: string, runId: string) => void>();
 
@@ -81,8 +88,20 @@ export class Orchestrator {
         if (thread?.activeRunId === runId) await this.#sessions.get(homeThreadId)?.interruptTurn();
       },
       transcript: (threadId) => this.#transcript(threadId),
+      proposeLesson: (agentId, text, source) => this.#proposeLesson(agentId, text, source),
     });
     this.#team.start();
+    this.#jobs = new Jobs(store, {
+      consult: (agent, prompt, chain, project, opts) => this.#consult(agent, prompt, chain, project, opts),
+      startTeamGoal: (thread, lead, request, reply) => this.#team.startGoal(thread, lead, request, reply),
+      createJobThread: (project, title, jobId) => {
+        const { threadId } = this.#createThread({ type: "thread.create", cwd: project, title });
+        const thread = this.#requireThread(threadId);
+        this.#store.commit(threadId, [{ type: "thread.upserted", thread: { ...thread, jobId } }]);
+        return this.#requireThread(threadId);
+      },
+    });
+    this.#jobs.start();
   }
 
   async dispatch(command: Command): Promise<unknown> {
@@ -138,6 +157,70 @@ export class Orchestrator {
         if (command.pinned !== undefined) next.pinnedAt = command.pinned ? new Date().toISOString() : undefined;
         if (command.archived !== undefined) next.archivedAt = command.archived ? new Date().toISOString() : undefined;
         this.#store.commit(`project:${project.id}`, [{ type: "project.upserted", project: next }]);
+        return { ok: true };
+      }
+      case "job.create":
+        try {
+          return { jobId: this.#jobs.create(command).id };
+        } catch (err) {
+          throw new CommandError((err as Error).message);
+        }
+      case "job.update":
+        try {
+          this.#jobs.update(command);
+          return { ok: true };
+        } catch (err) {
+          throw new CommandError((err as Error).message);
+        }
+      case "job.delete":
+        this.#jobs.delete(command.jobId);
+        return { ok: true };
+      case "job.run":
+        try {
+          this.#jobs.runNow(command.jobId);
+          return { ok: true };
+        } catch (err) {
+          throw new CommandError((err as Error).message);
+        }
+      case "lesson.add": {
+        const text = command.text?.trim();
+        if (!text) throw new CommandError("Write the lesson.");
+        const lesson: Lesson = {
+          id: randomUUID(),
+          agentId: command.agentId || undefined,
+          text: text.slice(0, 400),
+          status: "approved",
+          source: { kind: "manual" },
+          createdAt: new Date().toISOString(),
+          decidedAt: new Date().toISOString(),
+        };
+        this.#store.commit(`lesson:${lesson.id}`, [{ type: "lesson.upserted", lesson }]);
+        return { lessonId: lesson.id };
+      }
+      case "lesson.decide": {
+        const lesson = this.#store.getLesson(command.lessonId);
+        if (!lesson) throw new CommandError("Unknown lesson.");
+        const next: Lesson = {
+          ...lesson,
+          text: command.text?.trim() ? command.text.trim().slice(0, 400) : lesson.text,
+          status: command.decision === "approve" ? "approved" : "rejected",
+          decidedAt: new Date().toISOString(),
+        };
+        this.#store.commit(`lesson:${lesson.id}`, [{ type: "lesson.upserted", lesson: next }]);
+        return { ok: true };
+      }
+      case "lesson.delete":
+        this.#store.commit(`lesson:${command.lessonId}`, [{ type: "lesson.deleted", lessonId: command.lessonId }]);
+        return { ok: true };
+      case "settings.update": {
+        const events: DomainEvent[] = [];
+        if (command.briefingTime !== undefined) {
+          if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(command.briefingTime)) throw new CommandError("Use a time like 08:00.");
+          events.push({ type: "setting.upserted", key: "briefing.time", value: command.briefingTime });
+        }
+        if (command.briefingEnabled !== undefined) events.push({ type: "setting.upserted", key: "briefing.enabled", value: command.briefingEnabled });
+        if (command.notifications !== undefined) events.push({ type: "setting.upserted", key: "notifications", value: command.notifications });
+        this.#store.commit("settings", events);
         return { ok: true };
       }
       case "goal.cancel":
@@ -199,7 +282,20 @@ export class Orchestrator {
     return checkpoints.diff(thread.cwd, from.ref, to.ref);
   }
 
+  /** Morning briefing contents (latest, or live for the last day). */
+  /** The Teams page: every open goal, plus the ones that ended in the last week. */
+  teams() {
+    const week = new Date(Date.now() - 7 * 24 * 3600_000).toISOString();
+    const goals = this.#store.allGoals().filter((g) => ["planning", "working", "paused", "stuck"].includes(g.status) || (g.endedAt ?? g.updatedAt) >= week);
+    return goals.slice(0, 40).map((g) => ({ ...this.#team.card(g), threadId: g.threadId, project: g.project }));
+  }
+
+  briefing(since?: string) {
+    return this.#jobs.briefing(since);
+  }
+
   shutdown() {
+    this.#jobs.stop();
     this.#team.stop();
     for (const s of this.#sessions.values()) s.close();
     this.#sessions.clear();
@@ -338,6 +434,27 @@ export class Orchestrator {
     return { ok: true };
   }
 
+  /** Approved lessons for an agent (and the ones for everyone). */
+  #lessonsFor(agentId: string | undefined): string[] {
+    return this.#store
+      .listLessons()
+      .filter((l) => l.status === "approved" && (!l.agentId || l.agentId === agentId))
+      .slice(-40)
+      .map((l) => l.text);
+  }
+
+  #proposeLesson(agentId: string | undefined, text: string, source: Lesson["source"]): Lesson | undefined {
+    const clean = text.trim().replace(/\s+/g, " ").slice(0, 400);
+    if (!clean) return undefined;
+    const dup = this.#store
+      .listLessons()
+      .find((l) => l.agentId === agentId && l.status !== "rejected" && l.text.toLowerCase() === clean.toLowerCase());
+    if (dup) return undefined;
+    const lesson: Lesson = { id: randomUUID(), agentId, text: clean, status: "proposed", source, createdAt: new Date().toISOString() };
+    this.#store.commit(`lesson:${lesson.id}`, [{ type: "lesson.upserted", lesson }]);
+    return lesson;
+  }
+
   /** `base`, or base-2, base-3… if another agent already has it. */
   #uniqueHandle(base: string, selfId?: string): string {
     const taken = (h: string) => {
@@ -369,7 +486,7 @@ export class Orchestrator {
     // are suggestions for the lead to assign, not separate requests, so only the lead receives it.
     if (!thread.agentId && mentioned.some((a) => a.canLead)) mentioned = mentioned.filter((a) => a.canLead).slice(0, 1);
     if (mentioned.length) return this.#mention(thread, text, mentioned);
-    return this.#sendMessage(threadId, text, thread.agentId ? [thread.agentId] : []);
+    return this.#sendMessage(threadId, text, thread.agentId ? [thread.agentId] : [], undefined, undefined, CORRECTION.test(text));
   }
 
   /**
@@ -419,7 +536,7 @@ export class Orchestrator {
           (project ? ` Its project folder is ${project}; you have access to it for this request.` : ""),
         context ? `Recent conversation in that thread:\n\n${context}` : "That thread has no earlier conversation.",
         `The message that mentions you:\n\n${text}`,
-        "Reply to it. Your final message is posted back into that thread.",
+        "Reply to it. Your final message is posted back into that thread." + (CORRECTION.test(text) ? `\n${LESSON_HINT}` : ""),
       ].join("\n\n---\n\n");
       void this.#consult(agent, prompt, chain, project).then(({ ok, text: answer }) => {
         this.#store.commit(thread.id, [
@@ -521,6 +638,20 @@ export class Orchestrator {
     return [
       ...leadTools,
       {
+        name: "propose_lesson",
+        description:
+          "Suggest a lasting lesson: a one-line rule about how you should work from now on, learned from the person correcting you " +
+          "(e.g. 'Rock RMS reports use views, never raw tables'). Only for durable preferences or facts, not task details. The person approves it before it applies.",
+        params: { lesson: { description: "The rule, one line, written as an instruction." } },
+        run: async ({ lesson }) => {
+          const self = this.#store.getThread(threadId)?.agentId;
+          const created = this.#proposeLesson(self, lesson ?? "", { kind: "agent", threadId });
+          return created
+            ? { text: "Proposed. The person will approve or edit it; mention briefly that you suggested it." }
+            : { isError: true, text: "That lesson is empty or already exists." };
+        },
+      },
+      {
         name: "list_agents",
         description: "List the named long-running agents you can consult with ask_agent.",
         params: {},
@@ -597,7 +728,7 @@ export class Orchestrator {
 
   // ---------- turns ----------
 
-  async #sendMessage(threadId: string, text: string, chain: string[], project?: string, team?: boolean) {
+  async #sendMessage(threadId: string, text: string, chain: string[], project?: string, team?: boolean, lessonHint?: boolean) {
     const thread = this.#requireThread(threadId);
     if (thread.status === "running") throw new CommandError("A run is already active; interrupt it first.");
     if (!text.trim()) throw new CommandError("Empty message.");
@@ -636,6 +767,11 @@ export class Orchestrator {
       await this.#captureCheckpoint(threadId, run.id, ordinal - 1, false);
     }
 
+    // Approved lessons ride along with every turn (they apply in every project), plus a nudge to propose one
+    // when the person sounds like they're correcting how the agent works.
+    const lessons = this.#lessonsFor(thread.agentId);
+    if (lessons.length) agentText = `Lessons from the person (always follow these):\n${lessons.map((l) => `- ${l}`).join("\n")}\n\n---\n\n${agentText}`;
+    if (lessonHint) agentText = `${agentText}\n\n${LESSON_HINT}`;
     this.#runChains.set(threadId, chain);
     if (project) this.#runProjects.set(threadId, project);
     else this.#runProjects.delete(threadId);
@@ -657,6 +793,7 @@ export class Orchestrator {
       model: thread.model,
       resumeNativeSessionId: thread.nativeSessionId,
       instructions: agent ? this.#agentInstructions(agent) : undefined,
+      ownFolder: agent ? agent.cwd : undefined,
       tools: this.#harnessTools(threadId),
       emit: (event) => this.#ingest(threadId, event),
     });

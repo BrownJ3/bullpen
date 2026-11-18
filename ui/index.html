@@ -125,6 +125,7 @@
 .palette-pick:hover { color: var(--text); }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--sans); }
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -355,6 +356,58 @@ code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
 .team-foot { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-top: 1px solid var(--line); color: var(--faint); font-size: 12px; }
 @media (max-width: 760px) { .board { grid-template-columns: 1fr 1fr; } .trow2 .who { width: 110px; } }
 
+/* ---------- inbox, jobs, lessons ---------- */
+.inbox-row { display: flex; align-items: center; gap: 10px; width: calc(100% - 16px); margin: 4px 8px 0; padding: 7px 8px; border: 0; border-radius: 8px; background: transparent; text-align: left; font-weight: 600; font-size: 13px; color: var(--text); }
+.inbox-row:hover { background: color-mix(in srgb, var(--line) 70%, transparent); }
+.inbox-row.active { background: var(--panel); box-shadow: 0 0 0 1px var(--line); }
+.inbox-row .ic { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 18%, transparent); font-size: 14px; }
+.job-ic { flex: none; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--code); font-size: 14px; }
+.page { flex: 1; overflow-y: auto; padding: 28px 24px 40px; }
+.page .column { gap: 18px; }
+.page h2 { margin: 0; font-size: 22px; letter-spacing: -0.01em; }
+.page .lede { color: var(--muted); margin: 4px 0 0; }
+.teams-stats { display: flex; gap: 10px; flex-wrap: wrap; }
+.teams-stats .stat { flex: 1; min-width: 120px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 10px 14px; }
+.teams-stats .stat b { display: block; font-size: 22px; letter-spacing: -0.01em; }
+.teams-stats .stat span { color: var(--muted); font-size: 12.5px; }
+.teams-stats .stat.attn b { color: var(--accent); }
+.team-meta { display: flex; align-items: center; gap: 8px; margin: 0 2px 6px; color: var(--muted); font-size: 12.5px; }
+.team-meta .spacer { flex: 1; }
+.team-meta b { color: var(--text); font-weight: 600; }
+.team-slot + .team-slot { margin-top: 14px; }
+.teams-empty { padding: 18px 16px; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+.teams-empty ol { margin: 8px 0 12px; padding-left: 20px; }
+.box { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.box-h { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); font-weight: 650; font-size: 13px; }
+.box-h .count { margin-left: 2px; }
+.box-b { padding: 6px 0; }
+.box-empty { color: var(--faint); font-size: 13px; padding: 10px 14px; }
+.irow { display: flex; align-items: flex-start; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.irow:last-child { border-bottom: 0; }
+.irow .main { flex: 1; min-width: 0; }
+.irow .sub { color: var(--faint); font-size: 12px; margin-top: 2px; }
+.lbl { color: var(--faint); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; }
+.irow .acts { display: flex; gap: 6px; flex: none; align-items: center; }
+.irow textarea { width: 100%; border: 1px solid var(--line-strong); background: var(--bg); color: var(--text); border-radius: 8px; padding: 6px 8px; font: inherit; resize: vertical; min-height: 38px; }
+.briefing-head { font-size: 15px; font-weight: 600; padding: 12px 14px 4px; }
+.briefing-lines { margin: 0; padding: 4px 14px 12px 32px; color: var(--muted); font-size: 13px; }
+.briefing-lines li { margin: 3px 0; }
+.settings-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 10px 14px; font-size: 13px; color: var(--muted); }
+.settings-row input[type=time] { border: 1px solid var(--line-strong); background: var(--bg); color: var(--text); border-radius: 7px; padding: 3px 6px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+.dot.running { background: var(--accent); animation: pulse 1.2s infinite; }
+.dot.done { background: var(--ok); }
+.dot.needs-you, .dot.paused { background: var(--warn); }
+.dot.failed { background: var(--danger); }
+#job-dialog .presets { display: flex; gap: 6px; flex-wrap: wrap; }
+#job-dialog .presets button { border: 1px solid var(--line); background: var(--bg); color: var(--muted); border-radius: 999px; padding: 3px 10px; font-size: 12.5px; }
+#job-dialog .presets button:hover { border-color: var(--accent); color: var(--text); }
+.when-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.when-row select, .when-row input { border: 1px solid var(--line-strong); background: var(--bg); color: var(--text); border-radius: 8px; padding: 6px 8px; font-size: 14px; }
+.days { display: flex; gap: 4px; }
+.days label { flex-direction: row; gap: 3px; font-weight: 400; color: var(--text); font-size: 12.5px; }
+#lessons-dialog .irow { padding: 8px 2px; }
+
 /* ---------- main ---------- */
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .topbar { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); min-height: 58px; }
@@ -503,8 +556,12 @@ dialog.wide { width: min(900px, calc(100vw - 32px)); }
   <aside class="sidebar">
     <div class="brand"><img src="/icon.svg?v=4" alt="">Bullpen</div>
     <div class="side-scroll">
+      <button class="inbox-row" id="inbox-row"><span class="ic">☀</span><span style="flex:1">Inbox</span><span id="inbox-count"></span></button>
+      <button class="inbox-row" id="teams-row"><span class="ic">▦</span><span style="flex:1">Teams</span><span id="teams-count"></span></button>
       <div class="section-head">Agents <button class="icon-btn" id="new-agent" title="New agent" aria-label="New agent">+</button></div>
       <div id="agents"></div>
+      <div class="section-head">Jobs <button class="icon-btn" id="new-job" title="New standing job" aria-label="New standing job">+</button></div>
+      <div id="jobs"></div>
       <div class="section-head">Projects <span class="head-actions">
         <button class="icon-btn" id="import-projects" title="Choose projects" aria-label="Choose projects">☰</button>
         <button class="icon-btn" id="new-thread" title="New thread" aria-label="New thread">+</button></span></div>
@@ -582,6 +639,63 @@ dialog.wide { width: min(900px, calc(100vw - 32px)); }
     <h3 id="diff-title">Changes</h3>
     <pre class="diff mono" id="diff-body"></pre>
     <div class="dialog-actions"><button class="btn" data-close>Close</button></div>
+  </form>
+</dialog>
+
+<dialog id="job-dialog">
+  <form method="dialog" id="job-form">
+    <h3 id="job-dialog-title">New standing job</h3>
+    <p class="sub">An agent does this on its own, on a schedule or when something happens, and reports back. It works in team mode: edits in the project and tests/builds run without asking; anything else waits for you.</p>
+    <div class="presets" id="job-presets"></div>
+    <div class="grid2">
+      <label>Name <input type="text" name="name" required maxlength="80" placeholder="Nightly tests"></label>
+      <label>Agent <select name="agentId" required></select></label>
+    </div>
+    <label>Project
+      <input type="hidden" name="project">
+      <button type="button" class="field-btn" id="job-project-btn"></button>
+    </label>
+    <label>What to do each time
+      <textarea class="field" name="instructions" required placeholder="Run the test suite. If anything fails, find the cause and fix it if the fix is small and safe; otherwise explain what's wrong."></textarea>
+    </label>
+    <label>When
+      <span class="when-row">
+        <select name="when">
+          <option value="daily">Every day at</option>
+          <option value="weekdays">Weekdays at</option>
+          <option value="weekly">Every week on</option>
+          <option value="interval">Every few hours</option>
+          <option value="commit">On new commits to</option>
+          <option value="manual">Only when I run it</option>
+        </select>
+        <select name="weekday"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option></select>
+        <input type="time" name="time" value="02:00">
+        <input type="number" name="hours" min="1" max="168" value="6" style="width:80px">
+        <input type="text" name="branch" value="main" style="width:140px" spellcheck="false">
+      </span>
+    </label>
+    <label class="check" id="job-team-row"><input type="checkbox" name="team"> <span>Run as a team goal <span class="faint">(this agent leads: it can hand pieces to specialists)</span></span></label>
+    <label class="check"><input type="checkbox" name="enabled" checked> <span>Enabled</span></label>
+    <div class="form-error" id="job-error"></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn danger" id="job-delete" hidden>Delete job</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="submit" class="btn primary" id="job-submit">Create job</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="lessons-dialog">
+  <form method="dialog">
+    <h3 id="lessons-title">Lessons</h3>
+    <p class="sub">Rules this agent follows in every project, learned from your corrections. Agents suggest them; nothing applies until you approve it.</p>
+    <div id="lessons-list"></div>
+    <div class="when-row" style="margin-top:4px">
+      <input type="text" id="lesson-new" placeholder="Add a lesson, e.g. Use the project's logger, never console.log" style="flex:1">
+      <button type="button" class="btn" id="lesson-add">Add</button>
+    </div>
+    <div class="dialog-actions"><button type="button" class="btn" data-close>Done</button></div>
   </form>
 </dialog>
 
@@ -728,6 +842,8 @@ function connect() {
     resetTerminalViews(); // their subscriptions died with the old connection
     await loadSidebar();
     if (state.threadId) openThread(state.threadId, true);
+    else if (state.view === "inbox") renderInbox();
+    else if (state.view === "teams") renderTeams();
     else renderMain();
   };
   ws.onmessage = (ev) => {
@@ -752,6 +868,11 @@ const state = {
   threads: new Map(),
   agents: new Map(),
   projects: new Map(),
+  jobs: new Map(),
+  jobRuns: new Map(), // recent runs seen live (for toasts and inbox counts)
+  lessons: new Map(),
+  settings: { briefingTime: "08:00", briefingEnabled: true, notifications: true },
+  view: null, // "inbox" when the Inbox page is open
   projectFilter: "",
   showArchived: (() => { try { return !!localStorage.getItem("bp-show-archived"); } catch { return false; } })(),
   showAll: new Set(),
@@ -779,6 +900,9 @@ async function loadSidebar() {
   state.threads = new Map(snap.threads.map((t) => [t.id, t]));
   state.agents = new Map(snap.agents.map((a) => [a.id, a]));
   state.projects = new Map(snap.projects.map((p) => [p.id, p]));
+  state.jobs = new Map(snap.jobs.map((j) => [j.id, j]));
+  state.lessons = new Map(snap.lessons.map((l) => [l.id, l]));
+  state.settings = snap.settings;
   state.approvals = new Map();
   snap.pendingApprovals.forEach(trackApproval);
   subs.set(snap.subscription, (events) => {
@@ -794,6 +918,23 @@ async function loadSidebar() {
       else if (e.type === "agent.deleted") state.agents.delete(e.agentId);
       else if (e.type === "project.upserted") state.projects.set(e.project.id, e.project);
       else if (e.type === "project.removed") state.projects.delete(e.projectId);
+      else if (e.type === "job.upserted") state.jobs.set(e.job.id, e.job);
+      else if (e.type === "job.deleted") state.jobs.delete(e.jobId);
+      else if (e.type === "jobrun.upserted") {
+        state.jobRuns.set(e.run.id, e.run);
+        if (e.run.status === "needs-you" && e.run.endedAt) toast(`${state.jobs.get(e.run.jobId)?.name ?? "A job"} needs you`, { onclick: () => openInbox() });
+      } else if (e.type === "lesson.upserted") {
+        const isNew = !state.lessons.has(e.lesson.id);
+        if (e.lesson.status === "rejected") state.lessons.delete(e.lesson.id); else state.lessons.set(e.lesson.id, e.lesson);
+        if (isNew && e.lesson.status === "proposed") {
+          const a = e.lesson.agentId ? state.agents.get(e.lesson.agentId) : null;
+          toast(`${a ? agentLabel(a) : "An agent"} suggested a lesson: “${e.lesson.text}”`, { onclick: () => openInbox() });
+        }
+      } else if (e.type === "lesson.deleted") state.lessons.delete(e.lessonId);
+      else if (e.type === "setting.upserted") {
+        const map = { "briefing.time": "briefingTime", "briefing.enabled": "briefingEnabled", "notifications": "notifications" };
+        if (map[e.key]) state.settings[map[e.key]] = e.value;
+      }
       else if (e.type === "turn-item.upserted" && e.item.kind === "approval_request") {
         const wasPending = state.approvals.get(e.item.threadId)?.has(e.item.requestId);
         trackApproval(e.item);
@@ -807,6 +948,8 @@ async function loadSidebar() {
     }
     renderSidebar();
     if (state.threadId) { state.thread = state.threads.get(state.threadId) ?? state.thread; renderTopbar(); }
+    else if (state.view === "inbox") renderInbox();
+    else if (state.view === "teams") renderTeams();
   });
   renderSidebar();
 }
@@ -828,7 +971,56 @@ function renderSidebar() {
       home ? threadStatus(home) : null);
   }) : [h("div", { class: "side-empty" }, "No agents yet. Create one, then @mention it anywhere.")]));
 
+  renderJobs();
   renderProjects();
+  const inboxN = inboxCount();
+  $("inbox-count").replaceChildren(...(inboxN ? [h("span", { class: "count" }, String(inboxN))] : []));
+  $("inbox-row").classList.toggle("active", state.view === "inbox" && !state.threadId);
+  const teamThreads = [...state.threads.values()].filter((t) => t.team?.active);
+  const activeTeams = teamThreads.reduce((n, t) => n + t.team.active, 0);
+  const teamsNeed = teamThreads.some((t) => t.team.needsYou);
+  $("teams-count").replaceChildren(...(activeTeams ? [h("span", { class: "count", title: teamsNeed ? "A team needs you" : `${activeTeams} running` }, String(activeTeams))] : []));
+  $("teams-row").classList.toggle("active", state.view === "teams" && !state.threadId);
+}
+
+// ---------- jobs in the sidebar ----------
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function describeTrigger(t) {
+  if (t.kind === "manual") return "When you run it";
+  if (t.kind === "interval") return t.hours === 1 ? "Every hour" : `Every ${t.hours} hours`;
+  if (t.kind === "commit") return `On commits to ${t.branch}`;
+  const [hh, mm] = t.time.split(":").map(Number);
+  const time = new Date(2000, 0, 1, hh, mm).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (!t.days?.length || t.days.length === 7) return `Daily ${time}`;
+  if (t.days.join() === "1,2,3,4,5") return `Weekdays ${time}`;
+  return `${t.days.map((d) => DAY_NAMES[d]).join(", ")} ${time}`;
+}
+function whenNext(iso) {
+  if (!iso) return "";
+  const d = new Date(iso), today = new Date();
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (d.toDateString() === today.toDateString()) return `today ${time}`;
+  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+  if (d.toDateString() === tomorrow.toDateString()) return `tomorrow ${time}`;
+  return `${DAY_NAMES[d.getDay()]} ${time}`;
+}
+function renderJobs() {
+  const jobs = [...state.jobs.values()].sort((a, b) => a.name.localeCompare(b.name));
+  $("jobs").replaceChildren(...(jobs.length ? jobs.map((j) => {
+    const agent = state.agents.get(j.agentId);
+    const status = j.lastStatus === "running" ? "running" : j.lastStatus;
+    const sub = !j.enabled ? "Paused" : j.lastStatus === "running" ? "Running now" : j.nextRunAt ? `Next ${whenNext(j.nextRunAt)}` : describeTrigger(j.trigger);
+    return h("button", { class: "row" + (state.threadId === j.threadId ? " active" : ""), onclick: () => openThread(j.threadId), title: `${describeTrigger(j.trigger)} · ${agent ? agentLabel(agent) : "?"}` },
+      h("span", { class: "job-ic" }, "⏱"),
+      h("span", { class: "row-main" }, h("div", { class: "row-title" }, j.name), h("div", { class: "row-sub" }, `${agent ? agentLabel(agent) : "?"} · ${sub}`)),
+      status ? h("span", { class: "dot " + status, title: status }) : null);
+  }) : [h("div", { class: "side-empty" }, "No jobs yet. Give an agent something to do on its own.")]));
+}
+function inboxCount() {
+  const lessons = [...state.lessons.values()].filter((l) => l.status === "proposed").length;
+  const jobs = [...state.jobs.values()].filter((j) => j.lastStatus === "needs-you" || j.lastStatus === "failed").length;
+  const teams = [...state.threads.values()].filter((t) => t.team?.needsYou).length;
+  return lessons + jobs + teams;
 }
 
 // ---------- projects in the sidebar (T3 "folder" mode) ----------
@@ -862,7 +1054,7 @@ function urgency(threads) {
 }
 function renderProjects() {
   const homes = new Set([...state.agents.values()].map((a) => a.homeThreadId));
-  const threads = [...state.threads.values()].filter((t) => !homes.has(t.id));
+  const threads = [...state.threads.values()].filter((t) => !homes.has(t.id) && !(t.jobId && state.jobs.has(t.jobId)));
   const byPath = new Map();
   for (const t of threads) { if (!byPath.has(t.cwd)) byPath.set(t.cwd, []); byPath.get(t.cwd).push(t); }
   for (const list of byPath.values()) list.sort((a, b) => activity(b).localeCompare(activity(a)));
@@ -1104,6 +1296,9 @@ function renderTopbar() {
     h("div", { style: "min-width:0" },
       h("h1", {}, agent ? agentLabel(agent) + (agent.displayName ? `  ·  @${agent.name}` : "") : t.title),
       h("div", { class: "chips" },
+        ...(t.jobId && state.jobs.get(t.jobId) ? [(() => { const job = state.jobs.get(t.jobId);
+          return h("span", { class: "chip", title: job.nextRunAt ? `Next run ${new Date(job.nextRunAt).toLocaleString()}` : "" },
+            `⏱ ${describeTrigger(job.trigger)}${job.enabled && job.nextRunAt ? ` · next ${whenNext(job.nextRunAt)}` : job.enabled ? "" : " · paused"}`); })()] : []),
         h("span", { class: "chip" }, t.provider + (t.model ? " · " + t.model : "")),
         h("span", { class: "chip" }, modes[t.runtimeMode]),
         agent
@@ -1114,7 +1309,9 @@ function renderTopbar() {
     h("button", { class: "btn tool-toggle" + (ui.files ? " on" : ""), title: "Files (⌘⇧E)", onclick: () => togglePanel("files") }, "Files"),
     h("button", { class: "btn tool-toggle" + (ui.browser ? " on" : ""), title: "Browser (⌘⇧B)", onclick: () => togglePanel("browser") }, "Browser"),
     h("button", { class: "btn tool-toggle" + (ui.terminal ? " on" : ""), title: "Terminal (⌃`)", onclick: () => togglePanel("terminal") }, "Terminal"),
+    agent ? h("button", { class: "btn", title: "Rules this agent learned from your corrections", onclick: () => openLessons(agent) }, `Lessons${lessonCount(agent.id)}`) : null,
     agent ? h("button", { class: "btn", title: "Start this agent's conversation over. Its settings are kept.", onclick: () => resetAgent(agent) }, "Reset context") : null,
+    ...jobControls(t),
     agent ? h("button", { class: "btn", onclick: () => openAgentDialog(agent) }, "Edit") : null,
   ].filter(Boolean));
   const hint = $("hint");
@@ -1125,6 +1322,7 @@ function renderTopbar() {
 }
 
 async function openThread(threadId, reconnecting = false) {
+  state.view = null;
   if (state.sub && !reconnecting) call("unsubscribe", { subscription: state.sub }).catch(() => {});
   if (state.threadId !== threadId) { state.items = new Map(); state.order = []; state.runs = new Map(); state.seq = 0; }
   state.threadId = threadId;
@@ -1614,10 +1812,10 @@ function taskPill(t) {
   const label = t.status === "waiting" && t.dependsOn.length ? `After ${t.dependsOn.join(", ")}` : TASK_LABEL[t.status];
   return h("span", { class: "pill " + t.status }, t.status === "working" ? h("span", { class: "pulse" }) : null, label + (t.approvals.length ? " · needs you" : ""));
 }
-function teamCard(g) {
+function teamCard(g, redraw) {
   const u = teamUi.get(g.goalId) ?? { board: false, open: new Set() };
   teamUi.set(g.goalId, u);
-  const rerender = () => upsertItemEl(state.items.get(`team:${g.goalId}`));
+  const rerender = redraw ?? (() => upsertItemEl(state.items.get(`team:${g.goalId}`)));
   const accepted = g.tasks.filter((t) => t.status === "accepted").length;
   const counted = g.tasks.filter((t) => t.status !== "cancelled").length || 1;
   const open = ["planning", "working", "paused", "stuck"].includes(g.status);
@@ -1700,6 +1898,333 @@ setInterval(() => {
     if (iso) el.textContent = since(iso);
   }
 }, 15000);
+
+// ---------- teams: every goal the leads are running, in one place ----------
+let teamsTimer = null;
+let teamsData = null; // last JSON, so a refresh only redraws what changed
+const teamsDone = new Set(); // finished goals the person expanded
+function openTeams() {
+  if (state.sub) call("unsubscribe", { subscription: state.sub }).catch(() => {});
+  state.sub = null; state.threadId = null; state.thread = null; state.view = "teams";
+  history.replaceState(null, "", "#/teams");
+  teamsData = null;
+  renderSidebar(); renderTeams();
+}
+$("teams-row").addEventListener("click", openTeams);
+const isOpenGoal = (g) => ["planning", "working", "paused", "stuck"].includes(g.status);
+const goalNeeds = (g) => g.tasks.reduce((n, t) => n + t.approvals.length + (t.status === "parked" ? 1 : 0), 0) + (g.status === "stuck" ? 1 : 0);
+let teamsBusy = false;
+async function renderTeams() {
+  clearTimeout(teamsTimer);
+  if (state.view !== "teams" || state.threadId) return;
+  if (teamsBusy) return;
+  teamsBusy = true;
+  let goals;
+  try { goals = await call("teams"); } catch (err) { goals = null; $("main").replaceChildren(h("div", { class: "page" }, h("div", { class: "column" }, h("div", { class: "box-empty" }, err.message)))); }
+  finally { teamsBusy = false; }
+  if (state.view !== "teams" || state.threadId) return;
+  // Task timers and statuses move without a sidebar event, so look again every few seconds while the page is open.
+  teamsTimer = setTimeout(renderTeams, 4000);
+  if (!goals) return;
+  const json = JSON.stringify(goals);
+  if (json === teamsData && $("teams-page")) return;
+  teamsData = json;
+  drawTeams(goals);
+}
+function drawTeams(goals) {
+  const scroll = $("teams-page")?.scrollTop ?? 0;
+  const open = goals.filter(isOpenGoal);
+  const done = goals.filter((g) => !isOpenGoal(g));
+  const needs = open.reduce((n, g) => n + goalNeeds(g), 0);
+  const working = open.reduce((n, g) => n + g.tasks.filter((t) => t.status === "working" || t.status === "changes").length, 0);
+  const projectName = (p) => p ? p.split("/").filter(Boolean).at(-1) : "";
+  const slot = (g) => {
+    const el = h("div", { class: "team-slot" });
+    const draw = () => {
+      const t = state.threads.get(g.threadId);
+      el.replaceChildren(
+        h("div", { class: "team-meta" },
+          h("b", {}, projectName(g.project)),
+          h("span", {}, t ? `in “${t.title}”` : ""),
+          g.endedAt ? h("span", {}, `· ended ${ago(g.endedAt)}`) : null,
+          h("span", { class: "spacer" }),
+          !isOpenGoal(g) ? h("button", { class: "link", onclick: () => { teamsDone.delete(g.goalId); drawTeams(JSON.parse(teamsData)); } }, "Collapse") : null,
+          h("button", { class: "link", onclick: () => openThread(g.threadId) }, "Open conversation")),
+        teamCard(g, draw));
+    };
+    draw();
+    return el;
+  };
+  const doneRow = (g) => {
+    if (teamsDone.has(g.goalId)) return slot(g);
+    const accepted = g.tasks.filter((t) => t.status === "accepted").length;
+    return h("div", { class: "irow", style: "cursor:pointer", onclick: () => { teamsDone.add(g.goalId); drawTeams(JSON.parse(teamsData)); } },
+      h("span", { class: "pill " + g.status, style: "margin-top:1px" }, GOAL_LABEL[g.status]),
+      h("div", { class: "main" }, h("div", {}, g.title),
+        h("div", { class: "sub" }, `${g.leadName} · ${projectName(g.project)} · ${accepted}/${g.tasks.length} tasks accepted · ${ago(g.endedAt ?? g.startedAt)}`)),
+      h("div", { class: "acts" }, h("button", { class: "btn", onclick: (e) => { e.stopPropagation(); openThread(g.threadId); } }, "Open")));
+  };
+  const leads = [...state.agents.values()].filter((a) => a.canLead);
+  const empty = h("div", { class: "box" }, h("div", { class: "teams-empty" },
+    h("b", { style: "color:var(--text)" }, "No teams running."),
+    h("ol", {},
+      h("li", {}, leads.length ? `You have ${leads.length === 1 ? "a lead" : "leads"}: ${leads.map(agentLabel).join(", ")}.` : "Recruit a lead from the agent gallery (Lead / Team lead)."),
+      h("li", {}, "Open a project conversation and message the lead with a goal, e.g. “@lead add dark mode to settings”."),
+      h("li", {}, "The lead splits it into tasks for your other agents; every team shows up here while it works.")),
+    leads.length ? null : h("button", { class: "btn primary", onclick: () => $("new-agent").click() }, "Recruit a lead")));
+  const col = h("div", { class: "column" },
+    h("div", {}, h("h2", {}, "Teams"), h("p", { class: "lede" }, "Every goal your leads are running, across all projects.")),
+    h("div", { class: "teams-stats" },
+      h("div", { class: "stat" }, h("b", {}, String(open.length)), h("span", {}, open.length === 1 ? "team running" : "teams running")),
+      h("div", { class: "stat" }, h("b", {}, String(working)), h("span", {}, working === 1 ? "agent working now" : "agents working now")),
+      h("div", { class: "stat" + (needs ? " attn" : "") }, h("b", {}, String(needs)), h("span", {}, "waiting on you"))),
+    open.length ? h("div", {}, ...open.sort((a, b) => goalNeeds(b) - goalNeeds(a)).map(slot)) : empty,
+    done.length ? h("div", { class: "box" }, h("div", { class: "box-h" }, "Finished this week", h("span", { class: "count" }, String(done.length))),
+      h("div", { class: "box-b" }, ...done.map(doneRow))) : null);
+  const page = h("div", { class: "page", id: "teams-page" }, col);
+  $("main").replaceChildren(page);
+  page.scrollTop = scroll;
+}
+
+// ---------- standing jobs ----------
+const JOB_PRESETS = [
+  { label: "Nightly tests & fix", handle: "debugger", name: "Nightly tests", when: "daily", time: "02:00",
+    instructions: "Run the project's test suite (and type check/lint if it has them). If anything fails, find the root cause. Fix it if the fix is small and safe; otherwise explain the failure and the fix you'd suggest." },
+  { label: "Review new commits", handle: "reviewer", name: "Review new commits", when: "commit", branch: "main",
+    instructions: "Review the new commits listed above for bugs, risky changes and missing tests. Report only real problems, by severity, with file and line." },
+  { label: "Weekly dependency check", handle: "security", name: "Dependency check", when: "weekly", weekday: "1", time: "08:00",
+    instructions: "Check the project's dependencies for known vulnerabilities and badly outdated packages (use the package manager's audit/outdated commands). Summarize what matters and what to upgrade; don't change anything." },
+  { label: "Morning changes summary", handle: "docs", name: "What changed yesterday", when: "weekdays", time: "07:30",
+    instructions: "Summarize what changed in this project in the last day (git log and diffs): features, fixes, and anything that looks unfinished. Keep it short." },
+];
+let editingJob = null;
+function openJobDialog(job = null) {
+  editingJob = job;
+  const f = $("job-form"); f.reset(); $("job-error").textContent = "";
+  $("job-dialog-title").textContent = job ? `Edit “${job.name}”` : "New standing job";
+  $("job-submit").textContent = job ? "Save" : "Create job";
+  $("job-delete").hidden = !job;
+  $("job-presets").hidden = !!job;
+  const agents = [...state.agents.values()].sort((a, b) => agentLabel(a).localeCompare(agentLabel(b)));
+  f.elements.agentId.replaceChildren(...agents.map((a) => h("option", { value: a.id }, `${agentLabel(a)}${a.displayName ? ` (@${a.name})` : ""}`)));
+  $("job-presets").replaceChildren(h("span", { class: "faint", style: "font-size:12.5px;align-self:center" }, "Start from:"), ...JOB_PRESETS.map((pr) =>
+    h("button", { type: "button", onclick: () => applyPreset(pr) }, pr.label)));
+  const p = prefs.get();
+  f.elements.project.value = job?.project ?? (state.thread && !state.thread.agentId ? state.thread.cwd : p.cwd) ?? "";
+  if (job) {
+    f.elements.name.value = job.name;
+    f.elements.agentId.value = job.agentId;
+    f.elements.instructions.value = job.instructions;
+    f.elements.enabled.checked = job.enabled;
+    f.elements.team.checked = job.mode === "team";
+    setTrigger(job.trigger);
+    $("job-project-btn").disabled = true;
+  } else {
+    $("job-project-btn").disabled = false;
+    if (!agents.length) $("job-error").textContent = "Recruit an agent first (+ next to Agents).";
+  }
+  syncJobForm();
+  $("job-dialog").showModal();
+}
+function applyPreset(pr) {
+  const f = $("job-form");
+  f.elements.name.value = pr.name;
+  f.elements.instructions.value = pr.instructions;
+  f.elements.when.value = pr.when;
+  if (pr.time) f.elements.time.value = pr.time;
+  if (pr.weekday) f.elements.weekday.value = pr.weekday;
+  if (pr.branch) f.elements.branch.value = pr.branch;
+  const agent = [...state.agents.values()].find((a) => a.name === pr.handle || a.templateId === pr.handle);
+  if (agent) f.elements.agentId.value = agent.id;
+  else toast(`Tip: recruit the ${pr.label.split(" ")[0]} specialist for this job, or pick any agent.`);
+  syncJobForm();
+}
+function setTrigger(t) {
+  const f = $("job-form");
+  if (t.kind === "daily") {
+    f.elements.time.value = t.time.padStart(5, "0");
+    if (!t.days?.length || t.days.length === 7) f.elements.when.value = "daily";
+    else if (t.days.join() === "1,2,3,4,5") f.elements.when.value = "weekdays";
+    else { f.elements.when.value = "weekly"; f.elements.weekday.value = String(t.days[0]); }
+  } else if (t.kind === "interval") { f.elements.when.value = "interval"; f.elements.hours.value = t.hours; }
+  else if (t.kind === "commit") { f.elements.when.value = "commit"; f.elements.branch.value = t.branch; }
+  else f.elements.when.value = "manual";
+}
+function readTrigger() {
+  const f = $("job-form"), w = f.elements.when.value, time = f.elements.time.value || "02:00";
+  if (w === "daily") return { kind: "daily", time };
+  if (w === "weekdays") return { kind: "daily", time, days: [1, 2, 3, 4, 5] };
+  if (w === "weekly") return { kind: "daily", time, days: [Number(f.elements.weekday.value)] };
+  if (w === "interval") return { kind: "interval", hours: Math.max(1, Number(f.elements.hours.value) || 6) };
+  if (w === "commit") return { kind: "commit", branch: f.elements.branch.value.trim() || "main" };
+  return { kind: "manual" };
+}
+function syncJobForm() {
+  const f = $("job-form"), w = f.elements.when.value;
+  f.elements.time.hidden = !["daily", "weekdays", "weekly"].includes(w);
+  f.elements.weekday.hidden = w !== "weekly";
+  f.elements.hours.hidden = w !== "interval";
+  f.elements.branch.hidden = w !== "commit";
+  const agent = state.agents.get(f.elements.agentId.value);
+  $("job-team-row").hidden = !agent?.canLead;
+  const cwd = f.elements.project.value;
+  $("job-project-btn").replaceChildren(folderIcon(), cwd
+    ? h("span", { class: "row-main" }, h("div", { class: "row-title" }, folderName(cwd)), h("div", { class: "faint" }, tildePath(cwd)))
+    : h("span", { class: "faint" }, "Choose a project…"));
+}
+$("job-form").elements.when.addEventListener("change", syncJobForm);
+$("job-form").elements.agentId.addEventListener("change", syncJobForm);
+$("job-project-btn").addEventListener("click", async () => {
+  const path = await pickFolder();
+  if (path) { $("job-form").elements.project.value = path; syncJobForm(); }
+});
+$("job-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target, v = (n) => f.elements[n].value.trim();
+  const body = { name: v("name"), agentId: v("agentId"), instructions: v("instructions"), trigger: readTrigger(), mode: f.elements.team.checked ? "team" : "solo", enabled: f.elements.enabled.checked };
+  try {
+    if (editingJob) await dispatch({ type: "job.update", jobId: editingJob.id, ...body });
+    else {
+      if (!v("project")) { $("job-error").textContent = "Choose a project."; return; }
+      const { jobId } = await dispatch({ type: "job.create", project: v("project"), ...body });
+      await new Promise((r) => setTimeout(r, 150));
+      const job = state.jobs.get(jobId);
+      if (job) openThread(job.threadId);
+    }
+    $("job-dialog").close();
+  } catch (err) { $("job-error").textContent = err.message; }
+});
+$("job-delete").addEventListener("click", async () => {
+  if (!editingJob || !confirm(`Delete the job “${editingJob.name}”? Its thread and past results are kept.`)) return;
+  try { await dispatch({ type: "job.delete", jobId: editingJob.id }); $("job-dialog").close(); } catch (err) { $("job-error").textContent = err.message; }
+});
+$("new-job").addEventListener("click", () => openJobDialog());
+function jobControls(t) {
+  const job = t.jobId ? state.jobs.get(t.jobId) : null;
+  if (!job) return [];
+  return [
+    h("button", { class: "btn primary", disabled: job.lastStatus === "running", onclick: () => dispatch({ type: "job.run", jobId: job.id }).then(() => toast("Running now.")).catch(fail) }, job.lastStatus === "running" ? "Running…" : "Run now"),
+    h("button", { class: "btn", onclick: () => dispatch({ type: "job.update", jobId: job.id, enabled: !job.enabled }).catch(fail) }, job.enabled ? "Pause" : "Resume"),
+    h("button", { class: "btn", onclick: () => openJobDialog(job) }, "Edit"),
+  ];
+}
+
+// ---------- lessons ----------
+function lessonCount(agentId) {
+  const n = [...state.lessons.values()].filter((l) => l.agentId === agentId && l.status === "approved").length;
+  const p = [...state.lessons.values()].filter((l) => l.agentId === agentId && l.status === "proposed").length;
+  return (n ? ` (${n})` : "") + (p ? ` · ${p} new` : "");
+}
+let lessonsFor = null; // agent, or "all" for everyone
+function openLessons(agent) {
+  lessonsFor = agent ?? "all";
+  $("lessons-title").textContent = agent ? `${agentLabel(agent)}'s lessons` : "Lessons for every agent";
+  $("lesson-new").value = "";
+  renderLessons();
+  $("lessons-dialog").showModal();
+}
+function lessonRow(l, showAgent) {
+  const agent = l.agentId ? state.agents.get(l.agentId) : null;
+  const who = showAgent ? (agent ? agentLabel(agent) : "Every agent") : null;
+  const src = l.source.kind === "review" ? (l.source.note ?? "From a team review") : l.source.kind === "agent" ? "Suggested after your correction" : "Added by you";
+  if (l.status === "proposed") {
+    const ta = h("textarea", { rows: 2 }, l.text);
+    return h("div", { class: "irow" },
+      h("div", { class: "main" }, who ? h("div", { class: "sub", style: "margin:0 0 4px" }, who) : null, ta, h("div", { class: "sub" }, src)),
+      h("div", { class: "acts" },
+        h("button", { class: "btn primary", onclick: () => dispatch({ type: "lesson.decide", lessonId: l.id, decision: "approve", text: ta.value }).then(refreshLessonViews).catch(fail) }, "Approve"),
+        h("button", { class: "btn", onclick: () => dispatch({ type: "lesson.decide", lessonId: l.id, decision: "reject" }).then(refreshLessonViews).catch(fail) }, "Dismiss")));
+  }
+  return h("div", { class: "irow" },
+    h("div", { class: "main" }, h("div", {}, l.text), h("div", { class: "sub" }, [who, src].filter(Boolean).join(" · "))),
+    h("div", { class: "acts" }, h("button", { class: "icon-btn", title: "Remove", onclick: () => dispatch({ type: "lesson.delete", lessonId: l.id }).then(refreshLessonViews).catch(fail) }, "×")));
+}
+function renderLessons() {
+  const id = lessonsFor === "all" ? undefined : lessonsFor.id;
+  const list = [...state.lessons.values()].filter((l) => l.agentId === id);
+  const proposed = list.filter((l) => l.status === "proposed"), approved = list.filter((l) => l.status === "approved");
+  $("lessons-list").replaceChildren(
+    ...(proposed.length ? [h("div", { class: "lbl", style: "margin:4px 0" }, "Suggested"), ...proposed.map((l) => lessonRow(l, false))] : []),
+    h("div", { class: "lbl", style: "margin:10px 0 4px" }, "Following"),
+    ...(approved.length ? approved.map((l) => lessonRow(l, false)) : [h("div", { class: "box-empty", style: "padding:4px 0" }, "None yet.")]));
+}
+function refreshLessonViews() {
+  setTimeout(() => {
+    if ($("lessons-dialog").open) renderLessons();
+    if (state.view === "inbox" && !state.threadId) renderInbox();
+    renderTopbar(); renderSidebar();
+  }, 120);
+}
+$("lesson-add").addEventListener("click", async () => {
+  const text = $("lesson-new").value.trim(); if (!text) return;
+  try { await dispatch({ type: "lesson.add", agentId: lessonsFor === "all" ? undefined : lessonsFor.id, text }); $("lesson-new").value = ""; refreshLessonViews(); } catch (err) { fail(err); }
+});
+
+// ---------- inbox: briefing, lessons to review, everything waiting on you ----------
+function openInbox() {
+  if (state.sub) call("unsubscribe", { subscription: state.sub }).catch(() => {});
+  state.sub = null; state.threadId = null; state.thread = null; state.view = null; state.view = "inbox";
+  history.replaceState(null, "", "#/inbox");
+  renderSidebar(); renderInbox();
+}
+$("inbox-row").addEventListener("click", openInbox);
+async function renderInbox() {
+  const col = h("div", { class: "column" });
+  $("main").replaceChildren(h("div", { class: "page" }, col));
+  let data = null;
+  try { data = await call("inbox"); } catch (err) { col.append(h("div", { class: "box-empty" }, err.message)); return; }
+  if (state.view !== "inbox" || state.threadId) return;
+  const box = (title, count, kids, extra) => h("div", { class: "box" },
+    h("div", { class: "box-h" }, title, count ? h("span", { class: "count" }, String(count)) : null, h("span", { class: "spacer" }), extra ?? null),
+    h("div", { class: "box-b" }, ...(kids.length ? kids : [h("div", { class: "box-empty" }, "Nothing here.")])));
+  // Needs you: jobs whose last run needs a decision or failed, and teams waiting on you.
+  const needs = [];
+  for (const j of state.jobs.values()) {
+    if (j.lastStatus !== "needs-you" && j.lastStatus !== "failed") continue;
+    const run = data.runs.find((r) => r.jobId === j.id);
+    const items = run?.needsYou?.length ? run.needsYou : [run?.summary ?? (j.lastStatus === "failed" ? "The last run failed." : "Needs a decision.")];
+    for (const text of items) needs.push(h("div", { class: "irow" },
+      h("span", { class: "dot " + j.lastStatus, style: "margin-top:6px" }),
+      h("div", { class: "main" }, h("div", {}, text), h("div", { class: "sub" }, `${j.name} · ${run ? ago(run.endedAt ?? run.startedAt) : ""}`)),
+      h("div", { class: "acts" }, h("button", { class: "btn", onclick: () => openThread(j.threadId) }, "Open"))));
+  }
+  for (const t of state.threads.values()) {
+    if (!t.team?.needsYou) continue;
+    needs.push(h("div", { class: "irow" }, h("span", { class: "dot needs-you", style: "margin-top:6px" }),
+      h("div", { class: "main" }, h("div", {}, `A team needs you (${t.team.needsYou})`), h("div", { class: "sub" }, t.title)),
+      h("div", { class: "acts" }, h("button", { class: "btn", onclick: () => openThread(t.id) }, "Open"))));
+  }
+  const proposed = [...state.lessons.values()].filter((l) => l.status === "proposed");
+  const b = data.latest ?? data.recent;
+  const briefing = h("div", {},
+    h("div", { class: "briefing-head" }, b.headline),
+    b.lines.length ? h("ul", { class: "briefing-lines" }, ...b.lines.map((l) => h("li", {}, l))) : null,
+    h("div", { class: "sub", style: "padding:0 14px 10px;color:var(--faint);font-size:12px" }, data.latest ? `Briefing from ${new Date(data.latest.at).toLocaleString()}, covering since ${new Date(data.latest.since).toLocaleString()}` : "The last 24 hours (your first briefing arrives at the time below)."));
+  const runs = data.runs.slice(0, 12).map((r) => {
+    const j = state.jobs.get(r.jobId);
+    return h("div", { class: "irow" }, h("span", { class: "dot " + r.status, style: "margin-top:6px" }),
+      h("div", { class: "main" }, h("div", {}, `${j?.name ?? "Deleted job"} · ${r.status}`), h("div", { class: "sub" }, `${r.reason} · ${ago(r.startedAt)}${r.summary ? ` · ${r.summary.slice(0, 140)}` : ""}`)),
+      j ? h("div", { class: "acts" }, h("button", { class: "btn", onclick: () => openThread(j.threadId) }, "Open")) : null);
+  });
+  const time = h("input", { type: "time", value: state.settings.briefingTime });
+  time.addEventListener("change", () => dispatch({ type: "settings.update", briefingTime: time.value }).catch(fail));
+  const en = h("input", { type: "checkbox", checked: state.settings.briefingEnabled });
+  en.addEventListener("change", () => dispatch({ type: "settings.update", briefingEnabled: en.checked }).catch(fail));
+  const no = h("input", { type: "checkbox", checked: state.settings.notifications });
+  no.addEventListener("change", () => dispatch({ type: "settings.update", notifications: no.checked }).catch(fail));
+  col.replaceChildren(...[
+    h("div", {}, h("h2", {}, "Inbox"), h("p", { class: "lede" }, "What your agents did while you were away, and what they need from you.")),
+    data.pausedUntil && Date.parse(data.pausedUntil) > Date.now() ? h("div", { class: "team-note", style: "border-radius:10px" }, `Jobs are paused until ${new Date(data.pausedUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}: your plan's usage limit was reached.`) : null,
+    box("Needs you", needs.length, needs),
+    box("Lessons to review", proposed.length, proposed.map((l) => lessonRow(l, true)),
+      h("button", { class: "link", onclick: () => openLessons(null) }, "Lessons for every agent")),
+    box("Morning briefing", 0, [briefing]),
+    box("Recent job runs", 0, runs, h("button", { class: "link", onclick: () => openJobDialog() }, "+ New job")),
+    h("div", { class: "box" }, h("div", { class: "settings-row" },
+      h("label", { class: "check", style: "align-items:center" }, en, " Morning briefing at"), time,
+      h("label", { class: "check", style: "align-items:center" }, no, " Mac notifications"))),
+  ].filter(Boolean));
+}
 
 // ---------- composer with @ autocomplete ----------
 /** Auto-growing textarea with @agent autocomplete; Enter calls onSubmit, Shift+Enter is a newline. */
@@ -2149,6 +2674,8 @@ function renderStart() {
 // ---------- start ----------
 const routed = location.hash.match(/^#\/t\/([\w-]+)/);
 if (routed) state.threadId = routed[1];
+if (location.hash === "#/inbox") state.view = "inbox";
+if (location.hash === "#/teams") state.view = "teams";
 renderMain();
 connect();
 </script>

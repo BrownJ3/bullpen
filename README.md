@@ -32,6 +32,35 @@ npm run client -- chat <threadId>   # reopen; the Claude session resumes
 In chat: type a message; answer approvals with `a` / `s` / `d` / `c`; `/interrupt`, `/diff [from] [to]`,
 `/rollback <n>`, `/quit`.
 
+## Standing jobs
+
+Agents that work while you're away. A job is an agent + a project + what to do + when:
+
+- **When:** every day at a time, weekdays, a day of the week, every few hours, **on new commits to a branch**
+  (checked every minute; the agent gets the list of new commits), or only when you press Run now.
+- **How:** each run happens in the job's own thread (listed under **Jobs** in the sidebar), in team mode: edits
+  inside the project and tests/builds run without asking, anything else waits for you. If the agent can lead a
+  team, a job can run as a team goal.
+- **Reporting:** the agent ends each run with a summary and a `NEEDS YOU:` line for anything that needs your
+  decision. Those raise a Mac notification and appear in the **Inbox**.
+- **Presets:** nightly tests & fix, review new commits, weekly dependency check, morning changes summary.
+- **Usage limits:** if your plan's limit is hit, all jobs pause until it resets (shown in the Inbox).
+
+**Morning briefing:** at a time you choose (default 8:00) Bullpen summarises everything since the last briefing (runs
+per job, what needs you, lessons waiting) and sends one notification. The **Inbox** (top of the sidebar) shows it
+alongside everything waiting on you: jobs needing a decision, teams needing you, and lessons to review.
+
+## Lessons
+
+Agents learn from your corrections, with your approval:
+
+- When you correct an agent ("no, we always…", "from now on…", "don't…"), it can call `propose_lesson` with a
+  one-line rule. A lead reviewing a teammate's work can attach a lesson to its review too.
+- Suggested lessons appear in the Inbox and on the agent's **Lessons** button. Approve (optionally editing the
+  wording) or dismiss; you can also add your own, for one agent or for every agent.
+- Approved lessons are given to the agent at the start of every turn, in every project, so they survive context
+  resets and new conversations.
+
 ## Teams
 
 A **lead** (any agent with "Can lead a team" ticked; the Project Lead in the gallery has it) turns a goal into
@@ -66,7 +95,7 @@ refused, and `ask_agent` blocked for leads during a goal so work always goes thr
 30 seconds nudges a goal where nothing is moving, then marks it **Needs you**. If your plan's usage limit is hit,
 the team **pauses** and resumes when the limit resets. After a server restart, interrupted tasks are requeued.
 
-`scripts/team-smoke.ts` runs three scenarios end to end: a parallel team with a dependent check, a one-round
+`scripts/jobs-smoke.ts` tests jobs (manual, on commit, scheduled), the briefing, and a lesson learned from a correction and followed in a fresh conversation. `scripts/team-smoke.ts` runs three scenarios end to end: a parallel team with a dependent check, a one-round
 send-back, and stopping a team mid-way.
 
 ## Projects
