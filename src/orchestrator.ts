@@ -2,8 +2,9 @@
 // ProviderEventIngestor). Commands validate against projections and commit domain events;
 // side effects (provider calls, git snapshots) run after the commit.
 //
-// Simplification vs T3: no transactional outbox / lease worker. Side effects run in-process
-// right after commit, so a crash mid-turn leaves the run "running" until restart cleanup.
+// Crash safety (T3 uses a transactional outbox): each run stores what was asked in the same transaction that
+// starts it. If Bullpen stops mid-turn, the run is marked interrupted on restart and the turn is resumed from
+// the engine's saved conversation, once.
 
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
@@ -12,6 +13,9 @@ import { HOME } from "./home.ts";
 import { Jobs } from "./jobs.ts";
 import { Team, isLimitError, type ConsultOutcome } from "./team.ts";
 import * as checkpoints from "./checkpoints.ts";
+import * as worktrees from "./worktrees.ts";
+import { BrowserHub } from "./browser.ts";
+import { workdirOf } from "./types.ts";
 import { expandHome } from "./projects.ts";
 import type { Store } from "./store.ts";
 const MODE_RANK = { "approval-required": 0, "auto-accept-edits": 1, "full-access": 2 } as const;
@@ -30,6 +34,7 @@ import type {
   RuntimeMode,
   Thread,
   TurnItem,
+  ThreadWorktree,
 } from "./types.ts";
 
 export class CommandError extends Error {}
@@ -56,6 +61,9 @@ const MAX_CONSULT_DEPTH = 3;
 const MENTION_CONTEXT_CHARS = 8000;
 /** Messages that sound like the person correcting how an agent works (a lesson may be worth keeping). */
 const CORRECTION = /\b(no[,.!]|nope|don'?t|do not|never|always|instead|stop|wrong|not like that|we use|we don'?t|i prefer|prefer|please use|should (be|use)|from now on|remember)\b/i;
+const RESUME_NOTE =
+  "Bullpen restarted while you were in the middle of this turn. Your conversation so far is intact and files you changed are still changed. " +
+  "Check where you got to, then continue the request below from there (don't redo finished steps).";
 const LESSON_HINT =
   "(If this message corrects how you work in a way worth remembering beyond this task, call propose_lesson with a one-line rule; the person approves it.)";
 
@@ -76,6 +84,8 @@ export class Orchestrator {
 
   readonly #team: Team;
   readonly #jobs: Jobs;
+  /** One real browser tab per thread, shared by its agent's browser tools and the Browser panel. */
+  readonly browser = new BrowserHub();
   /** Hooks for a run that a team task is waiting on (to time it out and map its approvals). */
   readonly #runHooks = new Map<string, (homeThreadId: string, runId: string) => void>();
 
@@ -90,6 +100,11 @@ export class Orchestrator {
         if (thread?.activeRunId === runId) await this.#sessions.get(homeThreadId)?.interruptTurn();
       },
       transcript: (threadId) => this.#transcript(threadId),
+      isolation: async (dir) => {
+        const project = this.#projectFor(dir);
+        if (project?.isolateTasks === false || !(await checkpoints.isGitRepo(dir))) return undefined;
+        return { setup: project?.worktreeSetup };
+      },
       proposeLesson: (agentId, text, source) => this.#proposeLesson(agentId, text, source),
     });
     this.#team.start();
@@ -108,8 +123,74 @@ export class Orchestrator {
 
   async dispatch(command: Command): Promise<unknown> {
     switch (command.type) {
-      case "thread.create":
-        return this.#createThread(command);
+      case "thread.create": {
+        const created = this.#createThread(command);
+        if (command.worktree) {
+          try {
+            await this.#addWorktree(created.threadId, command.worktree);
+          } catch (err) {
+            throw new CommandError(`The thread was created, but its worktree wasn't: ${(err as Error).message}`);
+          }
+        }
+        return created;
+      }
+      case "worktree.create":
+        return this.#serial(command.threadId, async () => {
+          const thread = this.#requireThread(command.threadId);
+          if (thread.worktree) throw new CommandError("This thread already has its own branch.");
+          if (thread.status === "running") throw new CommandError("Wait for the current turn to finish.");
+          if (thread.agentId || thread.jobId) throw new CommandError("Only project threads can have their own branch.");
+          return this.#addWorktree(thread.id, command);
+        });
+      case "worktree.merge":
+        return this.#serial(command.threadId, async () => {
+          const { thread, wt } = this.#requireWorktree(command.threadId);
+          if (thread.status === "running") throw new CommandError("Wait for the current turn to finish.");
+          const res = await worktrees.mergeIntoBase(wt, thread.title);
+          if (!res.ok) throw new CommandError(res.error);
+          this.#note(thread.id, res.how === "nothing" ? `Nothing to merge: ${wt.branch} has no changes beyond ${wt.base}.` : `Merged ${wt.branch} into ${wt.base}.`);
+          return res;
+        });
+      case "worktree.update":
+        return this.#serial(command.threadId, async () => {
+          const { thread, wt } = this.#requireWorktree(command.threadId);
+          if (thread.status === "running") throw new CommandError("Wait for the current turn to finish.");
+          const res = await worktrees.updateFromBase(wt);
+          if (res.error) throw new CommandError(res.error);
+          if (res.conflicts.length) {
+            // Hand the conflicts to the thread's agent right away.
+            void this.dispatch({
+              type: "message.send",
+              threadId: thread.id,
+              text: `I merged the latest ${wt.base} into this branch and it conflicts in: ${res.conflicts.join(", ")}. Resolve the conflict markers in those files (keep both sides' intent), run the checks, then commit the merge with git.`,
+            });
+          } else this.#note(thread.id, `Brought in the latest ${wt.base}.`);
+          return res;
+        });
+      case "worktree.pr":
+        return this.#serial(command.threadId, async () => {
+          const { thread, wt } = this.#requireWorktree(command.threadId);
+          if (thread.status === "running") throw new CommandError("Wait for the current turn to finish.");
+          try {
+            const { url } = await worktrees.openPullRequest(wt, command.title?.trim() || thread.title, command.body?.trim() || this.#prBody(thread));
+            this.#store.commit(thread.id, [{ type: "thread.upserted", thread: { ...this.#requireThread(thread.id), worktree: { ...wt, prUrl: url } } }]);
+            this.#note(thread.id, `Opened a pull request: ${url}`);
+            return { url };
+          } catch (err) {
+            throw new CommandError((err as Error).message);
+          }
+        });
+      case "worktree.remove":
+        return this.#serial(command.threadId, async () => {
+          const { thread, wt } = this.#requireWorktree(command.threadId);
+          if (thread.status === "running") throw new CommandError("Wait for the current turn to finish.");
+          this.#closeSession(thread.id);
+          await worktrees.removeThreadWorktree(wt, Boolean(command.deleteBranch));
+          // The engine's conversation was keyed to the worktree folder; start fresh in the project folder.
+          this.#store.commit(thread.id, [{ type: "thread.upserted", thread: { ...this.#requireThread(thread.id), worktree: undefined, nativeSessionId: undefined } }]);
+          this.#note(thread.id, command.deleteBranch ? `Removed the worktree and deleted ${wt.branch}.` : `Removed the worktree (branch ${wt.branch} is kept).`);
+          return { ok: true };
+        });
       case "message.send":
         return this.#serial(command.threadId, () => this.#handleMessage(command.threadId, command.text));
       case "run.interrupt": {
@@ -159,6 +240,8 @@ export class Orchestrator {
         if (command.pinned !== undefined) next.pinnedAt = command.pinned ? new Date().toISOString() : undefined;
         if (command.archived !== undefined) next.archivedAt = command.archived ? new Date().toISOString() : undefined;
         if (command.runtimeMode !== undefined) next.runtimeMode = command.runtimeMode ?? undefined;
+        if (command.worktreeSetup !== undefined) next.worktreeSetup = command.worktreeSetup?.trim() || undefined;
+        if (command.isolateTasks !== undefined) next.isolateTasks = command.isolateTasks;
         this.#store.commit(`project:${project.id}`, [{ type: "project.upserted", project: next }]);
         return { ok: true };
       }
@@ -282,7 +365,14 @@ export class Orchestrator {
     const from = this.#store.getCheckpoint(threadId, fromOrdinal);
     const to = this.#store.getCheckpoint(threadId, toOrdinal);
     if (!from || !to) throw new CommandError(`Missing checkpoint ${!from ? fromOrdinal : toOrdinal}.`);
-    return checkpoints.diff(thread.cwd, from.ref, to.ref);
+    return checkpoints.diff(workdirOf(thread), from.ref, to.ref);
+  }
+
+  /** Branch state for a thread on its own worktree (and its pull request, if any). */
+  async worktreeStatus(threadId: string) {
+    const { wt } = this.#requireWorktree(threadId);
+    const [st, pr] = await Promise.all([worktrees.status(wt), worktrees.pullRequestFor(wt)]);
+    return { ...st, path: wt.path, root: wt.root, pr };
   }
 
   /** Morning briefing contents (latest, or live for the last day). */
@@ -298,6 +388,7 @@ export class Orchestrator {
   }
 
   shutdown() {
+    void this.browser.shutdown();
     this.#jobs.stop();
     this.#team.stop();
     for (const s of this.#sessions.values()) s.close();
@@ -361,6 +452,49 @@ export class Orchestrator {
     };
     this.#store.commit(thread.id, [{ type: "thread.upserted", thread }]);
     return { threadId: thread.id };
+  }
+
+  async #addWorktree(threadId: string, opts: { base?: string; branch?: string }) {
+    const thread = this.#requireThread(threadId);
+    if (!(await checkpoints.isGitRepo(thread.cwd))) throw new CommandError("This folder isn't a git repository, so it can't have branches.");
+    const project = this.#store.getProjectByPath(thread.cwd);
+    let wt: ThreadWorktree;
+    try {
+      wt = await worktrees.createThreadWorktree(thread.cwd, {
+        title: thread.title === "New thread" ? "thread" : thread.title,
+        base: opts.base,
+        branch: opts.branch,
+        setup: project?.worktreeSetup,
+      });
+    } catch (err) {
+      throw new CommandError((err as Error).message);
+    }
+    this.#closeSession(threadId);
+    const latest = this.#requireThread(threadId);
+    // A new folder means a new engine conversation (they're keyed by folder).
+    this.#store.commit(threadId, [{ type: "thread.upserted", thread: { ...latest, worktree: wt, nativeSessionId: latest.runCount ? latest.nativeSessionId : undefined } }]);
+    this.#note(threadId, `Working on branch ${wt.branch} (from ${wt.base}) in its own folder. Your checkout isn't touched until you merge.` + (wt.setupError ? `\n${wt.setupError}` : ""));
+    return { worktree: wt };
+  }
+
+  #requireWorktree(threadId: string): { thread: Thread; wt: ThreadWorktree } {
+    const thread = this.#requireThread(threadId);
+    if (!thread.worktree) throw new CommandError("This thread doesn't have its own branch.");
+    return { thread, wt: thread.worktree };
+  }
+
+  /** A short note from Bullpen in a thread's timeline. */
+  #note(threadId: string, text: string) {
+    const id = randomUUID();
+    this.#store.commit(threadId, [{ type: "turn-item.upserted", item: { id: `note:${id}`, threadId, runId: `note:${id}`, kind: "note", text } }]);
+  }
+
+  #prBody(thread: Thread): string {
+    const asks = this.#store
+      .listTurnItems(thread.id, 200)
+      .filter((i) => i.kind === "user_message")
+      .map((i) => (i.kind === "user_message" ? `- ${i.text.split("\n")[0].slice(0, 200)}` : ""));
+    return [`Work from the Bullpen thread "${thread.title}".`, asks.length ? `\nRequests:\n${asks.join("\n")}` : ""].join("\n");
   }
 
   // ---------- agents ----------
@@ -541,13 +675,22 @@ export class Orchestrator {
         `The message that mentions you:\n\n${text}`,
         "Reply to it. Your final message is posted back into that thread." + (CORRECTION.test(text) ? `\n${LESSON_HINT}` : ""),
       ].join("\n\n---\n\n");
-      void this.#consult(agent, prompt, chain, project).then(({ ok, text: answer }) => {
-        this.#store.commit(thread.id, [
-          { type: "turn-item.upserted", item: { ...item, status: ok ? "completed" : "failed", text: answer } },
-        ]);
-      });
+      const withRetry = { ...item, retry: { prompt, project, chain } };
+      this.#store.commit(thread.id, [{ type: "turn-item.upserted", item: withRetry }]);
+      this.#runMention(withRetry);
     }
     return { mentionId, agents: agents.map((a) => a.name) };
+  }
+
+  #runMention(item: Extract<TurnItem, { kind: "agent_reply" }>) {
+    const agent = this.#store.getAgent(item.agentId);
+    if (!agent || !item.retry) return;
+    void this.#consult(agent, item.retry.prompt, item.retry.chain, item.retry.project).then(({ ok, text: answer }) => {
+      const latest = this.#store.getTurnItem(item.id) ?? item;
+      this.#store.commit(item.threadId, [
+        { type: "turn-item.upserted", item: { ...(latest as typeof item), status: ok ? "completed" : "failed", text: answer, retry: undefined } },
+      ]);
+    });
   }
 
   /** Plain-text tail of a thread's conversation, for an @mentioned agent. */
@@ -640,6 +783,8 @@ export class Orchestrator {
     const leadTools = self && this.#store.getAgent(self)?.canLead ? this.#team.tools(threadId) : [];
     return [
       ...leadTools,
+      ...this.#threadTools(threadId),
+      ...this.#browserTools(threadId),
       {
         name: "propose_lesson",
         description:
@@ -693,6 +838,208 @@ export class Orchestrator {
     ];
   }
 
+  /** Threads as tools (T3: t3_thread_launch/list/read/send/wait): agents can start and follow other threads. */
+  #threadTools(threadId: string): HarnessTool[] {
+    const find = (ref: string | undefined) => {
+      const r = (ref ?? "").trim();
+      const all = this.#store.listThreads();
+      return all.find((t) => t.id === r) ?? all.find((t) => t.id.startsWith(r) && r.length >= 6);
+    };
+    const line = (t: Thread) =>
+      `${t.id.slice(0, 8)}  ${t.status === "running" ? "working" : "idle"}  "${t.title}"  ${t.worktree ? `branch ${t.worktree.branch}` : t.cwd}`;
+    const lastAnswer = (t: Thread) => {
+      const items = this.#store.listTurnItems(t.id, 60);
+      const a = items.filter((i) => i.kind === "assistant_message" && !i.streaming).at(-1);
+      return a?.kind === "assistant_message" ? a.text : "";
+    };
+    return [
+      {
+        name: "list_threads",
+        description: "List recent project threads (id, status, title, folder or branch). Use the id with read_thread, message_thread and wait_for_thread.",
+        params: { project: { description: "Only threads in this project folder (absolute path). Default: the project you're working in.", optional: true } },
+        run: async ({ project }) => {
+          const dir = project?.trim() || this.#projectOf(threadId);
+          const main = dir ? worktrees.mainCheckoutOf(dir) ?? dir : undefined;
+          const list = this.#store
+            .listThreads()
+            .filter((t) => !t.agentId && !t.jobId && (!main || t.cwd === main || t.cwd === dir))
+            .sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt))
+            .slice(0, 25);
+          return { text: list.map(line).join("\n") || "(no threads)" };
+        },
+      },
+      {
+        name: "read_thread",
+        description: "Read the recent conversation in another thread.",
+        params: { thread: { description: "Thread id (or its first 8 characters)." } },
+        run: async ({ thread: ref }) => {
+          const t = find(ref);
+          if (!t) return { isError: true, text: `No thread ${ref}.` };
+          return { text: `${line(t)}\n\n${this.#transcript(t.id) || "(empty)"}` };
+        },
+      },
+      {
+        name: "start_thread",
+        description:
+          "Start a new thread in a project with its own agent, for a separate piece of work that should run on its own (in parallel with yours). " +
+          "With branch 'yes' it works on its own git branch and folder, so it can't collide with you. Returns its id; follow it with wait_for_thread or read_thread. " +
+          "The new thread is visible to the person in the sidebar.",
+        params: {
+          prompt: { description: "The complete request: the new agent sees nothing of your conversation." },
+          title: { description: "Short title for the sidebar.", optional: true },
+          project: { description: "Project folder (absolute path). Default: the project you're working in.", optional: true },
+          branch: { description: "'yes' to work on its own branch (git worktree), 'no' to work in the project folder. Default: yes in git repos.", optional: true },
+          engine: { description: "'claude' or 'codex'. Default: same as yours.", optional: true },
+        },
+        run: async (a) => {
+          const caller = this.#requireThread(threadId);
+          const project = a.project?.trim() || this.#projectOf(threadId);
+          if (!project) return { isError: true, text: "Say which project folder (project)." };
+          const root = worktrees.mainCheckoutOf(project) ?? project;
+          if (!a.prompt?.trim()) return { isError: true, text: "Pass the prompt." };
+          const live = this.#store.listThreads().filter((t) => t.startedBy && t.status === "running").length;
+          if (live >= 4) return { isError: true, text: "Four agent-started threads are already working; wait for one to finish first." };
+          if (caller.startedBy && this.#store.getThread(caller.startedBy.threadId)?.startedBy) {
+            return { isError: true, text: "Threads started by agents can't keep starting more beyond two levels." };
+          }
+          const git = await checkpoints.isGitRepo(root);
+          const wantBranch = a.branch ? /^y/i.test(a.branch) : git;
+          try {
+            const { threadId: id } = this.#createThread({
+              type: "thread.create",
+              cwd: root,
+              provider: a.engine?.trim() || caller.provider,
+              model: !a.engine?.trim() || a.engine.trim() === caller.provider ? caller.model : undefined,
+              title: a.title?.trim().slice(0, 60) || a.prompt.trim().slice(0, 60),
+              runtimeMode: caller.agentId ? (this.#store.getProjectByPath(root)?.runtimeMode ?? "approval-required") : caller.runtimeMode,
+            });
+            const t = this.#requireThread(id);
+            this.#store.commit(id, [{ type: "thread.upserted", thread: { ...t, startedBy: { threadId, title: caller.title } } }]);
+            if (wantBranch && git) await this.#addWorktree(id, {});
+            await this.#serial(id, () => this.#sendMessage(id, a.prompt, [], undefined));
+            const created = this.#requireThread(id);
+            return { text: `Started ${line(created)}.` };
+          } catch (err) {
+            return { isError: true, text: (err as Error).message };
+          }
+        },
+      },
+      {
+        name: "message_thread",
+        description: "Send a message to another thread's agent (it starts a turn there). Fails if that thread is working; wait_for_thread first.",
+        params: { thread: { description: "Thread id." }, message: { description: "What to say; it sees nothing of your conversation." } },
+        run: async ({ thread: ref, message }) => {
+          const t = find(ref);
+          if (!t) return { isError: true, text: `No thread ${ref}.` };
+          if (t.id === threadId) return { isError: true, text: "That's your own thread." };
+          if (!message?.trim()) return { isError: true, text: "Pass the message." };
+          try {
+            await this.dispatch({ type: "message.send", threadId: t.id, text: message });
+            return { text: `Sent. ${line(this.#requireThread(t.id))}` };
+          } catch (err) {
+            return { isError: true, text: (err as Error).message };
+          }
+        },
+      },
+      {
+        name: "wait_for_thread",
+        description: "Wait until another thread's agent finishes its turn, then return its final answer.",
+        params: {
+          thread: { description: "Thread id." },
+          minutes: { description: "Give up after this many minutes (default 10, max 30).", optional: true },
+        },
+        run: async ({ thread: ref, minutes }) => {
+          const t = find(ref);
+          if (!t) return { isError: true, text: `No thread ${ref}.` };
+          const ms = Math.min(30, Math.max(1, Number(minutes) || 10)) * 60_000;
+          const idle = this.#waitFor(t.id, () => this.#store.getThread(t.id)?.status !== "running");
+          const timedOut = await Promise.race([idle.then(() => false), new Promise<boolean>((r) => setTimeout(() => r(true), ms))]);
+          const now = this.#requireThread(t.id);
+          if (timedOut) return { text: `Still working after ${ms / 60_000} minutes. ${line(now)}` };
+          const run = this.#store.listRuns(t.id).at(-1);
+          return { text: `${line(now)}\nLast turn: ${run?.status ?? "?"}\n\n${lastAnswer(now) || "(no answer)"}` };
+        },
+      },
+      {
+        name: "propose_pull_request",
+        description:
+          "When this thread's work (on its own branch) is ready: propose a pull request. The person sees a button to push the branch and open it; you can't push yourself.",
+        params: { title: { description: "PR title." }, body: { description: "PR description: what changed, why, how to verify." } },
+        run: async ({ title, body }) => {
+          const t = this.#requireThread(threadId);
+          if (!t.worktree) return { isError: true, text: "This thread works in the project folder, not on its own branch; there's nothing to open a pull request from." };
+          if (!title?.trim()) return { isError: true, text: "Pass a title." };
+          const id = randomUUID();
+          this.#store.commit(threadId, [
+            {
+              type: "turn-item.upserted",
+              item: { id: `note:${id}`, threadId, runId: t.activeRunId ?? `note:${id}`, kind: "note", text: `Proposed a pull request: **${title.trim()}**`, action: { kind: "open_pr", title: title.trim(), body: body?.trim() ?? "" } },
+            },
+          ]);
+          return { text: "Proposed. The person will open it with one click; tell them briefly." };
+        },
+      },
+    ];
+  }
+
+  /** A real browser (T3: preview_open/act/snapshot). The person sees the same page in the Browser panel. */
+  #browserTools(threadId: string): HarnessTool[] {
+    const b = this.browser;
+    const wrap = (fn: (a: Record<string, string>) => Promise<string>) => async (a: Record<string, string>) => {
+      try {
+        return { text: await fn(a) };
+      } catch (err) {
+        return { isError: true, text: (err as Error).message.split("\n")[0] };
+      }
+    };
+    return [
+      {
+        name: "browser_open",
+        description:
+          "Open a page in your browser (a real Chrome tab; the person sees it live in the Browser panel). Works for localhost dev servers and public sites. Then use browser_snapshot to read it.",
+        params: { url: { description: "e.g. localhost:3000, http://localhost:5173/login, https://example.com" } },
+        run: wrap(async ({ url }) => {
+          const r = await b.open(threadId, url ?? "");
+          return `Opened ${r.url} — "${r.title}". Use browser_snapshot to read it.`;
+        }),
+      },
+      {
+        name: "browser_snapshot",
+        description: "Read the open page: its URL, title, and an accessibility tree of what's on it (headings, text, links, buttons, inputs).",
+        params: {},
+        run: wrap(() => b.snapshot(threadId)),
+      },
+      {
+        name: "browser_click",
+        description: "Click something on the open page.",
+        params: { target: { description: "Visible text, 'button \"Save\"' / 'link \"Docs\"', or a CSS selector." } },
+        run: wrap(({ target }) => b.click(threadId, target ?? "")),
+      },
+      {
+        name: "browser_type",
+        description: "Type into a field on the open page (replaces what's there).",
+        params: {
+          target: { description: "The field's label, placeholder, or a CSS selector." },
+          text: { description: "What to type." },
+          submit: { description: "'yes' to press Enter after typing.", optional: true },
+        },
+        run: wrap(({ target, text, submit }) => b.type(threadId, target ?? "", text ?? "", /^y/i.test(submit ?? ""))),
+      },
+      {
+        name: "browser_press",
+        description: "Press a key on the open page, e.g. Enter, Escape, Tab, ArrowDown, Meta+A.",
+        params: { key: { description: "The key." } },
+        run: wrap(({ key }) => b.press(threadId, key ?? "Enter")),
+      },
+      {
+        name: "browser_screenshot",
+        description: "Save a screenshot of the open page and return its file path; read that image file to see the page.",
+        params: {},
+        run: wrap(async () => `Saved ${await b.screenshot(threadId)}`),
+      },
+    ];
+  }
+
   /**
    * The project a thread's current work is about: a normal thread's own folder, or for an agent's
    * home thread, the project it was called into (none when you're just talking to it).
@@ -700,7 +1047,7 @@ export class Orchestrator {
   #projectOf(threadId: string): string | undefined {
     const thread = this.#store.getThread(threadId);
     if (!thread) return undefined;
-    return thread.agentId ? this.#runProjects.get(threadId) : thread.cwd;
+    return thread.agentId ? this.#runProjects.get(threadId) : workdirOf(thread);
   }
 
   #agentInstructions(agent: Agent): string {
@@ -731,7 +1078,7 @@ export class Orchestrator {
 
   // ---------- turns ----------
 
-  async #sendMessage(threadId: string, text: string, chain: string[], project?: string, team?: boolean, lessonHint?: boolean) {
+  async #sendMessage(threadId: string, text: string, chain: string[], project?: string, team?: boolean, lessonHint?: boolean, resumed = 0) {
     const thread = this.#requireThread(threadId);
     if (thread.status === "running") throw new CommandError("A run is already active; interrupt it first.");
     if (!text.trim()) throw new CommandError("Empty message.");
@@ -743,6 +1090,7 @@ export class Orchestrator {
       ordinal,
       status: "running",
       startedAt: new Date().toISOString(),
+      request: { text, chain, project, team, resumed: resumed || undefined },
     };
     const userItem: TurnItem = { id: `user:${run.id}`, threadId, runId: run.id, kind: "user_message", text };
     const title = thread.runCount === 0 && thread.title === "New thread" ? text.slice(0, 60) : thread.title;
@@ -775,6 +1123,7 @@ export class Orchestrator {
     const lessons = this.#lessonsFor(thread.agentId);
     if (lessons.length) agentText = `Lessons from the person (always follow these):\n${lessons.map((l) => `- ${l}`).join("\n")}\n\n---\n\n${agentText}`;
     if (lessonHint) agentText = `${agentText}\n\n${LESSON_HINT}`;
+    if (resumed) agentText = `${RESUME_NOTE}\n\n---\n\n${agentText}`;
     this.#runChains.set(threadId, chain);
     if (project) this.#runProjects.set(threadId, project);
     else this.#runProjects.delete(threadId);
@@ -784,8 +1133,16 @@ export class Orchestrator {
 
   /** The project's permission level reaches every agent working there; a thread or agent set higher keeps its own. */
   #turnMode(thread: Thread, workdir?: string): RuntimeMode {
-    const projectMode = this.#store.getProjectByPath(workdir ?? thread.cwd)?.runtimeMode;
+    const projectMode = this.#projectFor(workdir ?? thread.cwd)?.runtimeMode;
     return projectMode && MODE_RANK[projectMode] > MODE_RANK[thread.runtimeMode] ? projectMode : thread.runtimeMode;
+  }
+
+  /** The project a folder belongs to, including worktrees made from it. */
+  #projectFor(dir: string): Project | undefined {
+    const direct = this.#store.getProjectByPath(dir);
+    if (direct) return direct;
+    const main = worktrees.mainCheckoutOf(dir);
+    return main ? this.#store.getProjectByPath(main) : undefined;
   }
 
   #session(threadId: string): ProviderSession {
@@ -797,10 +1154,11 @@ export class Orchestrator {
     const agent = thread.agentId ? this.#store.getAgent(thread.agentId) : undefined;
     session = adapter.openSession({
       threadId,
-      cwd: thread.cwd,
+      cwd: workdirOf(thread),
       runtimeMode: thread.runtimeMode,
       model: thread.model,
       resumeNativeSessionId: thread.nativeSessionId,
+      rewind: thread.rewind,
       instructions: agent ? this.#agentInstructions(agent) : undefined,
       ownFolder: agent ? agent.cwd : undefined,
       tools: this.#harnessTools(threadId),
@@ -816,9 +1174,10 @@ export class Orchestrator {
     if (!thread) return;
     switch (event.type) {
       case "native_session.updated":
-        if (thread.nativeSessionId !== event.nativeSessionId) {
+        if (thread.nativeSessionId !== event.nativeSessionId || thread.rewind) {
+          // A rewind is applied once the engine has reopened on it.
           this.#store.commit(threadId, [
-            { type: "thread.upserted", thread: { ...thread, nativeSessionId: event.nativeSessionId } },
+            { type: "thread.upserted", thread: { ...thread, nativeSessionId: event.nativeSessionId, rewind: undefined } },
           ]);
         }
         return;
@@ -842,7 +1201,16 @@ export class Orchestrator {
     const events: DomainEvent[] = [
       {
         type: "run.upserted",
-        run: { ...run, status: event.outcome, error: event.error, costUsd: event.costUsd, tokens: event.tokens, endedAt: new Date().toISOString() },
+        run: {
+          ...run,
+          status: event.outcome,
+          error: event.error,
+          costUsd: event.costUsd,
+          tokens: event.tokens,
+          nativeTurnId: event.nativeTurnId,
+          request: undefined, // done: nothing to resume
+          endedAt: new Date().toISOString(),
+        },
       },
     ];
     if (event.error) {
@@ -864,15 +1232,16 @@ export class Orchestrator {
 
   async #captureCheckpoint(threadId: string, runId: string, ordinal: number, announce: boolean) {
     const thread = this.#requireThread(threadId);
-    if (!(await checkpoints.isGitRepo(thread.cwd))) return;
+    const dir = workdirOf(thread);
+    if (!(await checkpoints.isGitRepo(dir))) return;
     try {
       const ref = checkpoints.checkpointRef(threadId, ordinal);
-      const commit = await checkpoints.capture(thread.cwd, ref, `checkpoint ${ordinal} for thread ${threadId}`);
+      const commit = await checkpoints.capture(dir, ref, `checkpoint ${ordinal} for thread ${threadId}`);
       const checkpoint: Checkpoint = { threadId, ordinal, ref, commit, capturedAt: new Date().toISOString() };
       const events: DomainEvent[] = [{ type: "checkpoint.captured", checkpoint }];
       const previous = this.#store.getCheckpoint(threadId, ordinal - 1);
       if (announce && previous) {
-        const files = await checkpoints.changedFiles(thread.cwd, previous.ref, ref);
+        const files = await checkpoints.changedFiles(dir, previous.ref, ref);
         events.push({
           type: "turn-item.upserted",
           item: { id: `checkpoint:${runId}`, threadId, runId, kind: "checkpoint", ordinal, ref, filesChanged: files.length },
@@ -890,9 +1259,45 @@ export class Orchestrator {
     const target = this.#store.getCheckpoint(threadId, ordinal);
     if (!target) throw new CommandError(`No checkpoint ${ordinal} for this thread.`);
     const safetyRef = `${checkpoints.checkpointRef(threadId, ordinal)}-undo-${Date.now()}`;
-    await checkpoints.restore(thread.cwd, target.ref, safetyRef);
-    // Files only: unlike T3, the agent's conversation is NOT rewound. Tell it so on the next turn.
-    return { restoredTo: ordinal, undoRef: safetyRef };
+    await checkpoints.restore(workdirOf(thread), target.ref, safetyRef);
+
+    // Rewind the conversation too (T3 does), so the agent forgets the undone turns.
+    const runs = this.#store.listRuns(threadId).filter((r) => !r.rewound && !r.id.startsWith("mention:"));
+    const dropped = runs.filter((r) => r.ordinal > ordinal);
+    const kept = runs.filter((r) => r.ordinal <= ordinal).sort((a, b) => b.ordinal - a.ordinal)[0];
+    let rewind: Thread["rewind"];
+    let conversation: "rewound" | "unchanged" | "restarted" = "unchanged";
+    if (dropped.length) {
+      if (ordinal === 0 || !kept) conversation = "restarted";
+      else if (thread.provider === "claude" && kept.nativeTurnId) {
+        rewind = { keepThrough: kept.nativeTurnId };
+        conversation = "rewound";
+      } else if (thread.provider === "codex" && dropped.sort((a, b) => a.ordinal - b.ordinal)[0].nativeTurnId) {
+        rewind = { dropFrom: dropped[0].nativeTurnId };
+        conversation = "rewound";
+      }
+    }
+    const events: DomainEvent[] = [];
+    if (conversation !== "unchanged") {
+      this.#closeSession(threadId);
+      for (const r of dropped) events.push({ type: "run.upserted", run: { ...r, rewound: true } });
+      const latest = this.#requireThread(threadId);
+      events.push({
+        type: "thread.upserted",
+        thread: { ...latest, rewind, nativeSessionId: conversation === "restarted" ? undefined : latest.nativeSessionId },
+      });
+    }
+    if (events.length) this.#store.commit(threadId, events);
+    // The next turn's "before" snapshot must be the restored files, not what was there before the rollback.
+    const latest = this.#requireThread(threadId);
+    if (latest.runCount > ordinal) await this.#captureCheckpoint(threadId, `rollback:${Date.now()}`, latest.runCount, false);
+    this.#note(
+      threadId,
+      conversation === "unchanged"
+        ? `Files restored to after turn ${ordinal}. The agent still remembers the later turns (this engine can't rewind them).`
+        : `Restored files and conversation to ${ordinal === 0 ? "the start" : `after turn ${ordinal}`}. The agent no longer remembers the turns after that.`,
+    );
+    return { restoredTo: ordinal, undoRef: safetyRef, conversation };
   }
 
   #requireThread(threadId: string): Thread {
@@ -919,6 +1324,10 @@ export class Orchestrator {
       this.#store.commit(item.threadId, [{ type: "turn-item.upserted", item: { ...item, status: "resolved", decision: "cancel" } as TurnItem }]);
     }
     for (const item of this.#store.runningReplies()) {
+      if (item.kind === "agent_reply" && item.retry) {
+        this.#resumeQueue.push(() => this.#runMention(item)); // ask again once everything is up
+        continue;
+      }
       this.#store.commit(item.threadId, [
         { type: "turn-item.upserted", item: { ...item, status: "failed", text: "Server restarted before the agent answered." } as TurnItem },
       ]);
@@ -936,6 +1345,24 @@ export class Orchestrator {
         });
       }
       this.#store.commit(thread.id, events);
+      // Pick the turn back up, once. Agents' own threads are driven by whoever called them (team tasks requeue
+      // themselves, @mentions are asked again above, an ask_agent caller resumes its own turn).
+      const req = run?.request;
+      if (run?.status === "running" && req && !thread.agentId && !thread.jobId && !req.resumed) {
+        this.#resumeQueue.push(() => {
+          void this.#serial(thread.id, () => this.#sendMessage(thread.id, req.text, req.chain, req.project, req.team, false, 1)).catch((err) =>
+            console.error(`[resume] ${thread.id}:`, err),
+          );
+        });
+      }
     }
+  }
+
+  /** Work to restart after a crash, run once the team and jobs are up. */
+  readonly #resumeQueue: Array<() => void> = [];
+
+  /** Call after construction: resumes turns and @mention answers that a restart interrupted. */
+  resumeInterrupted() {
+    for (const fn of this.#resumeQueue.splice(0)) fn();
   }
 }

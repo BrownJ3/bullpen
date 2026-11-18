@@ -8,10 +8,11 @@
 import { randomUUID } from "node:crypto";
 import { relative, isAbsolute } from "node:path";
 import { execFileSync } from "node:child_process";
-import { statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import type { Store } from "./store.ts";
 import { shellWrites } from "./team-policy.ts";
-import type { Agent, Goal, GoalCard, HarnessTool, TeamTask, Thread, TurnItem } from "./types.ts";
+import * as worktrees from "./worktrees.ts";
+import { workdirOf, type Agent, type Goal, type GoalCard, type HarnessTool, type TeamTask, type Thread, type TurnItem } from "./types.ts";
 
 export const LIMITS = {
   maxTasks: 12, // per goal
@@ -47,6 +48,8 @@ export interface TeamHost {
   ): Promise<ConsultOutcome>;
   interrupt(homeThreadId: string, runId: string): Promise<void>;
   transcript(threadId: string): string;
+  /** Should tasks in this folder get their own worktree? (git repo, and the project hasn't turned it off) */
+  isolation(goalDir: string): Promise<{ setup?: string } | undefined>;
   /** Suggest a lasting lesson for an agent (the person approves it). */
   proposeLesson(agentId: string | undefined, text: string, source: { kind: "review"; threadId?: string; note?: string }): void;
 }
@@ -120,7 +123,7 @@ export class Team {
     const goal: Goal = {
       id: randomUUID(),
       threadId: thread.id,
-      project: thread.cwd,
+      project: workdirOf(thread),
       leadAgentId: lead.id,
       title: titleFrom(request, lead.name),
       request,
@@ -158,6 +161,20 @@ export class Team {
     }
     this.#wakes.delete(goalId);
     this.#publish(goalId);
+    void this.#cleanupGoal(goalId);
+  }
+
+  /** Remove the tasks' worktrees once a goal is over (anything not landed is kept in the task's refs). */
+  async #cleanupGoal(goalId: string) {
+    const goal = this.#store.getGoal(goalId);
+    if (!goal) return;
+    for (const t of this.#store.listTasks(goalId)) {
+      if (!t.workspace) continue;
+      await worktrees.removeTaskWorkspace(goal.project, t.workspace).catch(() => {});
+      if (t.status === "accepted") await worktrees.dropTaskRefs(goal.project, t.id).catch(() => {});
+      const latest = this.#store.getTask(t.id);
+      if (latest) this.#saveTask({ ...latest, workspace: undefined });
+    }
   }
 
   retryTask(taskId: string) {
@@ -230,7 +247,7 @@ export class Team {
         },
         run: async (a) => {
           const goal = goalOf();
-          return goal ? this.#review(goal, a) : none;
+          return goal ? await this.#review(goal, a) : none;
         },
       },
       {
@@ -254,6 +271,7 @@ export class Team {
           if (!isActiveTask(task)) return { isError: true, text: `${task.ref} is already ${task.status}.` };
           this.#saveTask({ ...task, status: "cancelled", error: a.reason, endedAt: now() });
           if (task.status === "working" && task.runThreadId && task.runId) void this.#host.interrupt(task.runThreadId, task.runId);
+          if (task.workspace) void worktrees.removeTaskWorkspace(goal.project, task.workspace).catch(() => {});
           this.#pump(goal.id);
           this.#publish(goal.id);
           return { text: `${task.ref} cancelled.` };
@@ -278,6 +296,7 @@ export class Team {
           this.#saveGoal({ ...goal, status: "done", report, endedAt: now() });
           this.#postReply(goal, `report:${goal.id}`, report);
           this.#publish(goal.id);
+          void this.#cleanupGoal(goal.id);
           return { text: "Goal finished; your report is posted in the thread. End your turn with a one-line confirmation." };
         },
       },
@@ -327,7 +346,7 @@ export class Team {
     return { text: `Created ${task.ref} for @${agent.name}: "${task.title}". ${when}${task.autoAccept ? " It's accepted automatically when submitted." : ""}` };
   }
 
-  #review(goal: Goal, a: Record<string, string>) {
+  async #review(goal: Goal, a: Record<string, string>) {
     const task = this.#byRef(goal.id, a.task);
     if (!task) return { isError: true, text: `No task ${a.task}.` };
     if (task.status !== "submitted") return { isError: true, text: `${task.ref} is ${task.status}, not waiting for review.` };
@@ -336,10 +355,16 @@ export class Team {
       this.#host.proposeLesson(task.agentId, a.lesson.trim(), { kind: "review", threadId: goal.threadId, note: `From the review of ${task.ref} "${task.title}"` });
     }
     if (decision.startsWith("acc")) {
-      this.#saveTask({ ...task, status: "accepted", endedAt: now() });
+      const landed = await this.#accept(goal, task);
       this.#pump(goal.id);
       this.#publish(goal.id);
-      return { text: `${task.ref} accepted.` };
+      return landed.ok
+        ? { text: `${task.ref} accepted${task.workspace ? " and merged into the project" : ""}.` }
+        : {
+            text:
+              `${task.ref} can't be merged yet: it conflicts with work merged since it started (${landed.conflicts.join(", ") || landed.error}). ` +
+              "It's gone back to its owner to resolve; that doesn't count as your one send-back. You'll be woken when it's resubmitted.",
+          };
     }
     if (decision.startsWith("chan") || decision.startsWith("rej") || decision.startsWith("send")) {
       if (task.round >= 1) {
@@ -352,6 +377,40 @@ export class Team {
       return { text: `${task.ref} sent back to its owner with your notes.` };
     }
     return { isError: true, text: "decision must be 'accept' or 'changes'." };
+  }
+
+  /**
+   * Accept a task: merge its worktree into the goal's folder first. On a conflict it goes back to its agent with the
+   * conflict markers in its folder (status "changes", `conflicts` set; the review round isn't used up).
+   */
+  async #accept(goal: Goal, task: TeamTask, extra: Partial<TeamTask> = {}): Promise<{ ok: true } | { ok: false; conflicts: string[]; error?: string }> {
+    if (!task.workspace) {
+      this.#saveTask({ ...task, ...extra, status: "accepted", conflicts: undefined, endedAt: now() });
+      return { ok: true };
+    }
+    let res: worktrees.LandResult;
+    try {
+      res = await worktrees.landTask(goal.project, task.workspace, task.id);
+    } catch (err) {
+      res = { ok: false, conflicts: [], error: (err as Error).message };
+    }
+    const latest = { ...this.#store.getTask(task.id)!, ...extra };
+    if (res.ok) {
+      this.#saveTask({ ...latest, status: "accepted", filesTouched: res.files.length ? res.files : latest.filesTouched, conflicts: undefined, endedAt: now() });
+      void worktrees.removeTaskWorkspace(goal.project, task.workspace).then(() => {
+        const t = this.#store.getTask(task.id);
+        if (t) this.#saveTask({ ...t, workspace: undefined });
+      });
+      return { ok: true };
+    }
+    if (!res.conflicts.length) {
+      this.#saveTask({ ...latest, status: "parked", error: `Couldn't merge it into the project: ${res.error}`, endedAt: now() });
+      this.#wake(goal.id, { text: `${task.ref} couldn't be merged into the project (${res.error}). Its work is in ${task.workspace.path}. Decide what to do.` });
+      return res;
+    }
+    // landTask moved the workspace's base to the goal folder's current state.
+    this.#saveTask({ ...latest, status: "changes", workspace: task.workspace, conflicts: res.conflicts });
+    return res;
   }
 
   // ---------------------------------------------------------------- the lead's turns
@@ -490,12 +549,28 @@ export class Team {
       return;
     }
     const rework = task.status === "changes";
+    const resolving = rework && Boolean(task.conflicts?.length);
     task = { ...task, status: "working", attempts: task.attempts + 1, startedAt: task.startedAt ?? now(), error: undefined };
     this.#saveTask(task);
     this.#publish(goal.id);
 
-    const prompt = rework ? this.#reworkPrompt(goal, task) : this.#taskPrompt(goal, task);
-    const res = await this.#host.consult(agent, prompt, [goal.leadAgentId], goal.project, {
+    // Its own worktree, made from the goal folder as it is now (so it includes accepted work it depends on).
+    if (!task.workspace || !existsSync(task.workspace.path)) {
+      const iso = await this.#host.isolation(goal.project).catch(() => undefined);
+      if (iso) {
+        try {
+          const workspace = await worktrees.createTaskWorkspace(goal.project, task.id, iso.setup);
+          task = { ...this.#store.getTask(taskId)!, workspace };
+          this.#saveTask(task);
+        } catch (err) {
+          console.error(`[team] worktree for ${task.ref} failed, sharing the project folder:`, err);
+        }
+      }
+    }
+    const where = task.workspace?.path ?? goal.project;
+
+    const prompt = resolving ? this.#conflictPrompt(goal, task) : rework ? this.#reworkPrompt(goal, task) : this.#taskPrompt(goal, task);
+    const res = await this.#host.consult(agent, prompt, [goal.leadAgentId], where, {
       team: true,
       onRun: (homeThreadId, runId) => {
         const t = this.#store.getTask(taskId);
@@ -517,23 +592,47 @@ export class Team {
     task = this.#store.getTask(taskId)!;
     const g = this.#store.getGoal(goal.id)!;
     if (task.status !== "working" || !isOpen(g)) {
-      this.#publish(goal.id); // cancelled meanwhile
+      // Cancelled meanwhile: the agent may have kept writing after the first cleanup, so clean up again.
+      if (task.workspace && ["cancelled"].includes(task.status) || (!isOpen(g) && task.workspace && task.status !== "accepted")) {
+        await worktrees.removeTaskWorkspace(goal.project, task.workspace).catch(() => {});
+      }
+      this.#publish(goal.id);
       return;
     }
     if (res.ok) {
-      const touched = res.homeThreadId && res.runId ? this.#filesTouched(res.homeThreadId, res.runId, goal.project) : [];
-      if (task.autoAccept && !rework) {
-        // Fast lane: no review turn. Dependents start now; the lead sees the result when it next wakes.
-        this.#saveTask({ ...task, status: "accepted", result: res.text, filesTouched: touched, runId: undefined, endedAt: now() });
-        this.#queueInfo(goal.id, `${task.ref} (@${agent.name}: ${task.title}) finished and was accepted automatically:\n${clip(res.text, 1500)}`);
-        this.#maybeWakeForFinish(goal.id);
+      let touched: string[] = [];
+      let patch = "";
+      if (task.workspace) {
+        const changes = await worktrees.taskChanges(goal.project, task.workspace, task.id).catch(() => undefined);
+        touched = changes?.files ?? [];
+        patch = changes?.patch ?? "";
+      } else if (res.homeThreadId && res.runId) touched = this.#filesTouched(res.homeThreadId, res.runId, goal.project);
+      const result = resolving ? `${task.result ?? ""}\n\n(Resolved merge conflicts: ${res.text})` : res.text;
+      if ((task.autoAccept && !rework) || resolving) {
+        // Fast lane: no review turn (routine work, or work the lead already accepted that only needed its merge
+        // conflicts resolved). Dependents start now; the lead sees the result when it next wakes.
+        const landed = await this.#accept(goal, { ...task, result, filesTouched: touched }, { result, runId: undefined });
+        if (landed.ok) {
+          this.#queueInfo(
+            goal.id,
+            resolving
+              ? `${task.ref} (@${agent.name}: ${task.title}) resolved its merge conflicts and is merged in:\n${clip(res.text, 800)}`
+              : `${task.ref} (@${agent.name}: ${task.title}) finished and was accepted automatically:\n${clip(res.text, 1500)}`,
+          );
+          this.#maybeWakeForFinish(goal.id);
+        }
       } else {
-        this.#saveTask({ ...task, status: "submitted", result: res.text, filesTouched: touched, runId: undefined });
+        this.#saveTask({ ...task, status: "submitted", result, filesTouched: touched, runId: undefined, conflicts: undefined });
+        const verb = resolving ? "resubmitted after resolving merge conflicts" : rework ? "resubmitted after your notes" : "submitted";
         this.#wakeForReview(goal.id, {
           text:
-            `${task.ref} (@${agent.name}: ${task.title}) was ${rework ? "resubmitted after your notes" : "submitted"}:\n\n${clip(res.text, 4000)}` +
+            `${task.ref} (@${agent.name}: ${task.title}) was ${verb}:\n\n${clip(res.text, 4000)}` +
             (touched.length ? `\n\nFiles touched: ${touched.join(", ")}` : "") +
-            `\n\nReview it with review_task (${rework ? "this was the one send-back, so accept it, fixing any small leftovers yourself" : "accept unless something is actually wrong; fix small things yourself rather than sending back"}).`,
+            (task.workspace
+              ? `\n\nIts work is in its own copy of the project, ${task.workspace.path}, and is merged into the project when you accept it.` +
+                (patch ? `\n\nThe change:\n\n${patch}` : "")
+              : "") +
+            `\n\nReview it with review_task (${rework && !resolving ? "this was the one send-back, so accept it, fixing any small leftovers yourself" : "accept unless something is actually wrong; fix small things yourself rather than sending back"}).`,
         });
       }
     } else if (res.limited) {
@@ -690,12 +789,14 @@ export class Team {
 
   #taskPrompt(goal: Goal, task: TeamTask): string {
     const lead = this.#store.getAgent(goal.leadAgentId);
+    const dir = task.workspace?.path ?? goal.project;
     const deps = task.dependsOn
       .map((id) => this.#store.getTask(id))
       .filter((t): t is TeamTask => Boolean(t))
       .map((t) => `${t.ref} (@${this.#store.getAgent(t.agentId)?.name ?? "?"}: ${t.title}):\n${clip(t.result, 2000)}`);
     return [
-      `You're on a team led by @${lead?.name ?? "lead"} for the goal "${goal.title}". Project folder: ${goal.project} (you have access to it; use absolute paths).`,
+      `You're on a team led by @${lead?.name ?? "lead"} for the goal "${goal.title}". Project folder: ${dir} (you have access to it; use absolute paths).` +
+        (task.workspace ? " It's your own copy of the project (a git worktree); your changes are merged into the real project when the lead accepts them." : ""),
       `Your task (${task.ref}): ${task.title}`,
       `Brief:\n${task.brief}`,
       `Deliverable:\n${task.deliverable}`,
@@ -703,7 +804,9 @@ export class Team {
       deps.length ? `Results from the tasks this builds on:\n\n${deps.join("\n\n")}` : "",
       [
         "Rules:",
-        "- Work only inside the project folder. Teammates may be editing other files at the same time, so stay in your area.",
+        task.workspace
+          ? "- Work only inside that folder. Teammates work in their own copies at the same time; stay in your area so the changes merge cleanly."
+          : "- Work only inside the project folder. Teammates may be editing other files at the same time, so stay in your area.",
         "- Change files with your file-editing tools and read them with your file-reading tools, not shell redirection or cat. Edits inside the project and tests/builds/git status run without approval; other shell commands wait for the person.",
         "- Don't commit, push, deploy or delete data.",
         "- Run the relevant tests, build or type check if the project has them.",
@@ -712,6 +815,14 @@ export class Team {
     ]
       .filter(Boolean)
       .join("\n\n---\n\n");
+  }
+
+  #conflictPrompt(goal: Goal, task: TeamTask): string {
+    return [
+      `Your work on ${task.ref} ("${task.title}", goal "${goal.title}") was accepted, but it conflicts with teammates' work that was merged into the project after you started.`,
+      `Your folder (${task.workspace?.path}) now holds the merged result. These files have git conflict markers (<<<<<<< ======= >>>>>>>): ${task.conflicts?.join(", ")}.`,
+      "Resolve every conflict keeping both sides' intent, make sure no markers are left, rerun the relevant checks, and finish with a short note of how you resolved it. Don't commit.",
+    ].join("\n\n");
   }
 
   #reworkPrompt(goal: Goal, task: TeamTask): string {

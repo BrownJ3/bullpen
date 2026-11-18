@@ -6,6 +6,7 @@
 //   bullpen restart
 //   bullpen status
 //   bullpen logs       follow the server log
+//   bullpen remote     use it from your phone or another computer (on [--lan] | off | ssh | reset)
 //   bullpen install    start at login, `bullpen` on your PATH, and a Bullpen app for Spotlight/Dock
 //   bullpen uninstall  undo install (keeps your threads and agents)
 
@@ -16,6 +17,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HOME, ensureHome, loadOrCreateToken } from "./home.ts";
 import { DEFAULT_PORT } from "./protocol.ts";
+import { deviceToken, pairingUrl, qrTerminal, readRemote, resetDeviceToken, resolveHost, sshCommand, writeRemote } from "./remote.ts";
 
 const PORT = Number(process.env.BULLPEN_PORT ?? DEFAULT_PORT);
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -294,7 +296,70 @@ switch (cmd) {
     uninstall();
     say("Removed the login service, the command and the app. Your threads and agents are kept in " + HOME);
     break;
+  case "remote": {
+    const sub = process.argv[3] ?? "status";
+    const cfg = readRemote();
+    const restartServer = async () => {
+      if (await running()) {
+        await stop();
+        if (!(await start())) process.exit(1);
+      }
+    };
+    if (sub === "on") {
+      const via = process.argv.includes("--lan") ? "lan" : "tailscale";
+      const where = resolveHost({ ...cfg, enabled: true, via });
+      if (!where) {
+        say(via === "lan"
+          ? "No local-network address found. Connect to Wi-Fi or Ethernet first."
+          : "Tailscale isn't running on this Mac. Install it (tailscale.com) and sign in on this Mac and your phone, then run this again.\n" +
+            "Or: `bullpen remote on --lan` for your local network (plain HTTP; only on a network you trust),\n" +
+            `or from another computer, forward the port over SSH: ${sshCommand(PORT)}`);
+        process.exit(1);
+      }
+      if (via === "lan") say("Note: on your local network the connection isn't encrypted. Use it only on a network you trust; Tailscale is safer.");
+      writeRemote({ enabled: true, via, host: where.host, names: where.names });
+      deviceToken(true);
+      await restartServer();
+      say(`Remote access is on (${via === "lan" ? "local network" : "Tailscale"}).`);
+    } else if (sub === "off") {
+      writeRemote({ ...cfg, enabled: false });
+      await restartServer();
+      say("Remote access is off. Only this Mac can connect.");
+      break;
+    } else if (sub === "reset") {
+      resetDeviceToken();
+      await restartServer();
+      say("New device token: every other device has to scan the new code.");
+    } else if (sub === "ssh") {
+      const had = Boolean(deviceToken(false));
+      const t = deviceToken(true)!;
+      if (!had) await restartServer();
+      say(`On the other computer, forward the port:\n\n  ${sshCommand(PORT)}\n\nthen open:\n\n  ${pairingUrl("127.0.0.1", PORT, t)}\n`);
+      say("That link works as you while the tunnel is up. `bullpen remote reset` makes a new one.");
+      break;
+    } else if (sub !== "status") {
+      say("usage: bullpen remote [on [--lan] | off | ssh | reset]");
+      process.exit(1);
+    }
+    const now = readRemote();
+    if (!now.enabled) {
+      say("Remote access is off. Turn it on with `bullpen remote on` (Tailscale) or `bullpen remote on --lan`.");
+      say("From another computer over SSH: `bullpen remote ssh` prints the tunnel command and the link.");
+      break;
+    }
+    const where = resolveHost(now);
+    const tokenNow = deviceToken(true)!;
+    if (!where) {
+      say(`Remote access is on, but no ${now.via === "lan" ? "local network" : "Tailscale"} address is available right now.`);
+      break;
+    }
+    const url = pairingUrl(now.via === "tailscale" && where.names[0] ? where.names[0] : where.host, PORT, tokenNow);
+    say(`Open this on your phone (scan the code), or on another device:\n\n  ${url}\n`);
+    say(await qrTerminal(url));
+    say("Anyone with this link can use Bullpen as you. `bullpen remote reset` makes a new one; `bullpen remote off` turns it off.");
+    break;
+  }
   default:
-    say("usage: bullpen [open|start|stop|restart|status|logs|install|uninstall]");
+    say("usage: bullpen [open|start|stop|restart|status|logs|install|uninstall|remote]");
     process.exit(1);
 }

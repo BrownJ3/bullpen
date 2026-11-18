@@ -3,6 +3,12 @@
 //   - the orchestrator turns them into DomainEvents (full-row upserts) stored in SQLite
 //   - clients read projections (Thread, Run, TurnItem) + live DomainEvents
 
+import type { ThreadWorktree, TaskWorkspace } from "./worktrees.ts";
+export type { ThreadWorktree, TaskWorkspace };
+
+/** Where a thread's agent actually works: its worktree, or the project folder. */
+export const workdirOf = (thread: { cwd: string; worktree?: { path: string } }): string => thread.worktree?.path ?? thread.cwd;
+
 export type RuntimeMode = "approval-required" | "auto-accept-edits" | "full-access";
 export type Decision = "accept" | "acceptForSession" | "decline" | "cancel";
 
@@ -29,6 +35,12 @@ export interface Thread {
   jobId?: string;
   /** A team is working on a goal started in this thread (for sidebar status). */
   team?: { active: number; needsYou: number };
+  /** Works on its own branch in its own folder (a git worktree); cwd stays the project it belongs to. */
+  worktree?: ThreadWorktree;
+  /** Started by an agent with start_thread. */
+  startedBy?: { threadId: string; title: string };
+  /** A rollback to apply to the engine's conversation the next time it opens. */
+  rewind?: { keepThrough?: string; dropFrom?: string };
   /** Set when this thread continues a session started outside Bullpen (e.g. in Claude Code). */
   importedFrom?: { tool: "claude"; title: string; at: string };
 }
@@ -49,6 +61,10 @@ export interface Project {
    * pulled in (mentions, team tasks, jobs); an agent or thread set to more than this keeps its own setting.
    */
   runtimeMode?: RuntimeMode;
+  /** Run in every new worktree before an agent starts there (e.g. "npm install"). */
+  worktreeSetup?: string;
+  /** Team tasks each get their own worktree, merged back when accepted (default on in git repos). */
+  isolateTasks?: boolean;
 }
 
 export interface Run {
@@ -62,6 +78,12 @@ export interface Run {
   tokens?: number;
   startedAt: string;
   endedAt?: string;
+  /** The engine's own id for the end of this turn (Claude: last message uuid; Codex: turn id), to rewind to. */
+  nativeTurnId?: string;
+  /** Rolled back: later turns were undone and the agent no longer remembers them. */
+  rewound?: boolean;
+  /** What was asked, kept so the turn can be resumed if Bullpen stops mid-turn (the outbox). */
+  request?: { text: string; chain: string[]; project?: string; team?: boolean; resumed?: number };
 }
 
 interface TurnItemBase {
@@ -82,6 +104,8 @@ export type TurnItem = TurnItemBase &
         input: unknown;
         status: "running" | "completed" | "failed";
         output?: string;
+        /** Set on steps a sub-agent took: the tool call (e.g. Claude's Task) that started it. */
+        parentId?: string;
       }
     | {
         kind: "approval_request";
@@ -101,7 +125,10 @@ export type TurnItem = TurnItemBase &
         text: string;
         /** Passed to this thread's own agent at the start of its next turn. */
         delivered: boolean;
+        /** While running: what to ask again if Bullpen restarts before the answer comes. */
+        retry?: { prompt: string; project?: string; chain: string[] };
       }
+    | { kind: "note"; text: string; action?: { kind: "open_pr"; title: string; body: string } }
     | { kind: "error"; message: string }
     | ({ kind: "team_goal" } & GoalCard)
   );
@@ -248,6 +275,10 @@ export interface TeamTask {
   reviewNotes?: string;
   filesTouched?: string[];
   error?: string;
+  /** Its own worktree (when the project isolates tasks); merged into the goal's folder on accept. */
+  workspace?: TaskWorkspace;
+  /** Files that conflicted the last time it was merged in. */
+  conflicts?: string[];
   /** The agent's home thread + run doing the work right now. */
   runThreadId?: string;
   runId?: string;
@@ -333,12 +364,33 @@ export type Command =
       title?: string;
       runtimeMode?: RuntimeMode;
       model?: string;
+      /** Work on a new branch in its own folder. */
+      worktree?: { base?: string; branch?: string };
       /** Continue this Claude Code session instead of starting a new conversation. */
       resumeClaudeSession?: { id: string; title: string; updatedAt: string };
     }
   | { type: "project.add"; path: string; title?: string }
   | { type: "project.import"; projects: Array<{ path: string; lastUsedAt?: string }> }
-  | { type: "project.update"; projectId: string; title?: string; pinned?: boolean; archived?: boolean; runtimeMode?: RuntimeMode | null }
+  | {
+      type: "project.update";
+      projectId: string;
+      title?: string;
+      pinned?: boolean;
+      archived?: boolean;
+      runtimeMode?: RuntimeMode | null;
+      worktreeSetup?: string | null;
+      isolateTasks?: boolean;
+    }
+  /** Move a thread onto its own branch and folder (only before its first turn, or when it has no changes). */
+  | { type: "worktree.create"; threadId: string; base?: string; branch?: string }
+  /** Merge the thread's branch into its base. */
+  | { type: "worktree.merge"; threadId: string }
+  /** Merge the latest base into the thread's branch (conflicts are left for the agent). */
+  | { type: "worktree.update"; threadId: string }
+  /** Push the branch and open a pull request. */
+  | { type: "worktree.pr"; threadId: string; title?: string; body?: string }
+  /** Delete the worktree folder (and the branch, if asked). The thread goes back to the project folder. */
+  | { type: "worktree.remove"; threadId: string; deleteBranch?: boolean }
   /** Show/hide many projects at once (the project manager dialog). */
   | { type: "project.bulk"; archive: string[]; unarchive: string[] }
   /** Removes it from the sidebar; its threads and files are kept. */
@@ -419,6 +471,7 @@ export type AdapterEvent =
       error?: string;
       costUsd?: number;
       tokens?: number;
+      nativeTurnId?: string;
     };
 
 /**
@@ -438,6 +491,8 @@ export interface OpenSessionInput {
   runtimeMode: RuntimeMode;
   model?: string;
   resumeNativeSessionId?: string;
+  /** Resume the conversation only up to the end of an earlier turn (a rollback), dropping what came after. */
+  rewind?: { keepThrough?: string; dropFrom?: string };
   /** A named agent's own folder (memory, scratch): it may always edit files there without asking. */
   ownFolder?: string;
   /** Extra system/developer instructions (a named agent's prompt). */

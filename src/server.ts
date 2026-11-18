@@ -18,6 +18,9 @@ import {
 import { AGENT_TEMPLATES, DEPARTMENTS } from "./agent-templates.ts";
 import { claudeAdapter } from "./providers/claude.ts";
 import { codexAdapter } from "./providers/codex.ts";
+import { acpAdapter } from "./providers/acp.ts";
+import { acpEngines } from "./engines.ts";
+import { handleMcp, setMcpBase } from "./mcp.ts";
 import {
   createFolder,
   defaultParent,
@@ -34,8 +37,9 @@ import {
 import { listEntries, previewFile, revealFile } from "./files.ts";
 import { devScripts, localServers, startStaticPreview, staticEntry } from "./preview.ts";
 import { Store } from "./store.ts";
+import { deviceToken, pairingUrl, qrSvg, readRemote, resolveHost, sshCommand } from "./remote.ts";
 import { TerminalManager } from "./terminals.ts";
-import type { StoredEvent } from "./types.ts";
+import { workdirOf, type StoredEvent } from "./types.ts";
 
 const PORT = Number(process.env.BULLPEN_PORT ?? DEFAULT_PORT);
 const LIVE_FLUSH_MS = 50;
@@ -51,17 +55,26 @@ const SUBPROTOCOL = "bullpen";
 
 const token = loadOrCreateToken();
 const store = new Store(DB_PATH);
-const orchestrator = new Orchestrator(store, [claudeAdapter, codexAdapter]);
+const extraEngines = acpEngines();
+const ENGINES = [
+  { id: "claude", name: "Claude" },
+  { id: "codex", name: "Codex" },
+  ...extraEngines.map((e) => ({ id: e.id, name: e.name })),
+];
+const orchestrator = new Orchestrator(store, [claudeAdapter, codexAdapter, ...extraEngines.map(acpAdapter)]);
 const terminals = new TerminalManager();
 /** Static sites are served on the next port, a separate origin from this UI. */
 const PREVIEW_PORT = PORT + 1;
-const staticPreview = startStaticPreview(PREVIEW_PORT, (threadId) => store.getThread(threadId)?.cwd);
+const staticPreview = startStaticPreview(PREVIEW_PORT, (threadId) => {
+  const t = store.getThread(threadId);
+  return t ? workdirOf(t) : undefined;
+});
 
 /** The folder a thread's terminal and file explorer work in: its project (an agent's own folder for agents). */
 function threadRoot(threadId: string): string {
   const thread = store.getThread(threadId);
   if (!thread) throw new CommandError("Unknown thread.");
-  return thread.cwd;
+  return workdirOf(thread);
 }
 
 /** Vendored browser files for the terminal (node_modules is served only for these exact paths). */
@@ -73,13 +86,22 @@ const VENDOR: Record<string, { file: URL; type: string }> = {
 };
 
 const ownHosts = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
+// Remote access (off unless `bullpen remote on`): also listen on the Tailscale or local-network address.
+const remote = readRemote();
+const remoteHost = remote.enabled ? resolveHost(remote) : undefined;
+// Other devices' token (also used through an SSH tunnel); exists once remote access was set up.
+const remoteToken = deviceToken(Boolean(remoteHost));
+if (remoteHost) for (const h of [remoteHost.host, ...remoteHost.names]) ownHosts.add(`${h}:${PORT}`);
 const ownOrigins = new Set([...ownHosts].map((h) => `http://${h}`));
 
 function tokenMatches(candidate: string | undefined): boolean {
   if (!candidate) return false;
   const a = Buffer.from(candidate);
-  const b = Buffer.from(token);
-  return a.length === b.length && timingSafeEqual(a, b);
+  return [token, remoteToken].some((t) => {
+    if (!t) return false;
+    const b = Buffer.from(t);
+    return a.length === b.length && timingSafeEqual(a, b);
+  });
 }
 
 function requestToken(req: IncomingMessage): string | undefined {
@@ -99,9 +121,18 @@ function allowed(req: IncomingMessage): boolean {
   return tokenMatches(requestToken(req));
 }
 
-const http = createServer((req, res) => {
+function handleHttp(req: IncomingMessage, res: import("node:http").ServerResponse) {
   if (!ownHosts.has(req.headers.host ?? "")) {
     res.writeHead(421).end();
+    return;
+  }
+  // Harness tools for ACP engines; each session's URL holds its own secret. Only from this Mac.
+  if (req.url?.startsWith("/mcp/")) {
+    if (req.socket.remoteAddress !== "127.0.0.1" && req.socket.remoteAddress !== "::ffff:127.0.0.1") {
+      res.writeHead(403).end();
+      return;
+    }
+    void handleMcp(req, res).catch(() => res.headersSent || res.writeHead(500).end());
     return;
   }
   if (req.method === "GET" && (req.url === "/" || req.url?.startsWith("/?"))) {
@@ -110,7 +141,7 @@ const http = createServer((req, res) => {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
       "content-security-policy":
-        "default-src 'self'; img-src 'self' data:; frame-src http: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src ws://127.0.0.1:* ws://localhost:*",
+        `default-src 'self'; img-src 'self' data:; frame-src http: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src ws://${req.headers.host}`,
       "x-frame-options": "DENY",
     });
     res.end(readFileSync(UI_HTML));
@@ -137,13 +168,24 @@ const http = createServer((req, res) => {
     return;
   }
   res.writeHead(404).end();
-});
+}
 
+const http = createServer(handleHttp);
+const remoteHttp = remoteHost ? createServer(handleHttp) : undefined;
 const wss = new WebSocketServer({
-  server: http,
-  verifyClient: ({ req }: { req: IncomingMessage }) => allowed(req),
+  noServer: true,
   handleProtocols: (protocols) => (protocols.has(SUBPROTOCOL) ? SUBPROTOCOL : false),
 });
+for (const server of [http, remoteHttp]) {
+  server?.on("upgrade", (req, socket, head) => {
+    if (!allowed(req)) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+  });
+}
 
 wss.on("connection", (socket: WebSocket) => {
   const subscriptions = new Map<number, () => void>();
@@ -278,6 +320,41 @@ wss.on("connection", (socket: WebSocket) => {
       }
       case "teams":
         return orchestrator.teams();
+      case "browser.open": {
+        const p = req.params as { threadId: string; url: string };
+        threadRoot(p.threadId);
+        return orchestrator.browser.open(p.threadId, p.url).catch((err) => { throw new CommandError((err as Error).message.split("\n")[0]); });
+      }
+      case "browser.frame": {
+        const p = req.params as { threadId: string };
+        return (await orchestrator.browser.frame(p.threadId).catch(() => undefined)) ?? null;
+      }
+      case "browser.input": {
+        const p = req.params as { threadId: string; event: Parameters<typeof orchestrator.browser.input>[1] };
+        threadRoot(p.threadId);
+        await orchestrator.browser.input(p.threadId, p.event).catch(() => {});
+        return { ok: true };
+      }
+      case "browser.close":
+        await orchestrator.browser.close(String((req.params as { threadId: string }).threadId));
+        return { ok: true };
+      case "listEngines":
+        return ENGINES;
+      case "remote.info": {
+        const url = remoteHost && remoteToken ? pairingUrl(remoteHost.names[0] && remote.via === "tailscale" ? remoteHost.names[0] : remoteHost.host, PORT, remoteToken) : undefined;
+        return {
+          enabled: remote.enabled,
+          via: remote.via,
+          listening: Boolean(remoteHost),
+          host: remoteHost?.host,
+          names: remoteHost?.names ?? [],
+          url,
+          qr: url ? await qrSvg(url) : undefined,
+          ssh: sshCommand(PORT),
+        };
+      }
+      case "worktreeStatus":
+        return orchestrator.worktreeStatus(String(req.params?.threadId ?? ""));
       case "jobRuns":
         return store.jobRunsFor(req.params.jobId, 30);
       case "createFolder":
@@ -401,7 +478,16 @@ wss.on("connection", (socket: WebSocket) => {
   }
 });
 
+if (remoteHttp && remoteHost) {
+  remoteHttp.on("error", (err) => console.error(`[remote] can't listen on ${remoteHost.host}:${PORT}: ${err.message}`));
+  remoteHttp.listen(PORT, remoteHost.host, () => console.log(`Remote access on http://${remoteHost.host}:${PORT} (${remote.via})`));
+} else if (remote.enabled) {
+  console.error(`[remote] turned on, but no ${remote.via === "lan" ? "local network" : "Tailscale"} address was found; only this Mac can connect.`);
+}
+
+setMcpBase(`http://127.0.0.1:${PORT}`);
 http.listen(PORT, "127.0.0.1", () => {
+  orchestrator.resumeInterrupted();
   console.log(`Bullpen listening on ws://127.0.0.1:${PORT}  (db: ${DB_PATH})`);
   console.log(`web UI: run \`bullpen\` (or \`npm run open\` in this folder)`);
 });
@@ -412,6 +498,7 @@ const shutdown = () => {
   orchestrator.shutdown();
   wss.close();
   http.close();
+  remoteHttp?.close();
   process.exit(0);
 };
 process.on("SIGINT", shutdown);

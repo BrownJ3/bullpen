@@ -6,7 +6,7 @@
 const SAFE: RegExp[] = [
   /^(ls|pwd|cat|head|tail|wc|file|stat|tree|du|which|echo|printf|date|env|printenv|basename|dirname|realpath|true|test|\[)(\s|$)/,
   /^(grep|rg|ag|find|fd|sort|uniq|cut|diff|cmp|jq|yq|od|xxd|hexdump|md5|shasum|sha256sum)(\s|$)/,
-  /^git (status|diff|log|show|branch|rev-parse|ls-files|blame|grep|remote -v|stash list|describe|shortlog)(\s|$)/,
+  /^git (-C ("[^"]*"|'[^']*'|\S+) )?(--no-pager )?(status|diff|log|show|branch|rev-parse|ls-files|blame|grep|remote -v|stash list|describe|shortlog)(\s|$)/,
   /^(npm|pnpm|yarn|bun) (test|t|run (test|tests|build|lint|typecheck|type-check|check|format:check)|ls|list|outdated|why)(\s|$)/,
   /^npx (--no-install )?(tsc|vitest|jest|eslint|prettier --check|playwright test|astro check|svelte-check|next lint)(\s|$)/,
   /^(tsc|vitest|jest|eslint|mypy|ruff check|black --check|flake8|pylint|pyright)(\s|$)/,

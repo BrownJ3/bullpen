@@ -208,15 +208,37 @@ Implement `ProviderAdapter` from `src/types.ts`: `openSession()` returns `startT
 `respondToRuntimeRequest` and `close`, and calls `emit()` with `turn_item.updated` / `turn.terminal` /
 `native_session.updated`. Register it in `server.ts`. `codex.ts` is the template for any agent that speaks JSON-RPC over stdio (e.g. ACP agents).
 
-## Deliberate simplifications vs T3
+## Branches, reliability, tools and reach (closing the gap with T3)
 
-- No transactional outbox: side effects run in-process after commit. A crash mid-turn marks the run `interrupted` on restart.
-- Rollback restores **files only**; the agent's conversation is not rewound.
-- Event log is never pruned; subscriptions replay up to 500 missed events, then fall back to a 200-item snapshot.
-- Subagent internals are skipped (Claude Task tool, Codex child threads); only top-level items are recorded.
-- Codex: the model comes from the thread or `~/.codex/config.toml`. Codex user-input prompts, MCP elicitations and permission-grant requests are refused rather than shown. No cost is reported (app-server only gives token counts).
-- Runtime modes for Codex: `approval-required` = `untrusted` + read-only sandbox, `auto-accept-edits` = `on-request` + workspace-write, `full-access` = `never` + no sandbox.
-- No MCP server injected into the agent, no worktrees, no remote access.
+- **Branches (worktrees).** Start a thread "On a new branch", or move one with the branch button in its top bar. It
+  works in `~/.bullpen/worktrees/…` on `bullpen/<name>`; your checkout isn't touched until you **Merge**. The same
+  menu brings in the latest base (conflicts go to the agent), opens a pull request (`gh`), or removes the worktree.
+  `node_modules`, `.venv`, `vendor` are linked and `.env*` copied; set a per-project setup command in the project menu.
+- **Team tasks in their own worktrees** (default in git repos; project menu to turn off). Each task starts from a
+  snapshot of the goal's folder, uncommitted changes included, and is three-way merged back when accepted. A conflict
+  sends it back to its agent with the markers in place (not counted as the lead's one send-back).
+- **Undo rewinds the conversation too.** "Undo this turn" restores files and drops the later turns from the agent's
+  memory (Claude: resume-at + fork; Codex: `thread/revert`). ACP engines get files only.
+- **Resume after a crash.** Each run stores its request in the same transaction that starts it; after a restart,
+  an interrupted thread turn and any unanswered @mention are picked back up once.
+- **Sub-agent steps** (Claude's Task/Agent tool) are recorded, nested under the call.
+- **Harness tools** for every agent: `list_threads`, `read_thread`, `start_thread` (optionally on its own branch),
+  `message_thread`, `wait_for_thread`, `propose_pull_request` (you get a button), and a real browser:
+  `browser_open/snapshot/click/type/press/screenshot`. ACP engines get them over MCP (`/mcp/<secret>`, local only).
+- **Live browser.** The Browser panel's monitor button switches to a real headless Chrome tab (Playwright) shared
+  with the agent: any site loads, and your clicks and typing go through. Fresh profile per thread.
+- **Other engines (ACP).** Gemini CLI, OpenCode, Goose and Qwen Code appear when installed; add any ACP agent in
+  `~/.bullpen/engines.json`: `[{ "id": "my-agent", "name": "My Agent", "command": "…", "args": ["--acp"] }]`.
+- **Remote access.** `bullpen remote on` (Tailscale), `bullpen remote on --lan` (same Wi-Fi, unencrypted), or
+  `bullpen remote ssh` (tunnel). Other devices use their own token: `bullpen remote reset` cuts them all off,
+  `bullpen remote off` stops listening. The phone button in the sidebar shows the QR code. The UI adapts to phones.
+
+Still simpler than T3: no Electron app or mobile app, no T3 Connect relay, no Cursor SDK, and Codex child threads
+aren't recorded.
+
+Tests: `node scripts/worktrees-smoke.ts` (no agents), `node scripts/branch-smoke.ts [claude|codex] [model]`,
+`node scripts/tools-smoke.ts [claude|codex] [model]`, `node scripts/acp-smoke.ts` (mock agent); each starts its
+own throwaway server.
 
 ## Security
 
@@ -224,5 +246,7 @@ The server binds to 127.0.0.1 and requires the token in `~/.bullpen/token` (0600
 from the CLI, or as a WebSocket subprotocol from the web UI, which reads it from the URL fragment that
 `npm run client -- ui` opens (fragments never reach the server; the page keeps it in sessionStorage).
 Connections must carry this server's own `Host` (blocks DNS rebinding) and, if they have an `Origin`,
-this server's own origin (blocks other web pages). The agent can run commands in the thread's
+this server's own origin (blocks other web pages). With remote access on, it also listens on the
+Tailscale or LAN address and accepts the separate device token (`~/.bullpen/device-token`). Agents' browser tools
+can reach any site without asking. The agent can run commands in the thread's
 directory, so keep `approval-required` (the default) unless you trust the task.

@@ -38,6 +38,13 @@ export type Request =
   /** The Inbox: briefing since the last one (or the last day), plus everything waiting on the person. */
   | { id: number; method: "inbox"; params?: undefined }
   | { id: number; method: "teams"; params?: undefined }
+  | { id: number; method: "worktreeStatus"; params: { threadId: string } }
+  | { id: number; method: "browser.open"; params: { threadId: string; url: string } }
+  | { id: number; method: "browser.frame"; params: { threadId: string } }
+  | { id: number; method: "browser.input"; params: { threadId: string; event: unknown } }
+  | { id: number; method: "browser.close"; params: { threadId: string } }
+  | { id: number; method: "remote.info"; params?: undefined }
+  | { id: number; method: "listEngines"; params?: undefined }
   | { id: number; method: "jobRuns"; params: { jobId: string } }
   | { id: number; method: "createFolder"; params: { parent: string; name: string; git: boolean } }
   /** Threads, agents and pending approvals, then live thread/agent/approval events across all threads. */

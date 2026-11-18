@@ -191,6 +191,14 @@ class CodexSession implements ProviderSession {
     }
     const id: string = result.thread.id;
     this.#codexThreadId = id;
+    // A rollback: drop the undone turns from Codex's own history before going on.
+    if (input.rewind?.dropFrom && input.resumeNativeSessionId === id) {
+      try {
+        await this.#request("thread/revert", { threadId: id, beforeTurnId: input.rewind.dropFrom });
+      } catch (err) {
+        if (process.env.BULLPEN_DEBUG) console.error(`[codex] revert failed: ${(err as Error).message}`);
+      }
+    }
     this.#emit({ type: "native_session.updated", nativeSessionId: id });
     return id;
   }
@@ -385,6 +393,7 @@ class CodexSession implements ProviderSession {
           type: "turn.terminal",
           runId,
           outcome,
+          nativeTurnId: p.turn?.id,
           error: outcome === "failed" ? (p.turn?.error?.message ?? this.#lastError ?? status) : undefined,
         });
         return;

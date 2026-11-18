@@ -186,7 +186,11 @@ code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
 .folder.collapsed .chev { transform: rotate(-90deg); }
 .folder-head .title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .folder-head .meta { display: flex; align-items: center; gap: 6px; color: var(--faint); font-size: 11.5px; font-weight: 500; }
-.folder-head .hover { display: none; gap: 2px; }
+.folder-head .hover, .agent-row .hover { display: none; gap: 2px; }
+.agent-row { cursor: pointer; }
+.agent-row:hover .hover, .agent-row:focus-within .hover { display: flex; }
+.agent-row:hover .sdot, .agent-row:focus-within .sdot { display: none; }
+.icon-btn.danger:hover { color: var(--danger); background: var(--danger-soft); }
 .folder-head:hover .hover, .folder-head:focus-within .hover { display: flex; }
 .folder-head:hover .meta { display: none; }
 .folder-head .icon-btn { width: 22px; height: 22px; font-size: 13px; }
@@ -272,6 +276,10 @@ code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
 .browser-bar .addr:focus { outline: none; border-color: var(--accent); }
 .browser-bar select { border: 1px solid var(--line); background: var(--bg); color: var(--muted); border-radius: 7px; font-size: 12px; padding: 3px 4px; }
 .browser-bar .icon-btn:disabled { opacity: 0.35; cursor: default; }
+.live-view { flex: 1; min-height: 0; overflow: auto; background: var(--bg); outline: none; display: flex; align-items: flex-start; justify-content: center; }
+.live-view:focus-visible { box-shadow: inset 0 0 0 2px var(--primary); }
+.live-img { width: 100%; height: auto; display: block; cursor: default; user-select: none; background: #fff; }
+.browser-bar .icon-btn.on { color: var(--primary); background: var(--sel); }
 .bframe-wrap { flex: 1; min-height: 0; overflow: auto; display: flex; justify-content: center; background: var(--bg); }
 .bframe-wrap iframe { border: 0; background: #fff; width: 100%; height: 100%; }
 .bframe-wrap.device { padding: 14px 0; }
@@ -466,6 +474,14 @@ details.reasoning summary::-webkit-details-marker, details.tool summary::-webkit
 .reply-head .muted { font-weight: 400; color: var(--muted); font-size: 12.5px; }
 .reply-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 .checkpoint { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 12px; }
+.menu button.info:disabled { opacity: 1; color: var(--muted); cursor: default; background: none; }
+.note { display: flex; align-items: flex-start; gap: 8px; color: var(--muted); font-size: 12.5px; padding: 2px 0; }
+.note .ico { color: var(--faint); margin-top: 2px; flex: none; }
+.note p { margin: 0; }
+.tool.sub { margin-left: 22px; padding-left: 10px; border-left: 1px solid var(--line); }
+.tool.sub summary { font-size: 12.5px; }
+.rewound { opacity: .45; }
+.run-meta.rewound, .rewound .run-meta { text-decoration: none; }
 .checkpoint::before, .checkpoint::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .link { border: 0; background: none; padding: 0; color: var(--accent-ink); font-size: 12px; }
 .link:hover { text-decoration: underline; }
@@ -927,6 +943,50 @@ button.hrow:hover { background: var(--hover); }
 .teams-stats .stat { border-color: var(--line); padding: 12px 16px; }
 .teams-stats .stat b { font-weight: 600; color: var(--ink); }
 .teams-stats .stat.attn b { color: var(--accent-ink); }
+
+/* ---------- use from another device ---------- */
+.remote-dlg { width: min(460px, calc(100vw - 24px)); padding: 18px 20px 20px; }
+.remote-dlg .dlg-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.remote-dlg h3 { margin: 0; font-size: 16px; }
+.remote-dlg h4 { margin: 16px 0 4px; font-size: 13px; }
+.remote-dlg p { margin: 6px 0; font-size: 13px; line-height: 1.5; }
+.remote-dlg .qr { width: 220px; height: 220px; margin: 12px auto; background: #fff; padding: 8px; border-radius: 10px; }
+.remote-dlg .qr svg { width: 100%; height: 100%; display: block; }
+.cmd-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.cmd-row code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font: 12.5px var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; }
+.warn-note { color: var(--accent-ink); }
+
+/* ---------- phones ---------- */
+@media (max-width: 760px) {
+  .app, .app.side-hidden { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+  .app .sidebar, .app.side-hidden .sidebar { position: fixed; z-index: 45; inset: 0 auto 0 0; width: min(86vw, 320px); max-height: none; visibility: visible; border-bottom: 0;
+    transform: translateX(-102%); transition: transform 0.2s ease; box-shadow: 0 0 40px rgba(0, 0, 0, 0.35); }
+  .app.side-open .sidebar { transform: none; }
+  .app.side-open::after { content: ""; position: fixed; inset: 0; z-index: 44; background: rgba(8, 12, 24, 0.4); }
+  .topbar { padding: 6px 8px; min-height: 48px; gap: 4px; }
+  .tb-sub, .topbar .vsep, .navc .ibtn:not(.nav-side), .topbar .perm .chev, .topbar .live { display: none; }
+  .crumbs-row .crumb, .crumbs-row .crumb-sep { display: none; }
+  .topbar { overflow: hidden; }
+  .tb-title { flex: 1 1 auto; min-width: 0; }
+  .crumbs-row { min-width: 0; }
+  .crumb-cur { min-width: 0; }
+  .crumb-cur .tx { max-width: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .topbar .spacer { display: none; }
+  .topbar .perm { padding: 0 7px; font-size: 0; gap: 0; flex: none; }
+  .topbar .perm .ico:last-child { display: none; }
+  .topbar .tgroup .ibtn:nth-child(2) { display: none; }
+  .transcript, .composer-wrap, .page { padding-left: 12px !important; padding-right: 12px !important; }
+  .files, .browser { position: fixed; z-index: 40; inset: 0; width: auto !important; border-left: 0; }
+  .drawer { height: 45vh !important; }
+  textarea, input, select { font-size: 16px !important; } /* no zoom-on-focus on iPhone */
+  .home { padding: 20px 12px !important; }
+  .start-bar { flex-wrap: wrap; }
+  .approval-actions { flex-wrap: wrap; }
+  .approval-actions .btn { flex: 1 1 auto; }
+  dialog { max-width: calc(100vw - 16px); }
+  .menu { max-width: calc(100vw - 16px); }
+  .toasts { left: 12px; right: 12px; }
+}
 </style>
 </head>
 <body>
@@ -948,7 +1008,7 @@ button.hrow:hover { background: var(--hover); }
     </div>
     <div class="side-foot"><span><span class="conn" id="conn" title="disconnected"></span><span id="conn-text">Connecting…</span></span><select class="palette-pick" id="palette-pick" title="Colour theme" aria-label="Colour theme">
       <option value="harbor">Harbor</option><option value="night">Night</option><option value="paper">Paper</option><option value="graphite">Graphite</option>
-    </select><button class="icon-btn" id="stop-server" title="Stop the Bullpen server" aria-label="Stop the Bullpen server" data-icon="power" data-size="14"></button></div>
+    </select><button class="icon-btn" id="remote-btn" title="Use Bullpen from your phone or another computer" aria-label="Use from another device" data-icon="phone" data-size="14"></button><button class="icon-btn" id="stop-server" title="Stop the Bullpen server" aria-label="Stop the Bullpen server" data-icon="power" data-size="14"></button></div>
   </aside>
   <main class="main" id="main"></main>
 </div>
@@ -1190,6 +1250,7 @@ const ICONS = {
   target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
   layers: '<path d="m12 2 9 5-9 5-9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/>',
   monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  phone: '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>',
   server: '<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/>',
   bug: '<rect x="8" y="7" width="8" height="13" rx="4"/><path d="M12 7V4M4 13h4M16 13h4M5 8l3 2M19 8l-3 2M5 19l3-2M19 19l-3-2"/>',
   flask: '<path d="M9 3h6"/><path d="M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"/><path d="M7.5 15h9"/>',
@@ -1259,7 +1320,14 @@ window.addEventListener("popstate", (ev) => {
 });
 let sideHidden = false;
 try { sideHidden = localStorage.getItem("bp-side-hidden") === "1"; } catch {}
+const isPhone = () => matchMedia("(max-width: 760px)").matches;
+/** Engines this server can run: Claude, Codex, and any ACP agents installed (see ~/.bullpen/engines.json). */
+let ENGINES = [{ id: "claude", name: "Claude" }, { id: "codex", name: "Codex" }];
+const engineName = (id) => ENGINES.find((e) => e.id === id)?.name ?? id;
+const engineOptions = () => ENGINES.map((e) => h("option", { value: e.id }, e.name));
 function toggleSidebar() {
+  // On a phone the sidebar slides over the page instead.
+  if (isPhone()) { document.querySelector(".app").classList.toggle("side-open"); return; }
   sideHidden = !sideHidden;
   try { localStorage.setItem("bp-side-hidden", sideHidden ? "1" : ""); } catch {}
   document.querySelector(".app").classList.toggle("side-hidden", sideHidden);
@@ -1277,7 +1345,7 @@ function popMenu(anchor, items, align = "start") {
   const r = anchor.getBoundingClientRect();
   const m = h("div", { class: "menu", role: "menu", onclick: (ev) => ev.stopPropagation() }, ...items.map((it) =>
     it === "-" ? h("hr") : it.header ? h("div", { class: "mh" }, it.header) :
-    h("button", { type: "button", role: "menuitem", class: (it.danger ? "danger" : "") + (it.active ? " active" : ""), onclick: () => { closeMenu(); it.run(); } },
+    h("button", { type: "button", role: "menuitem", disabled: Boolean(it.disabled), class: (it.danger ? "danger" : "") + (it.active ? " active" : "") + (it.disabled ? " info" : ""), onclick: () => { closeMenu(); it.run?.(); } },
       it.el ?? icon(it.icon ?? "chevright", 15),
       it.desc ? h("span", { class: "mt wrap" }, h("span", { class: "ml" }, it.label), h("span", { class: "md" }, it.desc)) : h("span", { class: "mt" }, it.label),
       it.sub ? h("span", { class: "ms" }, it.sub) : null, it.kbd ? kbd(it.kbd) : null)));
@@ -1395,6 +1463,7 @@ function connect() {
     $("conn").classList.add("on"); $("conn").title = "connected"; $("conn-text").textContent = "Server running";
     subs.clear();
     resetTerminalViews(); // their subscriptions died with the old connection
+    try { ENGINES = await call("listEngines"); } catch {}
     await loadSidebar();
     if (state.threadId) openThread(state.threadId, true);
     else if (state.view === "inbox") renderInbox();
@@ -1521,10 +1590,15 @@ function renderSidebar() {
   const agents = [...state.agents.values()].sort((a, b) => a.name.localeCompare(b.name));
   $("agents").replaceChildren(...(agents.length ? agents.map((a) => {
     const home = state.threads.get(a.homeThreadId);
-    return h("button", { class: "row" + (state.threadId === a.homeThreadId ? " active" : ""), onclick: () => openThread(a.homeThreadId) },
+    // A div, not a button: it holds its own delete button.
+    return h("div", { class: "row agent-row" + (state.threadId === a.homeThreadId ? " active" : ""), role: "button", tabindex: "0",
+        onclick: () => openThread(a.homeThreadId), onkeydown: (ev) => { if (ev.key === "Enter" && ev.target === ev.currentTarget) openThread(a.homeThreadId); } },
       badge(agentLabel(a)),
       h("span", { class: "row-main" }, h("div", { class: "row-title" }, agentLabel(a)), h("div", { class: "row-sub" }, a.displayName ? "@" + a.name + (a.description ? " · " + a.description : "") : a.description || a.provider + (a.model ? " · " + a.model : ""))),
-      home ? threadStatus(home) : null);
+      home ? threadStatus(home) : null,
+      h("span", { class: "hover" },
+        h("button", { class: "icon-btn danger", title: `Delete ${agentLabel(a)}`, "aria-label": `Delete ${agentLabel(a)}`,
+          onclick: (ev) => { ev.stopPropagation(); deleteAgent(a); } }, icon("trash", 13))));
   }) : [h("div", { class: "side-empty" }, "No agents yet. Create one, then @mention it anywhere.")]));
 
   renderJobs();
@@ -1700,6 +1774,14 @@ function projectMenu(p, x, y) {
     h("div", { class: "mh" }, "Agents working here"),
     ...Object.entries(MODE_INFO).map(([m, info]) => h("button", { class: (p.runtimeMode ?? "approval-required") === m ? "active" : "", onclick: act(() => setProjectMode(p, m)) },
       icon((p.runtimeMode ?? "approval-required") === m ? "check" : info.icon, 15), h("span", { class: "mt" }, info.label))),
+    h("div", { class: "mh" }, "Branches"),
+    h("button", { onclick: act(() => dispatch({ type: "project.update", projectId: p.id, isolateTasks: p.isolateTasks === false }).then(() =>
+        toast(p.isolateTasks === false ? "Team tasks each get their own worktree, merged in when accepted." : "Team tasks share the project folder.")).catch(fail)) },
+      icon(p.isolateTasks === false ? "layers" : "check", 15), h("span", { class: "mt" }, "Team tasks in their own worktrees")),
+    h("button", { onclick: act(() => {
+        const v = prompt("Run this in every new worktree before agents start (e.g. npm install). node_modules and .env files are linked/copied automatically.", p.worktreeSetup ?? "");
+        if (v !== null) dispatch({ type: "project.update", projectId: p.id, worktreeSetup: v }).then(() => toast(v.trim() ? "Setup command saved." : "No setup command.")).catch(fail);
+      }) }, icon("terminal", 15), h("span", { class: "mt" }, p.worktreeSetup ? "Worktree setup: " + p.worktreeSetup.slice(0, 24) : "Worktree setup command…")),
     h("hr"),
     h("button", { class: "danger", onclick: act(() => removeProject(p)) }, "Remove from Bullpen…"));
   document.body.append(menu);
@@ -1854,7 +1936,7 @@ function renderTopbar() {
   const agent = t.agentId ? state.agents.get(t.agentId) : null;
   const job = t.jobId ? state.jobs.get(t.jobId) : null;
   const modes = { "approval-required": "asks first", "auto-accept-edits": "auto-accepts edits", "full-access": "full access" };
-  const engine = t.provider === "codex" ? "Codex" : "Claude";
+  const engine = engineName(t.provider);
   const cur = (lead, text) => h("span", { class: "crumb-cur", title: text }, lead, h("span", { class: "tx" }, text));
   let crumbs, sub;
   if (agent) {
@@ -1872,7 +1954,7 @@ function renderTopbar() {
     crumbs = [crumb([project ? projectIcon(project) : icon("files", 15), h("span", { class: "tx" }, project?.title ?? folderName(t.cwd))],
         (ev) => { ev.stopPropagation(); switchMenu(ev.currentTarget, "project", t.cwd); }, "Threads in this project"),
       crumbSep(), cur(null, t.title)];
-    sub = [tildePath(t.cwd), `${engine}${t.model ? " · " + t.model : ""}`];
+    sub = [t.worktree ? `${t.worktree.branch} · ${tildePath(t.worktree.path)}` : tildePath(t.cwd), `${engine}${t.model ? " · " + t.model : ""}`];
   }
   const proj = !agent && !job ? projectAt(t.cwd) : null;
   const pmode = proj?.runtimeMode && MODE_RANK[proj.runtimeMode] > MODE_RANK[t.runtimeMode] ? proj.runtimeMode : t.runtimeMode;
@@ -1880,6 +1962,10 @@ function renderTopbar() {
       "data-tip": `Every agent working in ${proj.title} follows this`, "data-tip-pos": "end",
       onclick: (ev) => { ev.stopPropagation(); permMenu(ev.currentTarget, proj, pmode); } },
     icon(MODE_INFO[pmode].icon, 14), MODE_INFO[pmode].label, icon("chevdown", 12)) : null;
+  const branchBtn = proj ? h("button", { type: "button", class: "btn sm perm" + (t.worktree ? " on" : ""), "aria-haspopup": "menu",
+      "data-tip": t.worktree ? `On its own branch, ${t.worktree.branch}` : "Working in your project folder. Click to move onto its own branch.", "data-tip-pos": "end",
+      onclick: (ev) => { ev.stopPropagation(); branchMenu(ev.currentTarget, t); } },
+    icon("branch", 14), t.worktree ? shortBranch(t.worktree.branch) : "Local", icon("chevdown", 12)) : null;
   const waiting = state.approvals.get(t.id)?.size ?? 0;
   const status = waiting ? h("span", { class: "live needs" }, h("span", { class: "pulse" }), waiting === 1 ? "Needs your OK" : `${waiting} need your OK`)
     : t.status === "running" ? h("span", { class: "live" }, h("span", { class: "pulse" }), "Working") : null;
@@ -1914,7 +2000,7 @@ function renderTopbar() {
     { icon: "copy", label: "Copy project path", run: () => navigator.clipboard?.writeText(t.cwd).then(() => toast("Path copied.")) },
   ];
   // Server events arrive constantly; only redraw when something shown changed, so clicks never land mid-redraw.
-  const sig = JSON.stringify([t.id, t.title, t.status, t.runtimeMode, t.model, t.cwd, agent && [agent.name, agent.displayName, agent.description],
+  const sig = JSON.stringify([t.id, t.title, t.status, t.runtimeMode, t.model, t.cwd, t.worktree?.branch, t.worktree?.prUrl, agent && [agent.name, agent.displayName, agent.description],
     job && [job.name, job.enabled, job.lastStatus, job.nextRunAt], proj && [proj.title, proj.runtimeMode], waiting, ui.files, ui.terminal, ui.browser,
     nav.i, nav.top, sideHidden, agent ? [...state.lessons.values()].filter((l) => l.agentId === agent.id).map((l) => l.status).join() : ""]);
   if (bar.dataset.sig !== sig) { bar.dataset.sig = sig; bar.replaceChildren(...[
@@ -1922,6 +2008,7 @@ function renderTopbar() {
     h("div", { class: "tb-title" }, h("div", { class: "crumbs-row" }, ...crumbs), h("div", { class: "tb-sub", title: sub.filter(Boolean).join(" · ") }, sub.filter(Boolean).join("  ·  "))),
     status,
     h("span", { class: "spacer" }),
+    branchBtn,
     perm,
     ...actions,
     actions.length || perm ? h("span", { class: "vsep" }) : null,
@@ -1937,6 +2024,50 @@ function renderTopbar() {
     : state.agents.size ? "A message with @name goes to that agent; this thread's agent sees the answer on your next message." : "";
   const stop = $("stop"); if (stop) stop.hidden = t.status !== "running";
 }
+// ---------- branches: a thread can work in its own git worktree ----------
+const shortBranch = (b) => { const x = b.replace(/^bullpen\//, ""); return x.length > 22 ? x.slice(0, 21) + "…" : x; };
+async function branchMenu(anchor, t) {
+  if (!t.worktree) {
+    popMenu(anchor, [
+      { icon: "branch", label: "Move onto a new branch", run: async () => {
+        try { toast("Making a worktree…"); await dispatch({ type: "worktree.create", threadId: t.id }); toast("This thread now works on its own branch."); } catch (err) { fail(err); }
+      } },
+      "-",
+      { icon: "files", label: "Working in your project folder", disabled: true },
+    ], "end");
+    return;
+  }
+  const wt = t.worktree;
+  const items = [{ icon: "branch", label: `${wt.branch} ← ${wt.base}`, disabled: true }];
+  let st = null;
+  try { st = await call("worktreeStatus", { threadId: t.id }); } catch {}
+  if (st) items.push({ icon: "list", label: !st.exists ? "Its folder is missing" : `${st.changed} file${st.changed === 1 ? "" : "s"} changed · ${st.ahead} commit${st.ahead === 1 ? "" : "s"} ahead${st.behind ? ` · ${st.behind} behind ${wt.base}` : ""}`, disabled: true });
+  const busy = t.status === "running";
+  const act = (type, done, extra = {}) => async () => {
+    try { const r = await dispatch({ type, threadId: t.id, ...extra }); if (done) toast(typeof done === "function" ? done(r) : done); } catch (err) { fail(err); }
+  };
+  items.push("-",
+    { icon: "check", label: `Merge into ${wt.base}`, disabled: busy, run: act("worktree.merge", (r) => r.how === "nothing" ? "Nothing to merge yet." : `Merged into ${wt.base}.`) },
+    { icon: "refresh", label: `Bring in the latest ${wt.base}`, disabled: busy, run: act("worktree.update", (r) => r.conflicts?.length ? `Conflicts in ${r.conflicts.length} file${r.conflicts.length === 1 ? "" : "s"}; the agent is resolving them.` : `Up to date with ${wt.base}.`) },
+    st?.pr || wt.prUrl
+      ? { icon: "external", label: `Open pull request${st?.pr ? ` #${st.pr.number} (${st.pr.state.toLowerCase()})` : ""}`, run: () => window.open(st?.pr?.url ?? wt.prUrl, "_blank", "noopener") }
+      : { icon: "external", label: "Open a pull request…", disabled: busy, run: () => openPrDialog(t) },
+    "-",
+    { icon: "copy", label: "Copy worktree path", run: () => navigator.clipboard?.writeText(wt.path).then(() => toast("Path copied.")) },
+    { icon: "trash", label: "Remove worktree…", danger: true, disabled: busy, run: async () => {
+      const merged = st?.merged;
+      if (!confirm(`Remove this thread's worktree folder?${merged ? "" : "\n\nIts branch has work that isn't merged; the branch is kept so nothing is lost."}`)) return;
+      act("worktree.remove", "Worktree removed. The thread now works in your project folder.", { deleteBranch: Boolean(merged) })();
+    } });
+  popMenu(anchor, items, "end");
+}
+function openPrDialog(t) {
+  const title = prompt("Pull request title", t.title);
+  if (title === null) return;
+  toast("Pushing and opening the pull request…");
+  dispatch({ type: "worktree.pr", threadId: t.id, title }).then((r) => { toast("Pull request opened."); if (r.url) window.open(r.url, "_blank", "noopener"); }).catch(fail);
+}
+
 // ---------- project permissions: one setting every agent working there follows ----------
 const MODE_INFO = {
   "approval-required": { label: "Ask before acting", desc: "Agents ask before they edit files or run commands.", icon: "shield" },
@@ -1956,7 +2087,13 @@ function permMenu(anchor, p, current) {
 /** Plain words for a tool call: "Ran npm test", "Edited src/app.ts", "Asked @reviewer". */
 function toolLabel(tool, input = {}) {
   const name = String(tool).replace(/^mcp__harness__/, "");
-  const file = (p) => String(p ?? "").split("/").filter(Boolean).slice(-2).join("/");
+  // Paths relative to where the thread works (its worktree or project), else the last two parts.
+  const root = state.thread ? (state.thread.worktree?.path ?? state.thread.cwd) : "";
+  const file = (p) => {
+    const x = String(p ?? "").replace(/^\/private(?=\/(tmp|var)\/)/, "");
+    const r = root.replace(/^\/private(?=\/(tmp|var)\/)/, "");
+    return r && x.startsWith(r + "/") ? x.slice(r.length + 1) : x.split("/").filter(Boolean).slice(-2).join("/");
+  };
   const inp = input && typeof input === "object" ? input : {};
   const cmd = String(inp.command ?? "").replace(/\s+/g, " ");
   const code = cmd ? String(inp.command) : typeof input === "string" ? input : pretty(input);
@@ -1972,7 +2109,21 @@ function toolLabel(tool, input = {}) {
     case "WebFetch": return said("globe", "Fetched", inp.url, `fetch ${inp.url}`);
     case "WebSearch": return said("search", "Searched the web for", inp.query);
     case "TodoWrite": return said("list", "Updated the plan", "");
-    case "Task": return said("users", "Ran a subtask", inp.description);
+    case "Task": case "Agent": return said("users", "Sub-agent:", inp.description ?? inp.prompt, `start a sub-agent: ${short(inp.description ?? "", 60)}`);
+    case "list_threads": return said("list", "Looked at threads", inp.project ?? "");
+    case "read_thread": return said("message", "Read thread", inp.thread);
+    case "start_thread": return said("compose", "Started a thread:", inp.title ?? inp.prompt);
+    case "message_thread": return said("message", "Messaged thread", inp.message);
+    case "wait_for_thread": return said("clock", "Waited for thread", inp.thread);
+    case "propose_pull_request": return said("external", "Proposed a pull request:", inp.title);
+    case "browser_open": return said("globe", "Opened", inp.url);
+    case "browser_snapshot": return said("globe", "Read the page", "");
+    case "browser_click": return said("pointer", "Clicked", inp.target);
+    case "browser_type": return said("type", "Typed into", inp.target);
+    case "browser_press": return said("keyboard", "Pressed", inp.key);
+    case "browser_screenshot": return said("monitor", "Took a screenshot", "");
+    case "Delete": return said("trash", "Deleted", file(inp.path), `delete ${file(inp.path)}`);
+    case "Think": return said("bulb", "Thought", inp.title ?? "");
     case "ask_agent": return said("message", `Asked @${String(inp.agent ?? "").replace(/^@/, "")}`, inp.question);
     case "list_agents": return said("users", "Looked up the team", "");
     default: return said("chevright", name, typeof input === "string" ? input : short(input, 140), `use ${name}`);
@@ -2002,6 +2153,7 @@ async function deleteAgent(agent) {
 
 async function openThread(threadId, reconnecting = false, fromHistory = false) {
   state.view = null;
+  document.querySelector(".app")?.classList.remove("side-open");
   if (state.sub && !reconnecting) call("unsubscribe", { subscription: state.sub }).catch(() => {});
   if (state.threadId !== threadId) { state.items = new Map(); state.order = []; state.runs = new Map(); state.seq = 0; }
   state.threadId = threadId;
@@ -2029,7 +2181,12 @@ function apply({ sequence, event: e }) {
   if (sequence <= state.seq) return;
   state.seq = sequence;
   if (e.type === "thread.upserted") { state.thread = e.thread; renderTopbar(); }
-  else if (e.type === "run.upserted") { state.runs.set(e.run.id, e.run); if (e.run.status !== "running") renderRunMeta(e.run); }
+  else if (e.type === "run.upserted") {
+    const was = state.runs.get(e.run.id);
+    state.runs.set(e.run.id, e.run);
+    if (Boolean(was?.rewound) !== Boolean(e.run.rewound)) renderTranscript();
+    else if (e.run.status !== "running") renderRunMeta(e.run);
+  }
   else if (e.type === "turn-item.upserted") {
     if (!state.items.has(e.item.id)) state.order.push(e.item.id);
     state.items.set(e.item.id, e.item);
@@ -2077,7 +2234,7 @@ function renderRunMeta(run, scroll = true) {
   const col = $("column"); if (!col) return;
   const id = `meta:${run.id}`;
   col.querySelector(`[data-id="${CSS.escape(id)}"]`)?.remove();
-  const parts = [run.status === "completed" ? "Done" : run.status === "interrupted" ? "Interrupted" : "Failed"];
+  const parts = [run.rewound ? "Undone: the agent no longer remembers this turn" : run.status === "completed" ? "Done" : run.status === "interrupted" ? (run.error === "Server restarted" ? "Interrupted by a restart" : "Interrupted") : "Failed"];
   if (run.tokens) parts.push(`${run.tokens >= 1000 ? (run.tokens / 1000).toFixed(run.tokens >= 100000 ? 0 : 1) + "k" : run.tokens} tokens`);
   if (run.endedAt) parts.push(`${Math.max(1, Math.round((new Date(run.endedAt) - new Date(run.startedAt)) / 1000))}s`);
   const el = h("div", { class: "run-meta", "data-id": id }, parts.join(" · "));
@@ -2089,8 +2246,20 @@ function renderRunMeta(run, scroll = true) {
 }
 
 function itemEl(item) {
+  const el = itemElInner(item);
+  if (el && state.runs.get(item.runId)?.rewound) el.classList.add("rewound");
+  return el;
+}
+function itemElInner(item) {
   const base = { "data-id": item.id, "data-run": item.runId };
   switch (item.kind) {
+    case "note":
+      return h("div", { ...base, class: "note" }, icon(item.action ? "external" : "branch", 13), h("span", {}, richText(item.text)),
+        item.action?.kind === "open_pr" && state.thread?.worktree && !state.thread.worktree.prUrl
+          ? h("button", { class: "btn sm primary", onclick: (ev) => { ev.currentTarget.disabled = true; toast("Pushing and opening the pull request…");
+              dispatch({ type: "worktree.pr", threadId: item.threadId, title: item.action.title, body: item.action.body })
+                .then((r) => { toast("Pull request opened."); if (r.url) window.open(r.url, "_blank", "noopener"); }).catch((err) => { ev.currentTarget.disabled = false; fail(err); }); } }, "Open pull request")
+          : null);
     case "user_message":
       return h("div", { ...base, class: "msg-user" }, mentionText(item.text));
     case "assistant_message":
@@ -2099,7 +2268,7 @@ function itemEl(item) {
       return h("details", { ...base, class: "reasoning" }, h("summary", {}, item.streaming ? "Thinking…" : "Thought"), h("div", {}, item.text));
     case "tool_call": {
       const t = toolLabel(item.tool, item.input);
-      return h("details", { ...base, class: "tool" },
+      return h("details", { ...base, class: "tool" + (item.parentId ? " sub" : "") },
         h("summary", {}, icon(t.icon, 14), h("span", { class: "tool-name" }, t.verb), h("span", { class: "tool-sum" }, t.detail),
           item.status === "running" ? h("span", { class: "tool-state" }, "running…") : item.status === "failed" ? h("span", { class: "tool-state failed" }, "failed") : null),
         h("pre", {}, pretty(item.input) + (item.output ? "\n\n── result ──\n" + item.output : "")));
@@ -2135,7 +2304,7 @@ function itemEl(item) {
       return h("div", { ...base, class: "checkpoint" },
         `Checkpoint ${item.ordinal} · ${item.filesChanged} file${item.filesChanged === 1 ? "" : "s"} changed`,
         item.filesChanged ? h("button", { class: "link", onclick: () => showDiff(item.ordinal - 1, item.ordinal) }, "View diff") : null,
-        item.filesChanged ? h("button", { class: "link", onclick: () => rollback(item.ordinal - 1) }, "Restore files to before") : null);
+        item.filesChanged && !state.runs.get(item.runId)?.rewound ? h("button", { class: "link", onclick: () => rollback(item.ordinal - 1) }, "Undo this turn") : null);
     case "error":
       return h("div", { ...base, class: "error-item" }, item.message);
   }
@@ -2146,7 +2315,7 @@ function itemEl(item) {
 const ui = (() => {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem("bp-panels") || "{}"); } catch {}
-  return { files: !!saved.files, terminal: !!saved.terminal, browser: !!saved.browser, drawerH: saved.drawerH || 280, filesW: saved.filesW || 340, browserW: saved.browserW || 560, device: saved.device || "full" };
+  return { live: !!saved.live, files: !!saved.files, terminal: !!saved.terminal, browser: !!saved.browser, drawerH: saved.drawerH || 280, filesW: saved.filesW || 340, browserW: saved.browserW || 560, device: saved.device || "full" };
 })();
 const saveUi = () => { try { localStorage.setItem("bp-panels", JSON.stringify(ui)); } catch {} };
 function togglePanel(which) { ui[which] = !ui[which]; saveUi(); renderTopbar(); syncPanels(); }
@@ -2380,8 +2549,75 @@ function browserGo(text, push = true) {
   renderBrowser();
 }
 function browserHome() { delete bx.urls[state.threadId]; try { localStorage.setItem("bp-browser-urls", JSON.stringify(bx.urls)); } catch {} renderBrowser(); }
+// ---- live browser: a real Chrome tab on the server, shared with the thread's agent ----
+const live = { timer: null, threadId: null, busy: false, url: "" };
+function stopLive() { clearTimeout(live.timer); live.timer = null; live.threadId = null; }
+function renderLiveBrowser(panel, g) {
+  const id = state.threadId;
+  const addr = h("input", { class: "addr", value: live.threadId === id ? live.url : "", placeholder: "Any address: localhost:3000, github.com…", spellcheck: "false" });
+  const img = h("img", { class: "live-img", alt: "Live browser page", draggable: "false" });
+  const empty = h("div", { class: "launcher" }, h("div", { class: "note" },
+    "A real Chrome tab for this thread: any site loads, and you can click and type in it. When the agent uses its browser tools you'll see it here."));
+  const view = h("div", { class: "live-view", tabindex: "0", "aria-label": "Live browser; click to interact, type to send keys" }, empty);
+  const go = async (text) => {
+    if (!text.trim()) return;
+    try { const r = await call("browser.open", { threadId: id, url: text }); live.url = r.url; addr.value = r.url; poll(true); } catch (err) { fail(err); }
+  };
+  addr.addEventListener("keydown", (ev) => { if (ev.key === "Enter") go(addr.value); });
+  const nav = (to) => call("browser.input", { threadId: id, event: { kind: "nav", to } }).then(() => poll(true)).catch(fail);
+  const at = (ev) => { const r = img.getBoundingClientRect(); return { x: Math.round((ev.clientX - r.left) * (img.naturalWidth / r.width)), y: Math.round((ev.clientY - r.top) * (img.naturalHeight / r.height)) }; };
+  img.addEventListener("click", (ev) => { view.focus(); call("browser.input", { threadId: id, event: { kind: "click", ...at(ev) } }).then(() => poll(true)); });
+  img.addEventListener("wheel", (ev) => { ev.preventDefault(); call("browser.input", { threadId: id, event: { kind: "wheel", ...at(ev), dy: Math.round(ev.deltaY) } }).then(() => poll(true)); }, { passive: false });
+  view.addEventListener("keydown", (ev) => {
+    if (ev.target !== view) return;
+    const mods = [ev.metaKey && "Meta", ev.ctrlKey && "Control", ev.altKey && "Alt"].filter(Boolean);
+    let event;
+    if (ev.key.length === 1 && !mods.length) event = { kind: "text", text: ev.key };
+    else if (ev.key.length === 1 || /^(Enter|Backspace|Delete|Tab|Escape|Arrow\w+|Home|End|PageUp|PageDown)$/.test(ev.key)) event = { kind: "key", key: [...mods, ev.shiftKey && ev.key.length > 1 ? "Shift" : null, ev.key].filter(Boolean).join("+") };
+    if (!event) return;
+    ev.preventDefault();
+    call("browser.input", { threadId: id, event }).then(() => poll(true));
+  });
+  const bar = h("div", { class: "browser-bar" },
+    h("button", { class: "icon-btn", title: "Back", onclick: () => nav("back") }, icon("back", 15)),
+    h("button", { class: "icon-btn", title: "Forward", onclick: () => nav("forward") }, icon("forward", 15)),
+    h("button", { class: "icon-btn", title: "Reload", onclick: () => nav("reload") }, icon("refresh", 14)),
+    addr,
+    h("button", { class: "icon-btn on", title: "Live browser (real Chrome tab). Click for the quick preview instead.", onclick: () => { ui.live = false; saveUi(); stopLive(); renderBrowser(); } }, icon("monitor", 14)),
+    h("button", { class: "icon-btn", title: "Open in your browser", onclick: () => live.url && window.open(live.url, "_blank", "noopener") }, icon("external", 14)),
+    h("button", { class: "icon-btn", title: "Hide browser (⌘⇧B)", onclick: () => togglePanel("browser") }, icon("x", 15)));
+  panel.replaceChildren(g, bar, view);
+  const poll = async (soon) => {
+    clearTimeout(live.timer);
+    if (soon) await new Promise((r) => setTimeout(r, 150));
+    if (state.threadId !== id || !ui.browser || !ui.live || live.busy) { live.timer = setTimeout(() => poll(), 800); return; }
+    live.busy = true;
+    try {
+      const f = await call("browser.frame", { threadId: id });
+      if (f) {
+        img.src = `data:image/jpeg;base64,${f.image}`;
+        if (!img.isConnected) view.replaceChildren(img);
+        live.url = f.url;
+        if (document.activeElement !== addr) addr.value = f.url;
+      }
+    } catch {}
+    live.busy = false;
+    if (state.threadId === id && ui.browser && ui.live) live.timer = setTimeout(() => poll(), document.hidden ? 3000 : 700);
+  };
+  live.threadId = id;
+  poll();
+}
+
 function renderBrowser() {
   const panel = $("browser"); if (!panel || !state.threadId) return;
+  if (ui.live) {
+    const lg = h("div", { class: "files-grip", title: "Drag to resize" });
+    let sw = 0;
+    lg.addEventListener("pointerdown", () => { sw = panel.getBoundingClientRect().width; }, { capture: true });
+    grip(lg, "x", (dx) => { ui.browserW = Math.max(320, Math.min(innerWidth - 480, sw - dx)); panel.style.setProperty("--browser-w", ui.browserW + "px"); });
+    return renderLiveBrowser(panel, lg);
+  }
+  stopLive();
   const id = state.threadId, url = bx.urls[id];
   const hist = bx.hist.get(id) ?? { stack: url ? [url] : [], i: url ? 0 : -1 };
   bx.hist.set(id, hist);
@@ -2403,6 +2639,7 @@ function renderBrowser() {
     h("button", { class: "icon-btn", title: "Reload", disabled: !url, onclick: () => { const f = panel.querySelector("iframe"); if (f) f.src = f.src; } }, icon("refresh", 14)),
     h("button", { class: "icon-btn", title: "Project sites", onclick: browserHome }, icon("home", 14)),
     addr, device,
+    h("button", { class: "icon-btn", title: "Live browser: a real Chrome tab that loads any site and that the agent can use", onclick: () => { ui.live = true; saveUi(); renderBrowser(); } }, icon("monitor", 14)),
     h("button", { class: "icon-btn", title: "Open in your browser", disabled: !url, onclick: () => window.open(url, "_blank", "noopener") }, icon("external", 14)),
     h("button", { class: "icon-btn", title: "Hide browser (⌘⇧B)", onclick: () => togglePanel("browser") }, icon("x", 15)));
   if (!url) { panel.replaceChildren(g, bar, renderLauncher()); return; }
@@ -2445,7 +2682,7 @@ function renderLauncher() {
         h("span", { class: "row-main" }, h("div", { class: "row-title" }, `localhost:${x.port}`), h("div", { class: "row-sub" }, x.command)), h("span", { class: "go" }, "Open →")));
     }
     if (!mine.length && !info.scripts.length && !info.staticUrl) kids.unshift(h("div", { class: "note" }, "Nothing to preview found in this project. Type an address above, or ask the agent to start the app."));
-    kids.push(h("div", { class: "note" }, "Local addresses (localhost) work best. Many public sites refuse to be shown inside another page; use ↗ for those."));
+    kids.push(h("div", { class: "note" }, "This quick preview suits local sites. For public sites (many refuse to be shown inside another page), switch to the live browser ", icon("monitor", 12), "."));
     box.replaceChildren(...kids);
   }).catch((err) => box.replaceChildren(h("div", { class: "note" }, err.message)));
   return box;
@@ -3007,6 +3244,7 @@ function openAgentDialog(agent = null, template = null) {
   $("agent-dialog-title").textContent = agent ? `Edit ${agentLabel(agent)}` : template ? `Add ${template.name}` : "New agent";
   $("agent-submit").textContent = agent ? "Save" : "Create agent";
   $("agent-delete").hidden = !agent;
+  f.elements.provider.replaceChildren(...engineOptions());
   f.elements.provider.disabled = !!agent;
   if (template) {
     f.elements.name.value = template.name;
@@ -3127,12 +3365,56 @@ async function showDiff(from, to) {
     $("diff-dialog").showModal();
   } catch (err) { fail(err); }
 }
+// ---------- use from another device ----------
+async function openRemote() {
+  let info;
+  try { info = await call("remote.info"); } catch (err) { return fail(err); }
+  const copy = (text, what) => navigator.clipboard?.writeText(text).then(() => toast(`${what} copied.`));
+  const cmdRow = (cmd, label) => h("div", { class: "cmd-row" }, h("code", {}, cmd), h("button", { class: "btn sm", onclick: () => copy(cmd, label) }, icon("copy", 13), "Copy"));
+  const body = [];
+  if (info.listening && info.url) {
+    const qr = h("div", { class: "qr" }); qr.innerHTML = info.qr; // generated by the server from our own URL
+    let shown = false;
+    const link = h("code", { class: "secret" }, info.url.replace(/token=.*/, "token=••••••••"));
+    body.push(
+      h("p", {}, `Remote access is on, ${info.via === "lan" ? "on your local network" : "over Tailscale"}. Scan this with your phone's camera${info.via === "tailscale" ? " (Tailscale has to be on there too)" : ""}:`),
+      qr,
+      h("div", { class: "cmd-row" }, link,
+        h("button", { class: "btn sm", onclick: (ev) => { shown = !shown; link.textContent = shown ? info.url : info.url.replace(/token=.*/, "token=••••••••"); ev.currentTarget.lastChild.textContent = shown ? "Hide" : "Show"; } }, icon("lock", 13), h("span", {}, "Show")),
+        h("button", { class: "btn sm", onclick: () => copy(info.url, "Link") }, icon("copy", 13), "Copy")),
+      h("p", { class: "muted" }, "Anyone with this link can use Bullpen as you, including running commands through your agents. To cut every device off, run ", h("code", {}, "bullpen remote reset"), "; to turn it off, ", h("code", {}, "bullpen remote off"), "."),
+      info.via === "lan" ? h("p", { class: "warn-note" }, "On the local network the connection isn't encrypted. Use it only on a network you trust.") : null);
+  } else {
+    body.push(
+      h("p", {}, info.enabled ? `Remote access is on, but no ${info.via === "lan" ? "local network" : "Tailscale"} address is available right now. Only this Mac can connect.` : "Only this Mac can use Bullpen right now. To use it from your phone or another computer, run one of these in Terminal on this Mac:"),
+      h("h4", {}, "Phone or laptop, anywhere (recommended)"),
+      h("p", { class: "muted" }, "Install Tailscale on this Mac and your phone, sign in to both, then:"),
+      cmdRow("bullpen remote on", "Command"),
+      h("h4", {}, "Same Wi-Fi only"),
+      cmdRow("bullpen remote on --lan", "Command"),
+      h("p", { class: "muted" }, "Plain HTTP on your local network: only on a network you trust."),
+      h("h4", {}, "Another computer with SSH access to this Mac"),
+      cmdRow("bullpen remote ssh", "Command"),
+      h("p", { class: "muted" }, "Prints a tunnel command and a link; nothing is opened to the network."),
+      h("p", { class: "muted" }, "Then come back here for the QR code."));
+  }
+  const dlg = h("dialog", { class: "remote-dlg" }, h("div", { class: "dlg-head" }, h("h3", {}, "Use from another device"),
+    h("button", { class: "icon-btn", "aria-label": "Close", onclick: () => dlg.close() }, icon("x", 15))), ...body.filter(Boolean));
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg);
+  dlg.showModal();
+}
+
 async function rollback(ordinal) {
-  if (!confirm(`Restore this thread's files to checkpoint ${ordinal}? A safety snapshot is taken first; the conversation is not rewound.`)) return;
-  try { const r = await dispatch({ type: "checkpoint.rollback", threadId: state.threadId, ordinal }); toast(`Files restored. Undo with: git checkout ${r.undoRef} -- .`); } catch (err) { fail(err); }
+  if (!confirm(`Restore this thread to ${ordinal === 0 ? "before its first turn" : `after turn ${ordinal}`}? Files go back to how they were, and the agent forgets the later turns. A safety snapshot of the files is taken first.`)) return;
+  try {
+    const r = await dispatch({ type: "checkpoint.rollback", threadId: state.threadId, ordinal });
+    toast(r.conversation === "unchanged" ? "Files restored (this engine can't rewind its conversation)." : "Files and conversation restored.");
+  } catch (err) { fail(err); }
 }
 
 $("new-agent").addEventListener("click", () => openAgentGallery());
+$("remote-btn").addEventListener("click", () => openRemote());
 $("palette-pick").value = document.documentElement.dataset.palette || "graphite";
 $("palette-pick").addEventListener("change", (ev) => {
   const v = ev.target.value;
@@ -3376,7 +3658,8 @@ function renderStart() {
     if (path) { cwd = path; prefs.set({ cwd }); renderProject(); loadResume(); const pm = projectAt(cwd)?.runtimeMode; if (pm) mode.value = pm; }
     input.focus();
   });
-  const engine = h("select", { class: "qsel", "aria-label": "Engine" }, h("option", { value: "claude" }, "Claude"), h("option", { value: "codex" }, "Codex"));
+  const engine = h("select", { class: "qsel", "aria-label": "Engine" }, ...engineOptions());
+  if (!ENGINES.some((e) => e.id === provider)) provider = "claude";
   engine.value = provider;
   engine.addEventListener("change", () => { provider = engine.value; prefs.set({ provider }); model.value = prefs.get()["model_" + provider] || ""; });
   const model = h("input", { type: "text", placeholder: "Model (provider default)", value: p["model_" + provider] || "" });
@@ -3386,20 +3669,27 @@ function renderStart() {
     h("option", { value: "full-access" }, "Full access"));
   mode.title = "What every agent working in this project may do on its own";
   mode.value = (cwd && projectAt(cwd)?.runtimeMode) || p.mode || "approval-required";
+  const where = h("select", { class: "qsel", "aria-label": "Where to work" },
+    h("option", { value: "local" }, "In the project folder"),
+    h("option", { value: "worktree" }, "On a new branch"));
+  where.title = "On a new branch: the work happens in its own git worktree, and your checkout isn't touched until you merge";
+  where.value = p.where || "local";
   const more = h("div", { class: "more" }, model);
   const moreBtn = h("button", { type: "button", class: "qbtn", onclick: () => more.classList.toggle("open") }, "Model");
   const go = h("button", { type: "button", class: "send-btn", "aria-label": "Start", "data-tip": "Start   ↵", "data-tip-pos": "end" }, icon("send", 16));
   const composer = h("div", { class: "composer" }, input,
-    h("div", { class: "start-bar" }, projectBtn, engine, mode, moreBtn, h("span", { class: "spacer" }), go), more);
+    h("div", { class: "start-bar" }, projectBtn, where, engine, mode, moreBtn, h("span", { class: "spacer" }), go), more);
 
   const submit = async () => {
     const text = input.value.trim();
     if (!cwd) { projectBtn.click(); return; }
     if (!text) { input.focus(); return; }
     go.disabled = true;
-    prefs.set({ mode: mode.value, ["model_" + provider]: model.value.trim() });
+    prefs.set({ mode: mode.value, where: where.value, ["model_" + provider]: model.value.trim() });
     try {
-      const { threadId } = await dispatch({ type: "thread.create", cwd, provider, model: model.value.trim() || undefined, runtimeMode: mode.value });
+      if (where.value === "worktree") toast("Making a branch for this…");
+      const { threadId } = await dispatch({ type: "thread.create", cwd, provider, model: model.value.trim() || undefined, runtimeMode: mode.value,
+        title: where.value === "worktree" ? text.slice(0, 60) : undefined, worktree: where.value === "worktree" ? {} : undefined });
       // The choice is the project's: every agent pulled in here follows it.
       const proj = projectAt(cwd);
       if (proj && (proj.runtimeMode ?? "approval-required") !== mode.value) await dispatch({ type: "project.update", projectId: proj.id, runtimeMode: mode.value }).catch(() => {});

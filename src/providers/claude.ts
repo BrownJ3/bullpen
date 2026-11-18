@@ -123,6 +123,10 @@ class ClaudeSession implements ProviderSession {
 
   #runId: string | undefined;
   #interruptRequested = false;
+  /** Last conversation entry seen this turn: where a later rollback resumes from. */
+  #lastUuid: string | undefined;
+  /** Rollback to apply when the query next opens (consumed then). */
+  #rewindAt: string | undefined;
   /** Parked permission prompts: the agent is blocked until the user answers (T3 parks a Deferred). */
   readonly #pending = new Map<
     string,
@@ -133,7 +137,7 @@ class ClaudeSession implements ProviderSession {
   readonly #streaming = new Map<string, Extract<TurnItem, { kind: "assistant_message" | "reasoning" }>>();
   readonly #dirty = new Set<string>();
   /** Tool calls awaiting their result, so the completed upsert keeps name + input. */
-  readonly #tools = new Map<string, { tool: string; input: unknown }>();
+  readonly #tools = new Map<string, { tool: string; input: unknown; parentId?: string }>();
   #flushTimer: NodeJS.Timeout | undefined;
   #currentMessageId: string | undefined;
   #lastBlockIndex = 0;
@@ -146,6 +150,7 @@ class ClaudeSession implements ProviderSession {
     this.#currentMode = this.#baseMode;
     this.#ownFolder = input.ownFolder;
     this.#sessionId = input.resumeNativeSessionId;
+    this.#rewindAt = input.rewind?.keepThrough;
     this.#options = {
       cwd: input.cwd,
       model: input.model,
@@ -191,6 +196,8 @@ class ClaudeSession implements ProviderSession {
       options: {
         ...this.#options,
         resume: this.#sessionId,
+        // A rollback: continue a copy of the conversation that ends at the kept turn.
+        ...(this.#rewindAt && this.#sessionId ? { resumeSessionAt: this.#rewindAt, forkSession: true } : {}),
         additionalDirectories: this.#extraDir ? [this.#extraDir] : undefined,
       },
     });
@@ -209,6 +216,7 @@ class ClaudeSession implements ProviderSession {
     }
     this.#runId = runId;
     this.#interruptRequested = false;
+    this.#lastUuid = undefined;
     // The project's level for this turn: "build automatically" runs like a team task (edits in the project,
     // safe commands); "full access" allows every tool. Never switch into bypassPermissions mid-session.
     this.#allowAll = mode === "full-access" && this.#baseMode !== "bypassPermissions";
@@ -328,12 +336,13 @@ class ClaudeSession implements ProviderSession {
       case "system":
         if (message.subtype === "init") {
           this.#sessionId = message.session_id;
+          this.#rewindAt = undefined; // applied: later reopens resume the forked conversation normally
           this.#emit({ type: "native_session.updated", nativeSessionId: message.session_id });
         }
         return;
 
       case "stream_event": {
-        if (message.parent_tool_use_id) return; // subagent internals: skip in this minimal harness
+        if (message.parent_tool_use_id) return; // sub-agent text streams aren't shown; their tool steps are (below)
         const ev = message.event;
         if (ev.type === "message_start") {
           this.#currentMessageId = ev.message.id;
@@ -367,7 +376,18 @@ class ClaudeSession implements ProviderSession {
       }
 
       case "assistant": {
-        if (message.parent_tool_use_id) return;
+        if (message.uuid && !message.parent_tool_use_id) this.#lastUuid = message.uuid; // main chain only
+        if (message.parent_tool_use_id) {
+          // A sub-agent's step (Claude's Task tool): record its tool calls under the Task call.
+          const parentId = `tool:${message.parent_tool_use_id}`;
+          for (const block of message.message.content) {
+            if (block.type !== "tool_use") continue;
+            const tool = { tool: block.name, input: block.input, parentId };
+            this.#tools.set(`tool:${block.id}`, tool);
+            this.#emitItem({ ...this.#base(`tool:${block.id}`), kind: "tool_call", ...tool, status: "running" });
+          }
+          return;
+        }
         const blocks = message.message.content;
         blocks.forEach((block, i) => {
           // With partial messages on, each assistant frame usually carries the one block that just finished.
@@ -393,7 +413,7 @@ class ClaudeSession implements ProviderSession {
       }
 
       case "user": {
-        if (message.parent_tool_use_id) return;
+        if (message.uuid && !message.parent_tool_use_id && !(message as { isReplay?: boolean }).isReplay) this.#lastUuid = message.uuid;
         const content = message.message.content;
         if (!Array.isArray(content)) return;
         for (const block of content) {
@@ -401,6 +421,7 @@ class ClaudeSession implements ProviderSession {
           const id = `tool:${block.tool_use_id}`;
           const started = this.#tools.get(id);
           this.#tools.delete(id);
+          if (!started && message.parent_tool_use_id) continue;
           this.#emitItem({
             ...this.#base(id),
             kind: "tool_call",
@@ -408,6 +429,7 @@ class ClaudeSession implements ProviderSession {
             input: started?.input,
             status: block.is_error ? "failed" : "completed",
             output: truncate(toolResultText(block.content)),
+            ...(started?.parentId ? { parentId: started.parentId } : {}),
           });
         }
         return;
@@ -426,6 +448,7 @@ class ClaudeSession implements ProviderSession {
           type: "turn.terminal",
           runId,
           outcome,
+          nativeTurnId: this.#lastUuid,
           costUsd: message.total_cost_usd,
           tokens: message.usage ? (message.usage.input_tokens ?? 0) + (message.usage.cache_creation_input_tokens ?? 0) + (message.usage.output_tokens ?? 0) : undefined,
           error: outcome === "failed" ? (message.subtype === "success" ? message.result : message.subtype) : undefined,
