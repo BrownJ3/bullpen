@@ -147,7 +147,9 @@ function linkCommand() {
 
 /** Get the newest release (or the latest on this branch), reinstall dependencies if they changed, restart. */
 async function update(): Promise<boolean> {
-  const git = (...args: string[]) => execFileSync("git", ["-C", ROOT, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  // Never wait on a password prompt (it may run from the app with no terminal); the error says what to do instead.
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-C", ROOT, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }).trim();
   try {
     git("rev-parse", "--git-dir");
   } catch {
@@ -162,7 +164,12 @@ async function update(): Promise<boolean> {
   const lockBefore = git("rev-parse", "HEAD:package-lock.json");
   const cur = currentVersion();
   say("Checking for updates…");
-  git("fetch", "--quiet", "--tags", "origin");
+  try {
+    git("fetch", "--quiet", "--tags", "origin");
+  } catch {
+    say("Couldn't reach GitHub to check for updates. If the repository is private, make sure git can sign in (gh auth login, or an SSH key), then try again.");
+    return false;
+  }
   if (cur.branch) {
     git("merge", "--quiet", "--ff-only", `origin/${cur.branch}`);
   } else {

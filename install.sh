@@ -2,7 +2,8 @@
 # Bullpen installer.
 #
 #   curl -fsSL https://raw.githubusercontent.com/BrownJ3/bullpen/main/install.sh | sh
-#   (private repo:)  gh api repos/BrownJ3/bullpen/contents/install.sh -H "Accept: application/vnd.github.raw" | sh
+#   (private repo, with the GitHub CLI:)  gh api repos/BrownJ3/bullpen/contents/install.sh -H "Accept: application/vnd.github.raw" | sh
+#   (private repo, with plain git:)       git clone https://github.com/BrownJ3/bullpen.git ~/.bullpen/app && sh ~/.bullpen/app/install.sh
 #
 # What it does: makes sure Node 24+ is available (installs a private copy in ~/.bullpen/node if not), downloads
 # Bullpen to ~/.bullpen/app at the latest release, installs its dependencies, sets it to start at login with a
@@ -77,13 +78,31 @@ export PATH
 
 # ---------------------------------------------------------------- the app
 clone() {
-  # Private repos: try plain git without prompting first, then the GitHub CLI if it's signed in.
+  # Private repos: plain HTTPS (works if git already has a GitHub sign-in), then SSH (works with an SSH key on
+  # GitHub), then the GitHub CLI if it's signed in, then HTTPS again letting git ask for a username and token.
   if GIT_TERMINAL_PROMPT=0 git clone --quiet "$REPO" "$1" 2>/dev/null; then return 0; fi
+  slug="$(printf '%s' "$REPO" | sed -E 's#^(https://github.com/|git@github.com:)##; s#\.git$##')"
+  case "$REPO" in
+    https://github.com/*)
+      if GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10" \
+        git clone --quiet "git@github.com:$slug.git" "$1" 2>/dev/null; then
+        info "Downloaded over SSH."
+        return 0
+      fi ;;
+  esac
   if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-    slug="$(printf '%s' "$REPO" | sed -E 's#^(https://github.com/|git@github.com:)##; s#\.git$##')"
     gh repo clone "$slug" "$1" -- --quiet && return 0
   fi
-  die "Couldn't download $REPO. If it's private, ask for access, then sign in with \`gh auth login\` and run this again."
+  if (exec </dev/tty) 2>/dev/null; then
+    info "GitHub needs you to sign in. Username: your GitHub username. Password: a personal access token"
+    info "(github.com/settings/tokens, with read access to $slug), not your GitHub password."
+    git clone --quiet "$REPO" "$1" </dev/tty && return 0
+  fi
+  die "Couldn't download $REPO. If it's private, ask for access, then do one of these and run this again:
+  - sign in with the GitHub CLI:  brew install gh && gh auth login
+  - or add an SSH key to GitHub:   https://github.com/settings/keys
+  - or clone it yourself and run the installer from it:
+      git clone $REPO $DIR && sh $DIR/install.sh"
 }
 
 if [ -d "$DIR/.git" ]; then
