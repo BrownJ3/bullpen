@@ -549,27 +549,146 @@ dialog.wide { width: min(900px, calc(100vw - 32px)); }
   .topbar, .transcript, .composer-wrap { padding-left: 16px; padding-right: 16px; }
   .grid2 { grid-template-columns: 1fr; }
 }
+
+/* ---------- icons, icon buttons, tooltips ---------- */
+.ico { display: inline-grid; place-items: center; line-height: 0; flex: none; }
+.ico svg { display: block; }
+.ibtn { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; min-width: 30px; padding: 0 7px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); transition: background 0.12s, color 0.12s; flex: none; }
+.ibtn:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); }
+.ibtn:active:not(:disabled) { transform: translateY(0.5px); }
+.ibtn:disabled { opacity: 0.32; cursor: default; }
+.ibtn.on { background: var(--accent-soft); color: var(--accent-ink); }
+.ibtn .ilabel { font-size: 13px; font-weight: 550; }
+.ibtn .ibadge { position: absolute; top: 1px; right: 0; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 9.5px; font-weight: 800; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--panel); }
+.ibtn.danger:hover:not(:disabled) { color: var(--danger); background: var(--danger-soft); }
+[data-tip] { position: relative; }
+[data-tip]::after { content: attr(data-tip); position: absolute; top: calc(100% + 7px); left: 50%; transform: translate(-50%, -3px); background: #0b1427; color: #eef0f4; font: 500 11.5px/1.3 var(--sans); letter-spacing: 0; padding: 5px 8px; border-radius: 6px; white-space: pre; pointer-events: none; opacity: 0; transition: opacity 0.12s, transform 0.12s; z-index: 70; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22); }
+[data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); transition-delay: 0.4s; }
+[data-tip][data-tip-pos="end"]::after { left: auto; right: 0; transform: translate(0, -3px); }
+[data-tip][data-tip-pos="end"]:hover::after { transform: translate(0, 0); }
+[data-tip][data-tip-pos="start"]::after { left: 0; transform: translate(0, -3px); }
+[data-tip][data-tip-pos="start"]:hover::after { transform: translate(0, 0); }
+[data-tip][data-tip-pos="up"]::after { top: auto; bottom: calc(100% + 7px); transform: translate(-50%, 3px); }
+[data-tip][data-tip-pos="up"]:hover::after { transform: translate(-50%, 0); }
+[data-tip]:disabled::after { display: none; }
+button:focus-visible, [role="button"]:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent); outline-offset: 1px; }
+
+/* ---------- top bar: navigation, breadcrumbs, actions ---------- */
+.topbar { gap: 8px; padding: 9px 14px 9px 10px; min-height: 54px; }
+.navc { display: flex; align-items: center; gap: 1px; padding-right: 8px; margin-right: 2px; border-right: 1px solid var(--line); flex: none; }
+.tb-title { min-width: 0; display: flex; flex-direction: column; gap: 0; flex: 0 1 auto; }
+.crumbs-row { display: flex; align-items: center; gap: 1px; min-width: 0; font-size: 14px; }
+.crumb { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--muted); padding: 3px 6px; border-radius: 7px; font-weight: 500; white-space: nowrap; max-width: 220px; flex: none; transition: background 0.12s, color 0.12s; }
+.crumb > .tx { overflow: hidden; text-overflow: ellipsis; }
+.crumb:hover { background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); }
+.crumb .chev-d { opacity: 0.55; margin-left: -2px; }
+.crumb .proj-icon, .crumb .monogram { width: 16px; height: 16px; }
+.crumb-sep { color: var(--faint); display: inline-flex; flex: none; opacity: 0.7; }
+.crumb-cur { display: inline-flex; align-items: center; gap: 7px; font-weight: 650; color: var(--text); padding: 3px 6px; min-width: 0; white-space: nowrap; }
+.crumb-cur > .tx { overflow: hidden; text-overflow: ellipsis; }
+.crumb-cur .mono-badge { width: 20px; height: 20px; border-radius: 6px; font-size: 10.5px; }
+.crumb-cur > .ico { color: var(--accent-ink); }
+.tb-sub { color: var(--faint); font-size: 11.5px; padding-left: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.live { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; color: var(--accent-ink); background: var(--accent-soft); padding: 3px 10px; border-radius: 999px; flex: none; }
+.live.needs { color: var(--warn); background: var(--warn-soft); }
+.live.needs .pulse { background: var(--warn); }
+.tgroup { display: flex; gap: 1px; padding: 2px; border-radius: 10px; background: color-mix(in srgb, var(--text) 5.5%, transparent); flex: none; }
+.tgroup .ibtn { height: 26px; min-width: 28px; border-radius: 7px; }
+.tgroup .ibtn.on { background: var(--panel); color: var(--accent-ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14); }
+.btn.sm { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px 4px 9px; font-size: 12.5px; height: 30px; flex: none; }
+.vsep { width: 1px; height: 20px; background: var(--line); margin: 0 3px; flex: none; }
+.topbar.ghost { background: transparent; border-bottom-color: transparent; }
+
+/* ---------- composer buttons ---------- */
+.send-btn, .stop-btn { flex: none; width: 34px; height: 34px; border-radius: 10px; border: 0; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); transition: transform 0.1s, opacity 0.15s, filter 0.12s; }
+.send-btn:hover:not(:disabled) { filter: brightness(1.06); }
+.send-btn:active:not(:disabled), .stop-btn:active { transform: scale(0.93); }
+.send-btn:disabled { opacity: 0.35; cursor: default; }
+.stop-btn { background: var(--text); color: var(--panel); }
+
+/* ---------- sidebar polish ---------- */
+.app { transition: grid-template-columns 0.18s ease; }
+.app.side-hidden { grid-template-columns: 0 1fr; }
+.app.side-hidden .sidebar { visibility: hidden; border-right: 0; overflow: hidden; }
+.brand { padding: 13px 16px 8px; }
+.jump { display: flex; align-items: center; gap: 8px; width: calc(100% - 28px); margin: 2px 14px 6px; padding: 6px 8px 6px 10px; border-radius: 9px; border: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 55%, transparent); color: var(--faint); font-size: 13px; text-align: left; transition: border-color 0.12s, color 0.12s; }
+.jump:hover { color: var(--text); border-color: var(--line-strong); }
+.jump .t { flex: 1; }
+.sidebar .kbd { border-color: var(--line-strong); color: var(--faint); }
+.inbox-row { transition: background 0.12s; }
+.inbox-row .ic { width: 26px; height: 26px; border-radius: 7px; color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.job-ic { color: var(--muted); }
+.row, .trow, .folder-head { transition: background 0.12s, color 0.12s; }
+.section-head .icon-btn .ico, .side-foot .icon-btn .ico { pointer-events: none; }
+.folder-head .icon-btn.on svg { fill: currentColor; }
+.folder-head .chev { display: inline-grid; place-items: center; width: 12px; }
+.side-foot .icon-btn { width: 26px; height: 26px; }
+.side-foot .icon-btn:hover { color: var(--danger); }
+
+/* ---------- menus ---------- */
+.menu { padding: 5px; min-width: 210px; animation: pop 0.12s ease-out; }
+.menu button { display: flex; align-items: center; gap: 9px; padding: 6px 9px; }
+.menu button .ico { color: var(--muted); }
+.menu button .mt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu button .ms { color: var(--faint); font-size: 11.5px; flex: none; }
+.menu button.active { font-weight: 600; }
+.menu button.active .ico { color: var(--accent-ink); }
+.menu button.danger .ico { color: var(--danger); }
+.menu .mh { padding: 6px 9px 3px; font-size: 11px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+.menu .mono-badge, .menu .proj-icon, .menu .monogram { width: 18px; height: 18px; border-radius: 5px; font-size: 9.5px; }
+.menu .kbd { margin-left: 8px; }
+
+/* ---------- command palette ---------- */
+.pal-overlay { position: fixed; inset: 0; z-index: 60; background: rgba(11, 20, 39, 0.38); backdrop-filter: blur(2px); display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; animation: fade 0.12s; }
+.pal { width: min(640px, calc(100vw - 32px)); background: var(--panel); color: var(--text); border: 1px solid var(--line-strong); border-radius: 14px; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3); overflow: hidden; animation: pop 0.14s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+.pal-search { display: flex; align-items: center; gap: 10px; padding: 13px 14px; border-bottom: 1px solid var(--line); color: var(--faint); }
+.pal-input, .pal-input:focus { flex: 1; border: 0 !important; outline: 0 !important; background: transparent; font-size: 16px; color: var(--text); }
+.pal-list { max-height: min(56vh, 470px); overflow-y: auto; padding: 6px; }
+.pal-group { padding: 9px 10px 4px; font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); }
+.pal-row { display: flex; align-items: center; gap: 11px; width: 100%; border: 0; background: transparent; padding: 7px 10px; border-radius: 9px; text-align: left; color: var(--text); }
+.pal-row.sel { background: var(--accent-soft); }
+.pal-row .lead { width: 24px; height: 24px; display: grid; place-items: center; color: var(--muted); flex: none; border-radius: 7px; background: color-mix(in srgb, var(--text) 5%, transparent); }
+.pal-row.sel .lead { color: var(--accent-ink); }
+.pal-row .lead .mono-badge { width: 24px; height: 24px; border-radius: 7px; font-size: 11px; }
+.pal-row .lead .proj-icon, .pal-row .lead .monogram { width: 18px; height: 18px; }
+.pal-row .pm { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+.pal-row .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13.5px; flex: none; max-width: 65%; }
+.pal-row .s { color: var(--faint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.pal-row .t mark { background: none; color: var(--accent-ink); font-weight: 650; }
+.pal-row .go { color: var(--faint); display: flex; align-items: center; gap: 6px; font-size: 12px; flex: none; }
+.pal-row .go .ret { opacity: 0; }
+.pal-row.sel .go .ret { opacity: 1; }
+.pal-empty { padding: 26px; text-align: center; color: var(--faint); font-size: 13px; }
+.pal-foot { display: flex; gap: 16px; padding: 8px 14px; border-top: 1px solid var(--line); color: var(--faint); font-size: 11.5px; background: var(--bg); }
+.pal-foot .kbd { margin-right: 2px; }
+@keyframes pop { from { opacity: 0; transform: translateY(-6px) scale(0.985); } }
+@keyframes fade { from { opacity: 0; } }
+
+/* ---------- shortcuts sheet ---------- */
+.keys { display: grid; grid-template-columns: 1fr auto; gap: 7px 18px; font-size: 13.5px; align-items: center; }
+.keys .kbd { font-size: 11.5px; padding: 1px 6px; }
 </style>
 </head>
 <body>
 <div class="app">
   <aside class="sidebar">
     <div class="brand"><img src="/icon.svg?v=4" alt="">Bullpen</div>
+    <button class="jump" id="jump" type="button"><span data-icon="search" data-size="14"></span><span class="t">Search or jump to…</span><span class="kbd">⌘K</span></button>
     <div class="side-scroll">
-      <button class="inbox-row" id="inbox-row"><span class="ic">☀</span><span style="flex:1">Inbox</span><span id="inbox-count"></span></button>
-      <button class="inbox-row" id="teams-row"><span class="ic">▦</span><span style="flex:1">Teams</span><span id="teams-count"></span></button>
-      <div class="section-head">Agents <button class="icon-btn" id="new-agent" title="New agent" aria-label="New agent">+</button></div>
+      <button class="inbox-row" id="inbox-row"><span class="ic" data-icon="inbox" data-size="15"></span><span style="flex:1">Inbox</span><span id="inbox-count"></span></button>
+      <button class="inbox-row" id="teams-row"><span class="ic" data-icon="users" data-size="15"></span><span style="flex:1">Teams</span><span id="teams-count"></span></button>
+      <div class="section-head">Agents <button class="icon-btn" id="new-agent" title="Recruit agents" aria-label="Recruit agents" data-icon="plus" data-size="15"></button></div>
       <div id="agents"></div>
-      <div class="section-head">Jobs <button class="icon-btn" id="new-job" title="New standing job" aria-label="New standing job">+</button></div>
+      <div class="section-head">Jobs <button class="icon-btn" id="new-job" title="New standing job" aria-label="New standing job" data-icon="plus" data-size="15"></button></div>
       <div id="jobs"></div>
       <div class="section-head">Projects <span class="head-actions">
-        <button class="icon-btn" id="import-projects" title="Choose projects" aria-label="Choose projects">☰</button>
-        <button class="icon-btn" id="new-thread" title="New thread" aria-label="New thread">+</button></span></div>
+        <button class="icon-btn" id="import-projects" title="Choose which projects show here" aria-label="Choose projects" data-icon="list" data-size="15"></button>
+        <button class="icon-btn" id="new-thread" title="New thread" aria-label="New thread" data-icon="plus" data-size="15"></button></span></div>
       <div id="threads"></div>
     </div>
     <div class="side-foot"><span><span class="conn" id="conn" title="disconnected"></span><span id="conn-text">Connecting…</span></span><select class="palette-pick" id="palette-pick" title="Colour theme" aria-label="Colour theme">
       <option value="harbor">Harbor</option><option value="night">Night</option><option value="paper">Paper</option><option value="graphite">Graphite</option>
-    </select><button class="link" id="stop-server" title="Stop the Bullpen server">Stop server</button></div>
+    </select><button class="icon-btn" id="stop-server" title="Stop the Bullpen server" aria-label="Stop the Bullpen server" data-icon="power" data-size="14"></button></div>
   </aside>
   <main class="main" id="main"></main>
 </div>
@@ -765,6 +884,135 @@ function h(tag, attrs, ...children) {
   return el;
 }
 const $ = (id) => document.getElementById(id);
+
+// ---------- icons ----------
+const ICONS = {
+  inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  back: '<path d="m15 18-6-6 6-6"/>',
+  forward: '<path d="m9 18 6-6-6-6"/>',
+  chevdown: '<path d="m6 9 6 6 6-6"/>',
+  chevright: '<path d="m9 18 6-6-6-6"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  sidebar: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
+  files: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  terminal: '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" stroke="none"/>',
+  play: '<path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/>',
+  pause: '<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
+  edit: '<path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/>',
+  more: '<circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/><circle cx="5" cy="12" r="1.2"/>',
+  reset: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+  bulb: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  send: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+  external: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  home: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+  power: '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>',
+  list: '<path d="M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13"/>',
+  userplus: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/>',
+  message: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
+  compose: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+  palette: '<circle cx="13.5" cy="6.5" r="1" fill="currentColor"/><circle cx="17.5" cy="10.5" r="1" fill="currentColor"/><circle cx="8.5" cy="7.5" r="1" fill="currentColor"/><circle cx="6.5" cy="12.5" r="1" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.13-.29-.29-.44-.65-.44-1.13a1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.55-2.5 5.55-5.55C21.97 6.01 17.46 2 12 2z"/>',
+  keyboard: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/>',
+  bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  enter: '<polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/>',
+};
+function icon(name, size = 16) {
+  const s = document.createElement("span");
+  s.className = "ico";
+  s.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] ?? ""}</svg>`;
+  return s;
+}
+/** Icon button with a tooltip (label + shortcut). o: { on, kbd, cls, disabled, badge, label, pos, size, native } */
+function ibtn(name, tip, onclick, o = {}) {
+  const text = o.kbd ? `${tip}   ${o.kbd}` : tip;
+  return h("button", {
+    type: "button", class: "ibtn" + (o.on ? " on" : "") + (o.cls ? " " + o.cls : ""), "aria-label": tip,
+    "data-tip": o.native ? null : text, title: o.native ? text : null, "data-tip-pos": o.pos, disabled: o.disabled,
+    "aria-pressed": o.on == null ? null : String(!!o.on), onclick,
+  }, icon(name, o.size ?? 16), o.label ? h("span", { class: "ilabel" }, o.label) : null, o.badge ? h("span", { class: "ibadge" }, String(o.badge)) : null);
+}
+const kbd = (k) => h("span", { class: "kbd" }, k);
+function hydrateIcons(root = document) {
+  for (const el of root.querySelectorAll("[data-icon]")) { el.replaceChildren(icon(el.dataset.icon, Number(el.dataset.size || 16))); el.removeAttribute("data-icon"); }
+}
+
+// ---------- navigation: real back/forward history ----------
+const nav = { i: 0, top: 0 };
+try { nav.top = Number(sessionStorage.getItem("bp-nav-top") || 0); } catch {}
+nav.i = history.state?.i ?? 0;
+if (nav.top < nav.i) nav.top = nav.i;
+history.replaceState({ i: nav.i }, "", location.hash || location.pathname);
+/** Record where we are now: a new history entry, or replace the current one (same place, reconnects). */
+function routeTo(hash, replace = false) {
+  const here = location.hash || "";
+  if (replace || here === hash) history.replaceState({ i: nav.i }, "", hash || location.pathname);
+  else { nav.i++; nav.top = nav.i; history.pushState({ i: nav.i }, "", hash || location.pathname); }
+  try { sessionStorage.setItem("bp-nav-top", String(nav.top)); } catch {}
+  syncNavButtons();
+}
+function syncNavButtons() {
+  for (const b of document.querySelectorAll(".nav-back")) b.disabled = nav.i <= 0;
+  for (const b of document.querySelectorAll(".nav-fwd")) b.disabled = nav.i >= nav.top;
+}
+window.addEventListener("popstate", (ev) => {
+  nav.i = ev.state?.i ?? 0;
+  closeMenu?.(); closePalette();
+  const m = location.hash.match(/^#\/t\/([\w-]+)/);
+  if (m) openThread(m[1], false, true);
+  else if (location.hash === "#/inbox") openInbox(true);
+  else if (location.hash === "#/teams") openTeams(true);
+  else newThread(undefined, true);
+  syncNavButtons();
+});
+let sideHidden = false;
+try { sideHidden = localStorage.getItem("bp-side-hidden") === "1"; } catch {}
+function toggleSidebar() {
+  sideHidden = !sideHidden;
+  try { localStorage.setItem("bp-side-hidden", sideHidden ? "1" : ""); } catch {}
+  document.querySelector(".app").classList.toggle("side-hidden", sideHidden);
+  for (const b of document.querySelectorAll(".nav-side")) { b.setAttribute("data-tip", `${sideHidden ? "Show" : "Hide"} sidebar   ⌘\\`); b.setAttribute("aria-label", `${sideHidden ? "Show" : "Hide"} sidebar`); }
+}
+function navCluster() {
+  return h("div", { class: "navc" },
+    ibtn("sidebar", sideHidden ? "Show sidebar" : "Hide sidebar", toggleSidebar, { kbd: "⌘\\", cls: "nav-side", pos: "start" }),
+    ibtn("back", "Back", () => history.back(), { kbd: "⌘[", cls: "nav-back", disabled: nav.i <= 0 }),
+    ibtn("forward", "Forward", () => history.forward(), { kbd: "⌘]", cls: "nav-fwd", disabled: nav.i >= nav.top }));
+}
+/** A small dropdown under an element. items: {label, sub?, icon?|el?, run, danger?, active?, kbd?} | "-" | {header} */
+function popMenu(anchor, items, align = "start") {
+  closeMenu();
+  const r = anchor.getBoundingClientRect();
+  const m = h("div", { class: "menu", role: "menu", onclick: (ev) => ev.stopPropagation() }, ...items.map((it) =>
+    it === "-" ? h("hr") : it.header ? h("div", { class: "mh" }, it.header) :
+    h("button", { type: "button", role: "menuitem", class: (it.danger ? "danger" : "") + (it.active ? " active" : ""), onclick: () => { closeMenu(); it.run(); } },
+      it.el ?? icon(it.icon ?? "chevright", 15), h("span", { class: "mt" }, it.label), it.sub ? h("span", { class: "ms" }, it.sub) : null, it.kbd ? kbd(it.kbd) : null)));
+  document.body.append(m);
+  const w = m.offsetWidth, hgt = m.offsetHeight;
+  m.style.top = `${Math.min(r.bottom + 6, innerHeight - hgt - 8)}px`;
+  m.style.left = `${align === "end" ? Math.max(8, r.right - w) : Math.max(8, Math.min(r.left, innerWidth - w - 8))}px`;
+  m.style.maxHeight = `${innerHeight - 24}px`; m.style.overflowY = "auto";
+  openMenu = m;
+}
+function crumb(content, onclick, tip) {
+  return h("button", { type: "button", class: "crumb", onclick, "data-tip": tip, "data-tip-pos": "start" }, ...content, icon("chevdown", 13));
+}
+const crumbSep = () => h("span", { class: "crumb-sep" }, icon("chevright", 14));
+function pageTopbar(iconName, title, sub, actions = []) {
+  return h("div", { class: "topbar", id: "topbar" }, navCluster(),
+    h("div", { class: "tb-title" }, h("div", { class: "crumbs-row" }, h("span", { class: "crumb-cur" }, icon(iconName, 16), h("span", { class: "tx" }, title))),
+      sub ? h("div", { class: "tb-sub" }, sub) : null),
+    h("span", { class: "spacer" }), ...actions.filter(Boolean));
+}
 
 function hue(name) { let x = 0; for (const ch of name) x = (x * 31 + ch.charCodeAt(0)) % 360; return x; }
 function badge(name) {
@@ -1011,7 +1259,7 @@ function renderJobs() {
     const status = j.lastStatus === "running" ? "running" : j.lastStatus;
     const sub = !j.enabled ? "Paused" : j.lastStatus === "running" ? "Running now" : j.nextRunAt ? `Next ${whenNext(j.nextRunAt)}` : describeTrigger(j.trigger);
     return h("button", { class: "row" + (state.threadId === j.threadId ? " active" : ""), onclick: () => openThread(j.threadId), title: `${describeTrigger(j.trigger)} · ${agent ? agentLabel(agent) : "?"}` },
-      h("span", { class: "job-ic" }, "⏱"),
+      h("span", { class: "job-ic" }, icon("clock", 15)),
       h("span", { class: "row-main" }, h("div", { class: "row-title" }, j.name), h("div", { class: "row-sub" }, `${agent ? agentLabel(agent) : "?"} · ${sub}`)),
       status ? h("span", { class: "dot " + status, title: status }) : null);
   }) : [h("div", { class: "side-empty" }, "No jobs yet. Give an agent something to do on its own.")]));
@@ -1092,17 +1340,17 @@ function renderProjects() {
           title: empty ? `${p.path}\nClick to start working here` : p.path,
           onclick: () => { if (empty) newThread(p.path); else { collapsed.toggle(p.id); renderProjects(); } },
           oncontextmenu: (ev) => { ev.preventDefault(); projectMenu(p, ev.clientX, ev.clientY); } },
-        h("span", { class: "chev" }, "▾"),
+        h("span", { class: "chev" }, icon("chevdown", 12)),
         projectIcon(p),
         h("span", { class: "title" }, p.title),
-        h("span", { class: "meta" }, ...[isClosed && u ? h("span", { class: "sdot " + u }) : null, isClosed && list.length ? String(list.length) : null, p.pinnedAt ? h("span", { class: "pin-mark", title: "Pinned" }, "★") : null].filter(Boolean)),
+        h("span", { class: "meta" }, ...[isClosed && u ? h("span", { class: "sdot " + u }) : null, isClosed && list.length ? String(list.length) : null, p.pinnedAt ? h("span", { class: "pin-mark", title: "Pinned" }, icon("star", 11)) : null].filter(Boolean)),
         h("span", { class: "hover" },
           h("button", { class: "icon-btn" + (p.pinnedAt ? " on" : ""), title: p.pinnedAt ? "Unpin" : "Pin to top",
-            onclick: (ev) => { ev.stopPropagation(); dispatch({ type: "project.update", projectId: p.id, pinned: !p.pinnedAt }).catch(fail); } }, p.pinnedAt ? "★" : "☆"),
+            onclick: (ev) => { ev.stopPropagation(); dispatch({ type: "project.update", projectId: p.id, pinned: !p.pinnedAt }).catch(fail); } }, icon("star", 13)),
           h("button", { class: "icon-btn", title: `New thread in ${p.title}`,
-            onclick: (ev) => { ev.stopPropagation(); newThread(p.path); } }, "+"),
+            onclick: (ev) => { ev.stopPropagation(); newThread(p.path); } }, icon("plus", 14)),
           h("button", { class: "icon-btn", title: "More", "aria-label": "More actions",
-            onclick: (ev) => { ev.stopPropagation(); const r = ev.currentTarget.getBoundingClientRect(); projectMenu(p, r.left, r.bottom + 4); } }, "⋯"))),
+            onclick: (ev) => { ev.stopPropagation(); const r = ev.currentTarget.getBoundingClientRect(); projectMenu(p, r.left, r.bottom + 4); } }, icon("more", 14)))),
       h("div", { class: "folder-body" },
         ...shown.map((t) => {
           const st = state.approvals.get(t.id)?.size || t.team?.needsYou ? "attention" : t.status === "running" || t.team?.active ? "working" : null;
@@ -1277,7 +1525,9 @@ function renderMain() {
         h("div", { class: "composer-wrap" },
           h("div", { class: "composer", id: "composer" },
             h("textarea", { id: "input", rows: 1, placeholder: "Message… type @ to bring in an agent" }),
-            h("button", { class: "btn primary", id: "send" }, "Send")),
+            h("button", { type: "button", class: "stop-btn", id: "stop", hidden: true, "aria-label": "Stop", "data-tip": "Stop the agent", "data-tip-pos": "up",
+              onclick: () => state.threadId && dispatch({ type: "run.interrupt", threadId: state.threadId }).catch(fail) }, icon("stop", 14)),
+            h("button", { type: "button", class: "send-btn", id: "send", "aria-label": "Send", "data-tip": "Send   ↵", "data-tip-pos": "up", disabled: true }, icon("send", 17))),
           h("div", { class: "hint", id: "hint" })),
         h("div", { class: "drawer", id: "drawer", hidden: true })),
       h("aside", { class: "files", id: "files", hidden: true }),
@@ -1290,43 +1540,105 @@ function renderMain() {
 function renderTopbar() {
   const t = state.thread; const bar = $("topbar"); if (!t || !bar) return;
   const agent = t.agentId ? state.agents.get(t.agentId) : null;
-  const modes = { "approval-required": "asks first", "auto-accept-edits": "auto-edits", "full-access": "full access" };
+  const job = t.jobId ? state.jobs.get(t.jobId) : null;
+  const modes = { "approval-required": "asks first", "auto-accept-edits": "auto-accepts edits", "full-access": "full access" };
+  const engine = t.provider === "codex" ? "Codex" : "Claude";
+  const cur = (lead, text) => h("span", { class: "crumb-cur", title: text }, lead, h("span", { class: "tx" }, text));
+  let crumbs, sub;
+  if (agent) {
+    crumbs = [crumb([icon("bot", 15), h("span", { class: "tx" }, "Agents")], (ev) => { ev.stopPropagation(); switchMenu(ev.currentTarget, "agents"); }, "Switch agent"),
+      crumbSep(), cur(badge(agentLabel(agent)), agentLabel(agent))];
+    sub = [`@${agent.name}`, agent.description, `${engine}${t.model ? " · " + t.model : ""}`, modes[t.runtimeMode]];
+  } else if (job) {
+    const jobAgent = state.agents.get(job.agentId);
+    crumbs = [crumb([icon("clock", 15), h("span", { class: "tx" }, "Jobs")], (ev) => { ev.stopPropagation(); switchMenu(ev.currentTarget, "jobs"); }, "Switch job"),
+      crumbSep(), cur(null, job.name)];
+    sub = [`${describeTrigger(job.trigger)}${job.enabled && job.nextRunAt ? ` · next ${whenNext(job.nextRunAt)}` : job.enabled ? "" : " · paused"}`,
+      jobAgent ? agentLabel(jobAgent) : null, job.project ? folderName(job.project) : null];
+  } else {
+    const project = [...state.projects.values()].find((p) => p.path === t.cwd);
+    crumbs = [crumb([project ? projectIcon(project) : icon("files", 15), h("span", { class: "tx" }, project?.title ?? folderName(t.cwd))],
+        (ev) => { ev.stopPropagation(); switchMenu(ev.currentTarget, "project", t.cwd); }, "Threads in this project"),
+      crumbSep(), cur(null, t.title)];
+    sub = [tildePath(t.cwd), `${engine}${t.model ? " · " + t.model : ""}`, modes[t.runtimeMode]];
+  }
+  const waiting = state.approvals.get(t.id)?.size ?? 0;
+  const status = waiting ? h("span", { class: "live needs" }, h("span", { class: "pulse" }), waiting === 1 ? "Needs your OK" : `${waiting} need your OK`)
+    : t.status === "running" ? h("span", { class: "live" }, h("span", { class: "pulse" }), "Working") : null;
+  const actions = [];
+  if (job) {
+    const running = job.lastStatus === "running";
+    actions.push(h("button", { type: "button", class: "btn primary sm", disabled: running, onclick: () => dispatch({ type: "job.run", jobId: job.id }).then(() => toast("Running now.")).catch(fail) },
+      icon("play", 13), running ? "Running…" : "Run now"));
+    actions.push(ibtn(job.enabled ? "pause" : "play", job.enabled ? "Pause this job" : "Resume this job", () => dispatch({ type: "job.update", jobId: job.id, enabled: !job.enabled }).catch(fail)));
+  }
+  if (agent) {
+    const proposed = [...state.lessons.values()].filter((l) => l.agentId === agent.id && l.status === "proposed").length;
+    const approved = [...state.lessons.values()].filter((l) => l.agentId === agent.id && l.status === "approved").length;
+    actions.push(ibtn("bulb", proposed ? `Lessons · ${proposed} to review` : `Lessons${approved ? ` (${approved})` : ""}`, () => openLessons(agent), { badge: proposed || null }));
+  }
+  const panels = h("div", { class: "tgroup" },
+    ibtn("files", "Files", () => togglePanel("files"), { on: ui.files, kbd: "⌘⇧E" }),
+    ibtn("terminal", "Terminal", () => togglePanel("terminal"), { on: ui.terminal, kbd: "⌃`" }),
+    ibtn("globe", "Browser", () => togglePanel("browser"), { on: ui.browser, kbd: "⌘⇧B" }));
+  const moreItems = agent ? [
+    { icon: "edit", label: "Edit agent", run: () => openAgentDialog(agent) },
+    { icon: "bulb", label: "Lessons", run: () => openLessons(agent) },
+    { icon: "reset", label: "Start conversation over", run: () => resetAgent(agent) },
+    "-",
+    { icon: "trash", label: "Delete agent…", danger: true, run: () => deleteAgent(agent) },
+  ] : job ? [
+    { icon: "edit", label: "Edit job", run: () => openJobDialog(job) },
+    { icon: "play", label: "Run now", run: () => dispatch({ type: "job.run", jobId: job.id }).then(() => toast("Running now.")).catch(fail) },
+    { icon: job.enabled ? "pause" : "play", label: job.enabled ? "Pause" : "Resume", run: () => dispatch({ type: "job.update", jobId: job.id, enabled: !job.enabled }).catch(fail) },
+  ] : [
+    { icon: "compose", label: "New thread in this project", run: () => newThread(t.cwd) },
+    { icon: "copy", label: "Copy project path", run: () => navigator.clipboard?.writeText(t.cwd).then(() => toast("Path copied.")) },
+  ];
   bar.replaceChildren(...[
-    agent ? badge(agentLabel(agent)) : null,
-    h("div", { style: "min-width:0" },
-      h("h1", {}, agent ? agentLabel(agent) + (agent.displayName ? `  ·  @${agent.name}` : "") : t.title),
-      h("div", { class: "chips" },
-        ...(t.jobId && state.jobs.get(t.jobId) ? [(() => { const job = state.jobs.get(t.jobId);
-          return h("span", { class: "chip", title: job.nextRunAt ? `Next run ${new Date(job.nextRunAt).toLocaleString()}` : "" },
-            `⏱ ${describeTrigger(job.trigger)}${job.enabled && job.nextRunAt ? ` · next ${whenNext(job.nextRunAt)}` : job.enabled ? "" : " · paused"}`); })()] : []),
-        h("span", { class: "chip" }, t.provider + (t.model ? " · " + t.model : "")),
-        h("span", { class: "chip" }, modes[t.runtimeMode]),
-        agent
-          ? h("span", { class: "chip", title: `Memory: ${t.cwd}/MEMORY.md` }, "works in the caller's project")
-          : h("span", { class: "chip mono", title: t.cwd }, t.cwd.replace(/^\/Users\/[^/]+/, "~")))),
+    navCluster(),
+    h("div", { class: "tb-title" }, h("div", { class: "crumbs-row" }, ...crumbs), h("div", { class: "tb-sub", title: sub.filter(Boolean).join(" · ") }, sub.filter(Boolean).join("  ·  "))),
+    status,
     h("span", { class: "spacer" }),
-    t.status === "running" ? h("button", { class: "btn", onclick: () => dispatch({ type: "run.interrupt", threadId: t.id }).catch(fail) }, "Interrupt") : null,
-    h("button", { class: "btn tool-toggle" + (ui.files ? " on" : ""), title: "Files (⌘⇧E)", onclick: () => togglePanel("files") }, "Files"),
-    h("button", { class: "btn tool-toggle" + (ui.browser ? " on" : ""), title: "Browser (⌘⇧B)", onclick: () => togglePanel("browser") }, "Browser"),
-    h("button", { class: "btn tool-toggle" + (ui.terminal ? " on" : ""), title: "Terminal (⌃`)", onclick: () => togglePanel("terminal") }, "Terminal"),
-    agent ? h("button", { class: "btn", title: "Rules this agent learned from your corrections", onclick: () => openLessons(agent) }, `Lessons${lessonCount(agent.id)}`) : null,
-    agent ? h("button", { class: "btn", title: "Start this agent's conversation over. Its settings are kept.", onclick: () => resetAgent(agent) }, "Reset context") : null,
-    ...jobControls(t),
-    agent ? h("button", { class: "btn", onclick: () => openAgentDialog(agent) }, "Edit") : null,
+    ...actions,
+    actions.length ? h("span", { class: "vsep" }) : null,
+    panels,
+    ibtn("more", "More", (ev) => { ev.stopPropagation(); popMenu(ev.currentTarget, moreItems, "end"); }, { pos: "end" }),
   ].filter(Boolean));
   const hint = $("hint");
   if (hint) hint.textContent = agent
     ? `You're talking to ${agentLabel(agent)} directly. Its context carries over to every thread that calls it.`
     : state.agents.size ? "A message with @name goes to that agent; this thread's agent sees the answer on your next message." : "";
-  $("send") && ($("send").disabled = false);
+  const stop = $("stop"); if (stop) stop.hidden = t.status !== "running";
+}
+/** Breadcrumb dropdowns: jump between agents, jobs, or threads in a project. */
+function switchMenu(anchor, kind, cwd) {
+  if (kind === "agents") {
+    const agents = [...state.agents.values()].sort((a, b) => agentLabel(a).localeCompare(agentLabel(b)));
+    popMenu(anchor, [{ header: "Agents" }, ...agents.map((a) => ({ el: badge(agentLabel(a)), label: agentLabel(a), sub: "@" + a.name, active: state.threadId === a.homeThreadId, run: () => openThread(a.homeThreadId) })),
+      "-", { icon: "userplus", label: "Recruit agents", run: () => openAgentGallery() }]);
+  } else if (kind === "jobs") {
+    const jobs = [...state.jobs.values()].sort((a, b) => a.name.localeCompare(b.name));
+    popMenu(anchor, [{ header: "Standing jobs" }, ...jobs.map((j) => ({ icon: "clock", label: j.name, sub: j.enabled ? describeTrigger(j.trigger) : "paused", active: state.threadId === j.threadId, run: () => openThread(j.threadId) })),
+      "-", { icon: "plus", label: "New standing job", run: () => openJobDialog() }]);
+  } else {
+    const homes = new Set([...state.agents.values()].map((a) => a.homeThreadId));
+    const threads = [...state.threads.values()].filter((t) => t.cwd === cwd && !homes.has(t.id) && !t.jobId).sort((a, b) => activity(b).localeCompare(activity(a))).slice(0, 14);
+    popMenu(anchor, [{ header: folderName(cwd) }, ...threads.map((t) => ({ icon: t.status === "running" ? "refresh" : "message", label: t.title, sub: ago(activity(t)).replace(" ago", ""), active: state.threadId === t.id, run: () => openThread(t.id) })),
+      "-", { icon: "compose", label: "New thread here", run: () => newThread(cwd) }]);
+  }
+}
+async function deleteAgent(agent) {
+  if (!confirm(`Delete ${agentLabel(agent)}? It leaves the sidebar; its past conversation is kept as a regular thread.`)) return;
+  try { await dispatch({ type: "agent.delete", agentId: agent.id }); toast(`${agentLabel(agent)} deleted.`); } catch (err) { fail(err); }
 }
 
-async function openThread(threadId, reconnecting = false) {
+async function openThread(threadId, reconnecting = false, fromHistory = false) {
   state.view = null;
   if (state.sub && !reconnecting) call("unsubscribe", { subscription: state.sub }).catch(() => {});
   if (state.threadId !== threadId) { state.items = new Map(); state.order = []; state.runs = new Map(); state.seq = 0; }
   state.threadId = threadId;
-  history.replaceState(null, "", `#/t/${threadId}`);
+  if (!fromHistory) routeTo(`#/t/${threadId}`, reconnecting);
   renderSidebar();
   if (!reconnecting || !$("column")) renderMain();
   const res = await call("subscribeThread", reconnecting && state.seq ? { threadId, afterSequence: state.seq } : { threadId }).catch(fail);
@@ -1372,7 +1684,10 @@ function renderTranscript() {
   }
   if (!state.order.length && !state.thread?.importedFrom) {
     const agent = state.thread?.agentId ? state.agents.get(state.thread.agentId) : null;
-    col.append(h("div", { class: "empty" }, h("p", {}, agent
+    const job = state.thread?.jobId ? state.jobs.get(state.thread.jobId) : null;
+    col.append(h("div", { class: "empty" }, h("p", {}, job
+      ? (job.trigger.kind === "manual" ? `Each run of “${job.name}” reports here. It runs when you press Run now.` : `Each run of “${job.name}” reports here (${describeTrigger(job.trigger)}). Press Run now to try it.`)
+      : agent
       ? `Say hello to ${agentLabel(agent)}, or mention it as @${agent.name} from any thread. Everything it learns here stays in its context.`
       : "Describe the problem. Type @ to pull in one of your agents.")));
   }
@@ -1551,7 +1866,7 @@ async function renderDrawer() {
       try { const t = await call("terminal.open", { threadId }); activeTerm.set(threadId, t.id); renderDrawer(); } catch (err) { fail(err); }
     } }, "+"),
     h("span", { class: "spacer" }),
-    h("button", { class: "icon-btn", title: "Hide terminal (⌃`)", onclick: () => togglePanel("terminal") }, "⌄"));
+    h("button", { class: "icon-btn", title: "Hide terminal (⌃`)", onclick: () => togglePanel("terminal") }, icon("chevdown", 15)));
   for (const v of termViews.values()) v.host.hidden = true;
   const view = termViews.get(active) ?? (await attachTerminal(active, threadId, body));
   if (!view || threadId !== state.threadId) return;
@@ -1606,8 +1921,8 @@ async function renderFiles() {
   grip(g, "x", (dx) => { ui.filesW = Math.max(240, Math.min(innerWidth - 520, startW - dx)); panel.style.setProperty("--files-w", ui.filesW + "px"); });
   const head = h("div", { class: "files-head" },
     h("span", { class: "ttl", title: t?.cwd }, t ? folderName(t.cwd) : "Files"),
-    h("button", { class: "icon-btn", title: "Refresh", onclick: () => { fx.cache.clear(); renderFiles(); } }, "↻"),
-    h("button", { class: "icon-btn", title: "Hide files (⌘⇧E)", onclick: () => togglePanel("files") }, "×"));
+    h("button", { class: "icon-btn", title: "Refresh", onclick: () => { fx.cache.clear(); renderFiles(); } }, icon("refresh", 14)),
+    h("button", { class: "icon-btn", title: "Hide files (⌘⇧E)", onclick: () => togglePanel("files") }, icon("x", 15)));
   if (fx.preview) { panel.replaceChildren(g, head, renderPreview()); return; }
   const tree = h("div", { class: "files-tree" });
   panel.replaceChildren(g, head, tree);
@@ -1716,13 +2031,13 @@ function renderBrowser() {
   device.value = ui.device;
   device.addEventListener("change", () => { ui.device = device.value; saveUi(); renderBrowser(); });
   const bar = h("div", { class: "browser-bar" },
-    h("button", { class: "icon-btn", title: "Back", disabled: hist.i <= 0, onclick: () => step(-1) }, "←"),
-    h("button", { class: "icon-btn", title: "Forward", disabled: hist.i >= hist.stack.length - 1, onclick: () => step(1) }, "→"),
-    h("button", { class: "icon-btn", title: "Reload", disabled: !url, onclick: () => { const f = panel.querySelector("iframe"); if (f) f.src = f.src; } }, "↻"),
-    h("button", { class: "icon-btn", title: "Project sites", onclick: browserHome }, "⌂"),
+    h("button", { class: "icon-btn", title: "Back", disabled: hist.i <= 0, onclick: () => step(-1) }, icon("back", 15)),
+    h("button", { class: "icon-btn", title: "Forward", disabled: hist.i >= hist.stack.length - 1, onclick: () => step(1) }, icon("forward", 15)),
+    h("button", { class: "icon-btn", title: "Reload", disabled: !url, onclick: () => { const f = panel.querySelector("iframe"); if (f) f.src = f.src; } }, icon("refresh", 14)),
+    h("button", { class: "icon-btn", title: "Project sites", onclick: browserHome }, icon("home", 14)),
     addr, device,
-    h("button", { class: "icon-btn", title: "Open in your browser", disabled: !url, onclick: () => window.open(url, "_blank", "noopener") }, "↗"),
-    h("button", { class: "icon-btn", title: "Hide browser (⌘⇧B)", onclick: () => togglePanel("browser") }, "×"));
+    h("button", { class: "icon-btn", title: "Open in your browser", disabled: !url, onclick: () => window.open(url, "_blank", "noopener") }, icon("external", 14)),
+    h("button", { class: "icon-btn", title: "Hide browser (⌘⇧B)", onclick: () => togglePanel("browser") }, icon("x", 15)));
   if (!url) { panel.replaceChildren(g, bar, renderLauncher()); return; }
   const w = DEVICES[ui.device];
   // Sandboxed, and never Bullpen's own origin: the page can run but can't navigate or script Bullpen.
@@ -1903,14 +2218,14 @@ setInterval(() => {
 let teamsTimer = null;
 let teamsData = null; // last JSON, so a refresh only redraws what changed
 const teamsDone = new Set(); // finished goals the person expanded
-function openTeams() {
+function openTeams(fromHistory = false) {
   if (state.sub) call("unsubscribe", { subscription: state.sub }).catch(() => {});
   state.sub = null; state.threadId = null; state.thread = null; state.view = "teams";
-  history.replaceState(null, "", "#/teams");
+  if (!fromHistory) routeTo("#/teams");
   teamsData = null;
   renderSidebar(); renderTeams();
 }
-$("teams-row").addEventListener("click", openTeams);
+$("teams-row").addEventListener("click", () => openTeams());
 const isOpenGoal = (g) => ["planning", "working", "paused", "stuck"].includes(g.status);
 const goalNeeds = (g) => g.tasks.reduce((n, t) => n + t.approvals.length + (t.status === "parked" ? 1 : 0), 0) + (g.status === "stuck" ? 1 : 0);
 let teamsBusy = false;
@@ -1973,7 +2288,6 @@ function drawTeams(goals) {
       h("li", {}, "The lead splits it into tasks for your other agents; every team shows up here while it works.")),
     leads.length ? null : h("button", { class: "btn primary", onclick: () => $("new-agent").click() }, "Recruit a lead")));
   const col = h("div", { class: "column" },
-    h("div", {}, h("h2", {}, "Teams"), h("p", { class: "lede" }, "Every goal your leads are running, across all projects.")),
     h("div", { class: "teams-stats" },
       h("div", { class: "stat" }, h("b", {}, String(open.length)), h("span", {}, open.length === 1 ? "team running" : "teams running")),
       h("div", { class: "stat" }, h("b", {}, String(working)), h("span", {}, working === 1 ? "agent working now" : "agents working now")),
@@ -1982,7 +2296,8 @@ function drawTeams(goals) {
     done.length ? h("div", { class: "box" }, h("div", { class: "box-h" }, "Finished this week", h("span", { class: "count" }, String(done.length))),
       h("div", { class: "box-b" }, ...done.map(doneRow))) : null);
   const page = h("div", { class: "page", id: "teams-page" }, col);
-  $("main").replaceChildren(page);
+  $("main").replaceChildren(pageTopbar("users", "Teams", "Every goal your leads are running, across all projects", [
+    leads.length ? null : h("button", { type: "button", class: "btn sm", onclick: () => openAgentGallery() }, icon("userplus", 14), "Recruit a lead")]), page);
   page.scrollTop = scroll;
 }
 
@@ -2137,7 +2452,7 @@ function lessonRow(l, showAgent) {
   }
   return h("div", { class: "irow" },
     h("div", { class: "main" }, h("div", {}, l.text), h("div", { class: "sub" }, [who, src].filter(Boolean).join(" · "))),
-    h("div", { class: "acts" }, h("button", { class: "icon-btn", title: "Remove", onclick: () => dispatch({ type: "lesson.delete", lessonId: l.id }).then(refreshLessonViews).catch(fail) }, "×")));
+    h("div", { class: "acts" }, h("button", { class: "icon-btn", title: "Remove", onclick: () => dispatch({ type: "lesson.delete", lessonId: l.id }).then(refreshLessonViews).catch(fail) }, icon("x", 14))));
 }
 function renderLessons() {
   const id = lessonsFor === "all" ? undefined : lessonsFor.id;
@@ -2161,16 +2476,21 @@ $("lesson-add").addEventListener("click", async () => {
 });
 
 // ---------- inbox: briefing, lessons to review, everything waiting on you ----------
-function openInbox() {
+function openInbox(fromHistory = false) {
   if (state.sub) call("unsubscribe", { subscription: state.sub }).catch(() => {});
-  state.sub = null; state.threadId = null; state.thread = null; state.view = null; state.view = "inbox";
-  history.replaceState(null, "", "#/inbox");
+  state.sub = null; state.threadId = null; state.thread = null; state.view = "inbox";
+  if (!fromHistory) routeTo("#/inbox");
   renderSidebar(); renderInbox();
 }
-$("inbox-row").addEventListener("click", openInbox);
+$("inbox-row").addEventListener("click", () => openInbox());
 async function renderInbox() {
   const col = h("div", { class: "column" });
-  $("main").replaceChildren(h("div", { class: "page" }, col));
+  if (!$("inbox-page")) $("main").replaceChildren(
+    pageTopbar("inbox", "Inbox", "What your agents did while you were away, and what they need from you", [
+      h("button", { type: "button", class: "btn sm", onclick: () => openLessons(null) }, icon("bulb", 14), "All lessons"),
+      h("button", { type: "button", class: "btn sm", onclick: () => openJobDialog() }, icon("plus", 14), "New job")]),
+    h("div", { class: "page", id: "inbox-page" }, col));
+  else $("inbox-page").replaceChildren(col);
   let data = null;
   try { data = await call("inbox"); } catch (err) { col.append(h("div", { class: "box-empty" }, err.message)); return; }
   if (state.view !== "inbox" || state.threadId) return;
@@ -2213,7 +2533,6 @@ async function renderInbox() {
   const no = h("input", { type: "checkbox", checked: state.settings.notifications });
   no.addEventListener("change", () => dispatch({ type: "settings.update", notifications: no.checked }).catch(fail));
   col.replaceChildren(...[
-    h("div", {}, h("h2", {}, "Inbox"), h("p", { class: "lede" }, "What your agents did while you were away, and what they need from you.")),
     data.pausedUntil && Date.parse(data.pausedUntil) > Date.now() ? h("div", { class: "team-note", style: "border-radius:10px" }, `Jobs are paused until ${new Date(data.pausedUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}: your plan's usage limit was reached.`) : null,
     box("Needs you", needs.length, needs),
     box("Lessons to review", proposed.length, proposed.map((l) => lessonRow(l, true)),
@@ -2277,12 +2596,14 @@ function setupComposer() {
     send.disabled = true;
     try {
       await dispatch({ type: "message.send", threadId: state.threadId, text });
-      input.value = ""; input.dispatchEvent(new Event("input"));
+      input.value = "";
     } catch (err) { fail(err); }
-    send.disabled = false; input.focus();
+    input.dispatchEvent(new Event("input")); input.focus();
   };
   attachMentions(input, $("composer"), submit);
   send.addEventListener("click", submit);
+  const sync = () => { send.disabled = !input.value.trim(); };
+  input.addEventListener("input", sync); sync();
 }
 
 // ---------- dialogs ----------
@@ -2582,11 +2903,11 @@ $("picker-search").addEventListener("keydown", (ev) => {
 });
 
 // ---------- start screen: type what you want, pick a project, go ----------
-function newThread(projectPath) {
+function newThread(projectPath, fromHistory = false) {
   if (projectPath) prefs.set({ cwd: projectPath });
   if (state.sub) call("unsubscribe", { subscription: state.sub }).catch(() => {});
-  state.sub = null; state.threadId = null; state.thread = null;
-  history.replaceState(null, "", location.pathname);
+  state.sub = null; state.threadId = null; state.thread = null; state.view = null;
+  if (!fromHistory) routeTo("");
   renderSidebar(); renderMain();
 }
 function renderStart() {
@@ -2657,7 +2978,7 @@ function renderStart() {
   attachMentions(input, composer, submit);
 
   const agents = [...state.agents.values()].sort((a, b) => a.name.localeCompare(b.name));
-  $("main").replaceChildren(h("div", { class: "start" },
+  $("main").replaceChildren(h("div", { class: "topbar ghost", id: "topbar" }, navCluster()), h("div", { class: "start" },
     h("img", { class: "start-logo", src: "/icon.svg?v=4", alt: "" }),
     h("h2", {}, "What are we working on?"),
     composer,
@@ -2670,6 +2991,147 @@ function renderStart() {
   input.focus();
   loadResume();
 }
+
+
+// ---------- ⌘K: search and jump anywhere ----------
+let pal = null;
+const PALETTES = [["harbor", "Harbor"], ["night", "Night"], ["paper", "Paper"], ["graphite", "Graphite"]];
+function paletteItems() {
+  const items = [];
+  const add = (group, it) => items.push({ group, ...it });
+  add("Go to", { icon: "inbox", title: "Inbox", sub: "briefing, lessons, what needs you", kbd: "⌘1", run: () => openInbox() });
+  add("Go to", { icon: "users", title: "Teams", sub: "every goal your leads are running", kbd: "⌘2", run: () => openTeams() });
+  add("Go to", { icon: "compose", title: "New thread", sub: "start something new", kbd: "⌥N", run: () => newThread() });
+  const homes = new Set([...state.agents.values()].map((a) => a.homeThreadId));
+  for (const a of [...state.agents.values()].sort((x, y) => agentLabel(x).localeCompare(agentLabel(y))))
+    add("Agents", { el: badge(agentLabel(a)), title: agentLabel(a), sub: "@" + a.name + (a.description ? " · " + a.description : ""), run: () => openThread(a.homeThreadId) });
+  const threads = [...state.threads.values()].filter((t) => !homes.has(t.id) && !t.jobId).sort((a, b) => activity(b).localeCompare(activity(a)));
+  for (const t of threads.slice(0, 60))
+    add("Threads", { icon: "message", title: t.title, sub: `${folderName(t.cwd)} · ${ago(activity(t))}`, recent: true, run: () => openThread(t.id) });
+  for (const j of state.jobs.values())
+    add("Jobs", { icon: "clock", title: j.name, sub: j.enabled ? describeTrigger(j.trigger) : "paused", run: () => openThread(j.threadId) });
+  for (const p of [...state.projects.values()].filter((p) => !p.archivedAt))
+    add("Projects", { el: projectIcon(p), title: p.title, sub: "new thread · " + tildePath(p.path), run: () => newThread(p.path) });
+  add("Actions", { icon: "userplus", title: "Recruit agents", sub: "29 ready-made specialists", run: () => openAgentGallery() });
+  add("Actions", { icon: "bot", title: "Create a custom agent", run: () => openAgentDialog() });
+  add("Actions", { icon: "clock", title: "New standing job", run: () => openJobDialog() });
+  add("Actions", { icon: "bulb", title: "Lessons for every agent", run: () => openLessons(null) });
+  add("Actions", { icon: "list", title: "Choose which projects show in the sidebar", run: () => openImport() });
+  if (state.threadId) {
+    add("Actions", { icon: "files", title: ui.files ? "Hide files" : "Show files", kbd: "⌘⇧E", run: () => togglePanel("files") });
+    add("Actions", { icon: "terminal", title: ui.terminal ? "Hide terminal" : "Show terminal", kbd: "⌃`", run: () => togglePanel("terminal") });
+    add("Actions", { icon: "globe", title: ui.browser ? "Hide browser" : "Show browser", kbd: "⌘⇧B", run: () => togglePanel("browser") });
+    const agent = state.thread?.agentId ? state.agents.get(state.thread.agentId) : null;
+    if (agent) add("Actions", { icon: "edit", title: `Edit ${agentLabel(agent)}`, run: () => openAgentDialog(agent) });
+    if (state.thread?.status === "running") add("Actions", { icon: "stop", title: "Stop the agent", run: () => dispatch({ type: "run.interrupt", threadId: state.threadId }).catch(fail) });
+  }
+  add("Actions", { icon: "sidebar", title: sideHidden ? "Show sidebar" : "Hide sidebar", kbd: "⌘\\", run: toggleSidebar });
+  for (const [v, name] of PALETTES) add("Actions", { icon: "palette", title: `Theme: ${name}`, sub: (document.documentElement.dataset.palette || "graphite") === v ? "current" : "", run: () => { const sel = $("palette-pick"); sel.value = v; sel.dispatchEvent(new Event("change")); } });
+  add("Actions", { icon: "keyboard", title: "Keyboard shortcuts", kbd: "?", run: openShortcuts });
+  return items;
+}
+/** Fuzzy score: contiguous matches in the title win, then word starts, then any subsequence, then the subtitle. */
+function palScore(it, q) {
+  const t = it.title.toLowerCase(), sub = (it.sub || "").toLowerCase();
+  const at = t.indexOf(q);
+  if (at === 0) return 1000 - t.length;
+  if (at > 0) return (/[\s@/·-]/.test(t[at - 1]) ? 800 : 600) - at;
+  let i = 0, gaps = 0, last = -1;
+  for (let k = 0; k < t.length && i < q.length; k++) if (t[k] === q[i]) { if (last >= 0 && k > last + 1) gaps++; last = k; i++; }
+  if (i === q.length && gaps <= Math.max(1, Math.floor(q.length / 3))) return 400 - gaps * 20 - t.length;
+  if (sub.includes(q)) return 200 - sub.indexOf(q);
+  return -1;
+}
+function markTitle(title, q) {
+  const at = q ? title.toLowerCase().indexOf(q) : -1;
+  if (at < 0) return [title];
+  return [title.slice(0, at), h("mark", {}, title.slice(at, at + q.length)), title.slice(at + q.length)];
+}
+function openPalette(initial = "") {
+  if (pal) { pal.input.focus(); return; }
+  closeMenu();
+  const input = h("input", { class: "pal-input", placeholder: "Search agents, threads, jobs, projects, actions…", spellcheck: "false", autocomplete: "off", value: initial });
+  const list = h("div", { class: "pal-list", role: "listbox" });
+  const box = h("div", { class: "pal", role: "dialog", "aria-label": "Search and jump" },
+    h("div", { class: "pal-search" }, icon("search", 17), input, kbd("esc")),
+    list,
+    h("div", { class: "pal-foot" }, h("span", {}, kbd("↑"), kbd("↓"), " move"), h("span", {}, kbd("↵"), " open"), h("span", {}, kbd("⌘K"), " close"), h("span", { class: "spacer" }), h("span", {}, kbd("⌘["), kbd("⌘]"), " back, forward")));
+  const overlay = h("div", { class: "pal-overlay", onmousedown: (ev) => { if (ev.target === overlay) closePalette(); } }, box);
+  document.body.append(overlay);
+  const all = paletteItems();
+  pal = { overlay, input, list, sel: 0, shown: [], all };
+  const order = ["Go to", "Agents", "Threads", "Jobs", "Projects", "Actions"];
+  const draw = () => {
+    const q = input.value.trim().toLowerCase();
+    let shown;
+    if (!q) {
+      const recent = all.filter((it) => it.group === "Threads").slice(0, 6).map((it) => ({ ...it, group: "Recent threads" }));
+      shown = [...all.filter((it) => it.group === "Go to"), ...recent, ...all.filter((it) => it.group === "Agents"), ...all.filter((it) => it.group === "Jobs"), ...all.filter((it) => it.group === "Actions").slice(0, 4)];
+    } else {
+      const scored = all.map((it) => ({ it, sc: palScore(it, q) })).filter((x) => x.sc >= 0);
+      // Group by kind, best groups first.
+      const best = new Map();
+      for (const { it, sc } of scored) best.set(it.group, Math.max(best.get(it.group) ?? -1, sc));
+      shown = scored.sort((a, b) => (best.get(b.it.group) - best.get(a.it.group)) || order.indexOf(a.it.group) - order.indexOf(b.it.group) || b.sc - a.sc)
+        .slice(0, 50).map((x) => x.it);
+    }
+    pal.shown = shown;
+    pal.sel = Math.min(pal.sel, Math.max(0, shown.length - 1));
+    const kids = [];
+    let group = null;
+    shown.forEach((it, idx) => {
+      if (it.group !== group) { group = it.group; kids.push(h("div", { class: "pal-group" }, group)); }
+      kids.push(h("button", { type: "button", class: "pal-row" + (idx === pal.sel ? " sel" : ""), role: "option", "data-idx": idx,
+          onmousemove: () => { if (pal.sel !== idx) { pal.sel = idx; paint(); } }, onclick: () => runPal(idx) },
+        h("span", { class: "lead" }, it.el ? it.el.cloneNode(true) : icon(it.icon, 15)),
+        h("span", { class: "pm" }, h("span", { class: "t" }, ...markTitle(it.title, q)), it.sub ? h("span", { class: "s" }, it.sub) : null),
+        h("span", { class: "go" }, it.kbd ? kbd(it.kbd) : null, h("span", { class: "ret" }, icon("enter", 14)))));
+    });
+    list.replaceChildren(...(kids.length ? kids : [h("div", { class: "pal-empty" }, `Nothing matches “${input.value}”.`)]));
+  };
+  const paint = () => {
+    for (const r of list.querySelectorAll(".pal-row")) r.classList.toggle("sel", Number(r.dataset.idx) === pal.sel);
+    list.querySelector(".pal-row.sel")?.scrollIntoView({ block: "nearest" });
+  };
+  const runPal = (idx) => { const it = pal.shown[idx]; if (!it) return; closePalette(); it.run(); };
+  input.addEventListener("input", () => { pal.sel = 0; draw(); });
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "ArrowDown") { ev.preventDefault(); pal.sel = (pal.sel + 1) % Math.max(1, pal.shown.length); paint(); }
+    else if (ev.key === "ArrowUp") { ev.preventDefault(); pal.sel = (pal.sel - 1 + pal.shown.length) % Math.max(1, pal.shown.length); paint(); }
+    else if (ev.key === "Enter") { ev.preventDefault(); runPal(pal.sel); }
+    else if (ev.key === "Escape") { ev.preventDefault(); closePalette(); }
+  });
+  draw();
+  input.focus();
+}
+function closePalette() { if (!pal) return; pal.overlay.remove(); pal = null; }
+function openShortcuts() {
+  const rows = [["Search and jump anywhere", "⌘K"], ["Back / forward", "⌘[  ⌘]"], ["Inbox", "⌘1"], ["Teams", "⌘2"], ["New thread", "⌥N"],
+    ["Show or hide the sidebar", "⌘\\"], ["Files", "⌘⇧E"], ["Terminal", "⌃`"], ["Browser", "⌘⇧B"], ["Send a message", "↵"], ["New line", "⇧↵"], ["Mention an agent", "@"], ["This list", "?"]];
+  const d = h("dialog", {}, h("form", { method: "dialog" },
+    h("h3", {}, "Keyboard shortcuts"),
+    h("div", { class: "keys" }, ...rows.flatMap(([a, k]) => [h("span", {}, a), h("span", {}, ...k.split("  ").map(kbd))])),
+    h("div", { class: "dialog-actions" }, h("button", { class: "btn primary", value: "ok" }, "Done"))));
+  d.addEventListener("close", () => d.remove());
+  document.body.append(d); d.showModal();
+}
+$("jump").addEventListener("click", () => openPalette());
+document.addEventListener("keydown", (ev) => {
+  const mod = ev.metaKey || ev.ctrlKey;
+  if (mod && !ev.shiftKey && !ev.altKey && (ev.key === "k" || ev.key === "K")) { ev.preventDefault(); pal ? closePalette() : openPalette(); return; }
+  if (pal || document.querySelector("dialog[open]")) return;
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable || document.activeElement?.closest?.(".xterm");
+  if (mod && ev.key === "1") { ev.preventDefault(); openInbox(); }
+  else if (mod && ev.key === "2") { ev.preventDefault(); openTeams(); }
+  else if (mod && ev.key === "\\") { ev.preventDefault(); toggleSidebar(); }
+  else if (mod && ev.key === "[") { ev.preventDefault(); history.back(); }
+  else if (mod && ev.key === "]") { ev.preventDefault(); history.forward(); }
+  else if (ev.altKey && !mod && ev.code === "KeyN") { ev.preventDefault(); newThread(); }
+  else if (!typing && !mod && ev.key === "?") { ev.preventDefault(); openShortcuts(); }
+  else if (!typing && !mod && ev.key === "/") { ev.preventDefault(); openPalette(); }
+});
+hydrateIcons();
+if (sideHidden) document.querySelector(".app").classList.add("side-hidden");
 
 // ---------- start ----------
 const routed = location.hash.match(/^#\/t\/([\w-]+)/);
