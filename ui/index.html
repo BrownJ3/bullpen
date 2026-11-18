@@ -661,6 +661,14 @@ button:focus-visible, [role="button"]:focus-visible { outline: 2px solid color-m
 .art-link { border: 1px solid var(--line); border-radius: 12px; padding: 18px; background: var(--panel); }
 .art-link .row-actions { display: flex; gap: 8px; margin: 12px 0 4px; }
 .art-md { padding-top: 8px; }
+.art-hint { font-size: 12.5px; color: var(--muted); margin: -6px 0 16px; }
+.import-dlg { width: min(620px, calc(100vw - 24px)); padding: 18px 20px 20px; }
+.import-dlg .dlg-head { display: flex; align-items: center; justify-content: space-between; }
+.import-dlg h3 { margin: 0; font-size: 16px; }
+.import-dlg label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+.import-dlg input, .import-dlg textarea { border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); border-radius: 8px; padding: 7px 9px; font-size: 13px; }
+.import-dlg textarea { font: 12px/1.45 var(--mono); resize: vertical; }
+.import-dlg .file-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12.5px; }
 .side-new { display: flex; gap: 6px; margin: 4px 14px 8px; }
 .new-chat { flex: 1; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 9px; border: 0; background: var(--primary); color: var(--on-primary); font-size: 13.5px; font-weight: 600; text-align: left; transition: filter 0.12s; }
 .new-chat:hover { filter: brightness(1.12); }
@@ -2895,6 +2903,7 @@ const artAuthor = (a) => {
 };
 function syncArtifacts(btn) {
   if (btn) { btn.disabled = true; btn.lastChild.textContent = "Syncing…"; }
+  toast("Asking Claude Code for your claude.ai artifacts…");
   dispatch({ type: "artifacts.sync" })
     .then((r) => toast(r.added ? `Pulled in ${r.added} new artifact${r.added === 1 ? "" : "s"} from claude.ai.` : `Up to date with claude.ai (${r.total}).`))
     .catch(fail)
@@ -2903,18 +2912,23 @@ function syncArtifacts(btn) {
 function renderArtifacts(force = false) {
   if (state.view !== "artifacts") return;
   if (!force && $("art-grid")) { drawArtGrid(); return; } // live updates: just the cards, so scroll and typing aren't lost
-  const on = state.settings?.claudeArtifacts !== false;
+  const on = state.settings?.claudeArtifacts === true;
   const last = state.settings?.artifactsLastSync;
-  const sync = h("button", { class: "btn sm", onclick: (ev) => syncArtifacts(ev.currentTarget) }, icon("refresh", 13), h("span", {}, "Sync with claude.ai"));
-  const toggle = h("label", { class: "check", title: "Every 30 minutes, list your claude.ai artifacts here (uses a few tokens of your Claude plan)" },
-    h("input", { type: "checkbox", checked: on, onchange: (ev) => dispatch({ type: "settings.update", claudeArtifacts: ev.target.checked }).catch(fail) }), " Pull from claude.ai");
+  const importBtn = h("button", { class: "btn primary sm", onclick: () => openImport() }, icon("plus", 13), "Import");
+  // Syncing only works when Claude Code runs inside the Claude desktop app; it stays tucked away in the menu.
+  const more = ibtn("more", "More", (ev) => { ev.stopPropagation(); popMenu(ev.currentTarget, [
+    { icon: "refresh", label: "Try syncing from claude.ai", desc: "Works only where Claude Code can read your claude.ai artifacts", run: () => syncArtifacts() },
+    { icon: on ? "check" : "clock", label: on ? "Auto-sync is on (every 30 min)" : "Auto-sync every 30 minutes", run: () => dispatch({ type: "settings.update", claudeArtifacts: !on }).catch(fail) },
+  ], "end"); }, { pos: "end" });
   const search = h("input", { id: "art-search", type: "search", placeholder: "Search artifacts", value: artFilter.q, oninput: (ev) => { artFilter.q = ev.target.value; drawArtGrid(); } });
   const chips = h("div", { class: "chips" }, ...[["all", "All"], ["bullpen", "Made here"], ["claude", "claude.ai"]].map(([k, label]) =>
     h("button", { class: "chip" + (artFilter.source === k ? " on" : ""), onclick: () => { artFilter.source = k; renderArtifacts(true); } }, label)));
   $("main").replaceChildren(
-    pageTopbar("layers", "Artifacts", last?.at ? `claude.ai last synced ${ago(last.at)}${last.ok ? "" : " (failed)"}` : "Pages, reports and diagrams", [toggle, sync]),
+    pageTopbar("layers", "Artifacts", last?.ok && last.at ? `claude.ai last synced ${ago(last.at)}` : "Pages, reports and diagrams", [importBtn, more]),
     h("div", { class: "page" }, h("div", { class: "column wide" },
       h("div", { class: "art-tools" }, chips, search),
+      h("div", { class: "art-hint" }, "From claude.ai: open the artifact there, copy its code or download it, then ", h("button", { class: "link", onclick: () => openImport() }, "Import"),
+        " (or drop the file here). Add its link to keep the two connected."),
       h("div", { id: "art-grid", class: "art-grid" }))));
   drawArtGrid();
 }
@@ -2963,7 +2977,7 @@ async function renderArtifact(force = true) {
     actions.push(sel);
   }
   if (a.source === "claude") actions.push(h("button", { class: "btn sm", onclick: () => window.open(a.url, "_blank", "noopener") }, icon("external", 13), "Open on claude.ai"));
-  if (a.source === "claude") actions.push(h("button", { class: "btn sm", onclick: (ev) => copyIn(a, ev.currentTarget) }, icon("refresh", 13), a.version ? "Copy again" : "Copy into Bullpen"));
+  if (a.source === "claude") actions.push(h("button", { class: "btn sm", onclick: () => openImport({ url: a.url, title: a.title }) }, icon("refresh", 13), a.version ? "Import a newer copy" : "Import its page"));
   if (a.kind === "html" && a.version) actions.push(ibtn("external", "Open in a new tab", () => window.open(`/av/${a.key}/${v}`, "_blank", "noopener")));
   if (a.threadId && state.threads.has(a.threadId)) actions.push(ibtn("message", "Go to the chat it came from", () => openThread(a.threadId)));
   actions.push(ibtn("trash", a.source === "claude" ? "Remove from Bullpen (stays on claude.ai)" : "Delete", async () => {
@@ -2974,9 +2988,9 @@ async function renderArtifact(force = true) {
   let body;
   if (!a.version) {
     body = h("div", { class: "page" }, h("div", { class: "column" }, h("div", { class: "art-link" },
-      h("p", {}, "This artifact lives on claude.ai. Copy it into Bullpen to see it here and let agents read and build on it."),
+      h("p", {}, "This artifact lives on claude.ai. Open it there, copy its code (or download it), and import it to see it here and let agents read and build on it."),
       h("div", { class: "row-actions" },
-        h("button", { class: "btn primary", onclick: (ev) => copyIn(a, ev.currentTarget) }, "Copy into Bullpen"),
+        h("button", { class: "btn primary", onclick: () => openImport({ url: a.url, title: a.title }) }, "Import its page"),
         h("button", { class: "btn", onclick: () => window.open(a.url, "_blank", "noopener") }, "Open on claude.ai")),
       a.owner === "shared" ? h("p", { class: "muted" }, "Shared artifacts usually can't be copied, only ones you own.") : null)));
   } else if (a.kind === "html") {
@@ -2990,6 +3004,53 @@ async function renderArtifact(force = true) {
   }
   $("main").replaceChildren(top, body);
 }
+/** Import dialog: paste a page, or choose/drop a file; a claude.ai link keeps it tied to that artifact. */
+function openImport(prefill = {}, file = null) {
+  const title = h("input", { type: "text", placeholder: "Title (taken from the page if empty)", value: prefill.title ?? "" });
+  const url = h("input", { type: "url", placeholder: "claude.ai link (optional): https://claude.ai/artifact/…", value: prefill.url ?? "" });
+  const body = h("textarea", { class: "mono", rows: 10, placeholder: "Paste the page's HTML, or Markdown", spellcheck: "false" });
+  const err = h("div", { class: "form-error" });
+  const picked = h("span", { class: "faint" });
+  const fileIn = h("input", { type: "file", accept: ".html,.htm,.md,.markdown,.txt,.svg,text/html,text/markdown", hidden: true });
+  let kind;
+  const load = async (f) => {
+    if (!f) return;
+    if (f.size > 8 * 1024 * 1024) { err.textContent = "That file is over 8 MB."; return; }
+    body.value = await f.text();
+    kind = /\.(md|markdown|txt)$/i.test(f.name) ? "markdown" : "html";
+    picked.textContent = f.name;
+    if (!title.value) title.value = f.name.replace(/\.[^.]+$/, "");
+  };
+  fileIn.addEventListener("change", () => load(fileIn.files[0]));
+  const go = h("button", { class: "btn primary", type: "button" }, "Import");
+  const dlg = h("dialog", { class: "import-dlg" },
+    h("div", { class: "dlg-head" }, h("h3", {}, "Import an artifact"), h("button", { class: "icon-btn", "aria-label": "Close", onclick: () => dlg.close() }, icon("x", 15))),
+    h("p", { class: "muted" }, "On claude.ai, open the artifact and copy its code or download it. Paste it here, or choose or drop the file."),
+    h("label", {}, "Page", body),
+    h("div", { class: "file-row" }, h("button", { class: "btn sm", type: "button", onclick: () => fileIn.click() }, icon("files", 13), "Choose file…"), picked, fileIn),
+    h("label", {}, "Title", title),
+    h("label", {}, "Link", url),
+    err,
+    h("div", { class: "dialog-actions" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, "Cancel"), go));
+  for (const t of ["dragover", "drop"]) dlg.addEventListener(t, (ev) => { ev.preventDefault(); if (t === "drop") load(ev.dataTransfer.files[0]); });
+  body.addEventListener("input", () => { kind = undefined; picked.textContent = ""; });
+  go.addEventListener("click", async () => {
+    err.textContent = ""; go.disabled = true;
+    try {
+      const r = await dispatch({ type: "artifact.import", content: body.value, title: title.value || undefined, url: url.value || undefined, kind });
+      dlg.close(); toast(`Imported “${r.artifact.title}”. Agents can read it with read_artifact.`); openArtifact(r.artifact.id);
+    } catch (e) { err.textContent = e.message; go.disabled = false; }
+  });
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg); dlg.showModal();
+  if (file) load(file); else body.focus();
+}
+// Drop a file anywhere on the Artifacts page to import it.
+document.addEventListener("dragover", (ev) => { if (state.view === "artifacts" && ev.dataTransfer?.types.includes("Files")) ev.preventDefault(); });
+document.addEventListener("drop", (ev) => {
+  if (state.view !== "artifacts" || !ev.dataTransfer?.files.length || ev.target.closest?.("dialog")) return;
+  ev.preventDefault(); openImport({}, ev.dataTransfer.files[0]);
+});
 async function copyIn(a, btn) {
   btn.disabled = true; const label = btn.textContent; btn.textContent = "Copying…";
   try { await dispatch({ type: "artifact.fetch", artifactId: a.id }); toast(`“${a.title}” is in Bullpen now. Agents can read it with read_artifact.`); renderArtifact(); }

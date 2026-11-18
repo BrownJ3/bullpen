@@ -307,6 +307,12 @@ export class Orchestrator {
         this.#store.commit(`lesson:${lesson.id}`, [{ type: "lesson.upserted", lesson: next }]);
         return { ok: true };
       }
+      case "artifact.import":
+        try {
+          return { artifact: this.artifacts.import(command) };
+        } catch (err) {
+          throw new CommandError((err as Error).message);
+        }
       case "artifact.delete":
         this.artifacts.delete(command.artifactId);
         return { ok: true };

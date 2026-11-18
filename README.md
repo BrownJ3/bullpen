@@ -237,11 +237,11 @@ Implement `ProviderAdapter` from `src/types.ts`: `openSession()` returns `startT
 - **Made here:** any agent can publish one with `create_artifact` (an HTML page or Markdown) and revise it with
   `update_artifact`; every version is kept in `~/.bullpen/artifacts/`. Ask for "an artifact" and it appears in the
   chat with an Open button. Pages run sandboxed in their own origin, so their scripts can't reach Bullpen.
-- **Your claude.ai artifacts:** pulled in every 30 minutes (and on **Sync with claude.ai**) through Claude Code's own
-  Artifact tool, with your Claude Code sign-in: a tiny headless session (Haiku, a few thousand tokens) lists them.
-  Turn it off with **Pull from claude.ai**. **Copy into Bullpen** brings a page you own here, so you can view it
-  locally and agents can read it (`read_artifact`); features that need claude.ai itself (saved data) won't work
-  in the copy.
+- **From claude.ai:** **Import** (or drop a file on the page): paste the artifact's code or choose the file you
+  downloaded, and add its claude.ai link to keep the two tied. Agents can then read it (`read_artifact`); anything
+  that needs claude.ai itself (saved data) won't work in the copy.
+  Automatic syncing is off: Claude Code only lets the Claude desktop app read your claude.ai artifacts, so Bullpen's
+  own service can't. The "Try syncing from claude.ai" menu item works only where Claude Code has that tool.
 
 Agents also get `list_artifacts` and `read_artifact`.
 

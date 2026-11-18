@@ -51,7 +51,8 @@ export class Artifacts {
   }
 
   enabled(): boolean {
-    return this.#store.getSetting("artifacts.claude", true);
+    // Off unless turned on: Claude Code only offers its Artifact tool inside the Claude desktop app.
+    return this.#store.getSetting("artifacts.claude", false);
   }
 
   // ---------------------------------------------------------------- Bullpen's own
@@ -69,6 +70,34 @@ export class Artifacts {
       threadId: input.threadId,
       agentId: input.agentId,
       project: input.project,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    return this.#write(artifact, input.content);
+  }
+
+  /**
+   * Bring in a page you have: pasted or from a file. With a claude.ai link it's filed as that claude.ai artifact
+   * (filling in the synced entry, if there is one); otherwise as one made here.
+   */
+  import(input: { content: string; title?: string; url?: string; kind?: "html" | "markdown" }): Artifact {
+    const url = input.url?.trim() || undefined;
+    if (url && !/^https:\/\/claude\.ai\/(code\/)?artifact\/[\w-]+/.test(url)) throw new Error("That isn't a claude.ai artifact link (claude.ai/artifact/…).");
+    if (!input.content.trim()) throw new Error("Paste the page, or choose a file.");
+    const kind = input.kind ?? (/^\s*</.test(input.content) ? "html" : "markdown");
+    const title = input.title?.trim() || input.content.match(/<title>([^<]{1,120})<\/title>/i)?.[1]?.trim() || input.content.match(/^#\s+(.{1,120})$/m)?.[1]?.trim() || "Imported";
+    const existing = url ? this.#store.listArtifacts().find((a) => a.url === url) : undefined;
+    if (existing) return this.#write({ ...existing, kind, title: input.title?.trim() || existing.title }, input.content);
+    const artifact: Artifact = {
+      id: randomUUID(),
+      source: url ? "claude" : "bullpen",
+      title: title.slice(0, 120),
+      kind,
+      url,
+      owner: url ? "mine" : undefined,
+      imported: true,
+      version: 0,
+      key: randomBytes(18).toString("hex"),
       createdAt: now(),
       updatedAt: now(),
     };
@@ -234,7 +263,9 @@ async function artifactTool(prompt: string, actions: string[]): Promise<string[]
   for await (const m of q) {
     if (m.type === "system" && m.subtype === "init" && !m.tools.includes("Artifact")) {
       q.close();
-      throw new Error("Claude Code's Artifact tool isn't available on this account or version.");
+      throw new Error(
+        "Claude Code only lets the Claude desktop app read your claude.ai artifacts, so Bullpen can't sync them. Use Import to bring one in (paste its page, or drop the file).",
+      );
     }
     if (m.type === "user" && Array.isArray(m.message.content)) {
       for (const b of m.message.content) {

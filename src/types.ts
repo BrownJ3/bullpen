@@ -334,6 +334,8 @@ export interface Artifact {
   url?: string;
   /** claude.ai: yours, or shared with you. */
   owner?: "mine" | "shared";
+  /** You brought it in (pasted or from a file). */
+  imported?: boolean;
   /** Local content versions (1 = first). 0 = none stored. */
   version: number;
   /** Secret part of the view address (pages are served sandboxed at /av/<key>/<version>). */
@@ -452,6 +454,8 @@ export type Command =
   | { type: "lesson.decide"; lessonId: string; decision: "approve" | "reject"; text?: string }
   | { type: "lesson.delete"; lessonId: string }
   | { type: "artifact.delete"; artifactId: string }
+  /** Bring in a page: pasted or from a file, optionally with its claude.ai link. */
+  | { type: "artifact.import"; content: string; title?: string; url?: string; kind?: "html" | "markdown" }
   /** Pull your claude.ai artifacts in now (also happens on its own every 30 minutes, when turned on). */
   | { type: "artifacts.sync" }
   /** Copy a claude.ai artifact's page into Bullpen so it can be viewed here and given to agents. */

@@ -500,7 +500,7 @@ wss.on("connection", (socket: WebSocket) => {
         briefingTime: store.getSetting("briefing.time", "08:00"),
         briefingEnabled: store.getSetting("briefing.enabled", true),
         notifications: store.getSetting("notifications", true),
-        claudeArtifacts: store.getSetting("artifacts.claude", true),
+        claudeArtifacts: store.getSetting("artifacts.claude", false),
         artifactsLastSync: store.getSetting<unknown>("artifacts.lastSync", null),
       },
       pendingApprovals: store.pendingApprovals(),
