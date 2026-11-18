@@ -4,7 +4,7 @@
 // server -> client   { id, result } | { id, error }            (responses)
 //                    { subscription, items: StoredEvent[] }      (pushes for subscribeThread)
 
-import type { Agent, Command, Job, Lesson, Project, Run, StoredEvent, Thread, TurnItem } from "./types.ts";
+import type { Agent, Artifact, Command, Job, Lesson, Project, Run, StoredEvent, Thread, TurnItem } from "./types.ts";
 
 export type Request =
   | { id: number; method: "dispatch"; params: Command }
@@ -46,6 +46,7 @@ export type Request =
   | { id: number; method: "remote.info"; params?: undefined }
   | { id: number; method: "listEngines"; params?: undefined }
   | { id: number; method: "version"; params?: undefined }
+  | { id: number; method: "artifact.content"; params: { artifactId: string; version?: number } }
   | { id: number; method: "update.run"; params?: undefined }
   | { id: number; method: "jobRuns"; params: { jobId: string } }
   | { id: number; method: "createFolder"; params: { parent: string; name: string; git: boolean } }
@@ -70,7 +71,8 @@ export interface SidebarSnapshot {
   projects: Project[];
   jobs: Job[];
   lessons: Lesson[];
-  settings: { briefingTime: string; briefingEnabled: boolean; notifications: boolean };
+  artifacts: Artifact[];
+  settings: { briefingTime: string; briefingEnabled: boolean; notifications: boolean; claudeArtifacts: boolean; artifactsLastSync: unknown };
   pendingApprovals: TurnItem[];
 }
 

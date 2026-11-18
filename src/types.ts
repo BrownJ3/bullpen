@@ -128,7 +128,7 @@ export type TurnItem = TurnItemBase &
         /** While running: what to ask again if Bullpen restarts before the answer comes. */
         retry?: { prompt: string; project?: string; chain: string[] };
       }
-    | { kind: "note"; text: string; action?: { kind: "open_pr"; title: string; body: string } }
+    | { kind: "note"; text: string; action?: { kind: "open_pr"; title: string; body: string } | { kind: "open_artifact"; artifactId: string } }
     | { kind: "error"; message: string }
     | ({ kind: "team_goal" } & GoalCard)
   );
@@ -320,6 +320,31 @@ export interface GoalCard {
   }>;
 }
 
+// ---------- Artifacts (pages, reports and diagrams: made by agents here, or pulled in from claude.ai) ----------
+
+export interface Artifact {
+  id: string;
+  /** "bullpen": made by an agent here (content stored locally); "claude": one of your claude.ai artifacts. */
+  source: "bullpen" | "claude";
+  title: string;
+  /** What's stored locally: a web page, a Markdown document, or (claude.ai, not loaded yet) only a link. */
+  kind: "html" | "markdown" | "link";
+  description?: string;
+  /** claude.ai address. */
+  url?: string;
+  /** claude.ai: yours, or shared with you. */
+  owner?: "mine" | "shared";
+  /** Local content versions (1 = first). 0 = none stored. */
+  version: number;
+  /** Secret part of the view address (pages are served sandboxed at /av/<key>/<version>). */
+  key: string;
+  threadId?: string;
+  agentId?: string;
+  project?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Checkpoint {
   threadId: string;
   ordinal: number; // 0 = baseline before turn 1, N = after turn N
@@ -346,7 +371,9 @@ export type DomainEvent =
   | { type: "lesson.deleted"; lessonId: string }
   | { type: "setting.upserted"; key: string; value: unknown }
   | { type: "task.upserted"; task: TeamTask }
-  | { type: "project.removed"; projectId: string };
+  | { type: "project.removed"; projectId: string }
+  | { type: "artifact.upserted"; artifact: Artifact }
+  | { type: "artifact.deleted"; artifactId: string };
 
 export interface StoredEvent {
   sequence: number;
@@ -424,7 +451,12 @@ export type Command =
   | { type: "lesson.add"; agentId?: string; text: string }
   | { type: "lesson.decide"; lessonId: string; decision: "approve" | "reject"; text?: string }
   | { type: "lesson.delete"; lessonId: string }
-  | { type: "settings.update"; briefingTime?: string; briefingEnabled?: boolean; notifications?: boolean }
+  | { type: "artifact.delete"; artifactId: string }
+  /** Pull your claude.ai artifacts in now (also happens on its own every 30 minutes, when turned on). */
+  | { type: "artifacts.sync" }
+  /** Copy a claude.ai artifact's page into Bullpen so it can be viewed here and given to agents. */
+  | { type: "artifact.fetch"; artifactId: string }
+  | { type: "settings.update"; briefingTime?: string; briefingEnabled?: boolean; notifications?: boolean; claudeArtifacts?: boolean }
   | { type: "message.send"; threadId: string; text: string }
   | { type: "run.interrupt"; threadId: string }
   | { type: "runtime-request.respond"; threadId: string; requestId: string; decision: Decision }

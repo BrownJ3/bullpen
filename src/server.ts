@@ -131,6 +131,8 @@ function handleHttp(req: IncomingMessage, res: import("node:http").ServerRespons
     res.writeHead(421).end();
     return;
   }
+  // Artifact pages, sandboxed (the secret key in the URL is the access check, like a share link).
+  if (req.url?.startsWith("/av/") && orchestrator.artifacts.serve(req, res)) return;
   // Harness tools for ACP engines; each session's URL holds its own secret. Only from this Mac.
   if (req.url?.startsWith("/mcp/")) {
     if (req.socket.remoteAddress !== "127.0.0.1" && req.socket.remoteAddress !== "::ffff:127.0.0.1") {
@@ -343,6 +345,14 @@ wss.on("connection", (socket: WebSocket) => {
       case "browser.close":
         await orchestrator.browser.close(String((req.params as { threadId: string }).threadId));
         return { ok: true };
+      case "artifact.content": {
+        const p = req.params as { artifactId: string; version?: number };
+        try {
+          return orchestrator.artifacts.content(p.artifactId, p.version);
+        } catch (err) {
+          throw new CommandError((err as Error).message);
+        }
+      }
       case "version":
         return updateInfo();
       case "update.run": {
@@ -467,6 +477,8 @@ wss.on("connection", (socket: WebSocket) => {
         ev.type === "lesson.deleted" ||
         ev.type === "setting.upserted" ||
         ev.type === "project.removed" ||
+        ev.type === "artifact.upserted" ||
+        ev.type === "artifact.deleted" ||
         (ev.type === "turn-item.upserted" && (ev.item.kind === "approval_request" || ev.item.kind === "agent_reply"))
       ) {
         batch.push(e);
@@ -483,10 +495,13 @@ wss.on("connection", (socket: WebSocket) => {
       projects: store.listProjects(),
       jobs: store.listJobs(),
       lessons: store.listLessons().filter((l) => l.status !== "rejected"),
+      artifacts: store.listArtifacts(),
       settings: {
         briefingTime: store.getSetting("briefing.time", "08:00"),
         briefingEnabled: store.getSetting("briefing.enabled", true),
         notifications: store.getSetting("notifications", true),
+        claudeArtifacts: store.getSetting("artifacts.claude", true),
+        artifactsLastSync: store.getSetting<unknown>("artifacts.lastSync", null),
       },
       pendingApprovals: store.pendingApprovals(),
     };

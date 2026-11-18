@@ -640,6 +640,27 @@ button:focus-visible, [role="button"]:focus-visible { outline: 2px solid color-m
 .brand { padding: 13px 16px 8px; }
 .update-pill { margin: 0 14px 8px; border: 0; border-radius: 8px; padding: 6px 10px; font-size: 12.5px; font-weight: 600; background: var(--primary); color: var(--on-primary); text-align: left; }
 .update-pill[hidden] { display: none; }
+.column.wide { max-width: 1100px; }
+.art-tools { display: flex; align-items: center; gap: 12px; margin: 6px 0 16px; flex-wrap: wrap; }
+.art-tools input[type=search] { flex: 1; min-width: 180px; border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+.chips { display: flex; gap: 6px; }
+.chip { border: 1px solid var(--line-strong); background: transparent; color: var(--muted); border-radius: 999px; padding: 4px 11px; font-size: 12.5px; }
+.chip.on { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.art-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+.art-card { display: flex; flex-direction: column; gap: 6px; text-align: left; border: 1px solid var(--line); background: var(--panel); border-radius: 12px; padding: 12px; color: var(--text); transition: border-color .12s, transform .12s; }
+.art-card:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+.art-thumb { height: 92px; border-radius: 8px; display: grid; place-items: center; background: var(--hover); color: var(--faint); margin-bottom: 4px; }
+.art-thumb.html { background: color-mix(in srgb, var(--primary) 10%, var(--hover)); color: var(--primary); }
+.art-title { font-weight: 600; font-size: 14px; line-height: 1.3; }
+.art-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.art-desc { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.src-claude { font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 5px; background: #d9775722; color: #c2603e; }
+.art-frame { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
+.art-frame iframe { flex: 1; border: 0; width: 100%; background: #fff; }
+.art-note { font-size: 12px; color: var(--muted); padding: 6px 14px; border-top: 1px solid var(--line); }
+.art-link { border: 1px solid var(--line); border-radius: 12px; padding: 18px; background: var(--panel); }
+.art-link .row-actions { display: flex; gap: 8px; margin: 12px 0 4px; }
+.art-md { padding-top: 8px; }
 .side-new { display: flex; gap: 6px; margin: 4px 14px 8px; }
 .new-chat { flex: 1; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 9px; border: 0; background: var(--primary); color: var(--on-primary); font-size: 13.5px; font-weight: 600; text-align: left; transition: filter 0.12s; }
 .new-chat:hover { filter: brightness(1.12); }
@@ -1010,6 +1031,7 @@ button.hrow:hover { background: var(--hover); }
     <div class="side-scroll">
       <button class="inbox-row" id="inbox-row"><span class="ic" data-icon="inbox" data-size="15"></span><span style="flex:1">Inbox</span><span id="inbox-count"></span></button>
       <button class="inbox-row" id="teams-row"><span class="ic" data-icon="users" data-size="15"></span><span style="flex:1">Teams</span><span id="teams-count"></span></button>
+      <button class="inbox-row" id="artifacts-row"><span class="ic" data-icon="layers" data-size="15"></span><span style="flex:1">Artifacts</span><span id="artifacts-count"></span></button>
       <div class="section-head">Agents <button class="icon-btn" id="new-agent" title="Recruit agents" aria-label="Recruit agents" data-icon="plus" data-size="15"></button></div>
       <div id="agents"></div>
       <div class="section-head">Jobs <button class="icon-btn" id="new-job" title="New standing job" aria-label="New standing job" data-icon="plus" data-size="15"></button></div>
@@ -1330,6 +1352,8 @@ window.addEventListener("popstate", (ev) => {
   if (m) openThread(m[1], false, true);
   else if (location.hash === "#/inbox") openInbox(true);
   else if (location.hash === "#/teams") openTeams(true);
+  else if (location.hash === "#/artifacts") openArtifacts(true);
+  else if (location.hash.startsWith("#/a/")) openArtifact(location.hash.slice(4), true);
   else newThread(undefined, true);
   syncNavButtons();
 });
@@ -1484,6 +1508,8 @@ function connect() {
     if (state.threadId) openThread(state.threadId, true);
     else if (state.view === "inbox") renderInbox();
     else if (state.view === "teams") renderTeams();
+    else if (state.view === "artifacts") renderArtifacts();
+    else if (state.view === "artifact") renderArtifact();
     else renderMain();
   };
   ws.onmessage = (ev) => {
@@ -1542,6 +1568,7 @@ async function loadSidebar() {
   state.projects = new Map(snap.projects.map((p) => [p.id, p]));
   state.jobs = new Map(snap.jobs.map((j) => [j.id, j]));
   state.lessons = new Map(snap.lessons.map((l) => [l.id, l]));
+  state.artifacts = new Map((snap.artifacts ?? []).map((a) => [a.id, a]));
   state.settings = snap.settings;
   state.approvals = new Map();
   snap.pendingApprovals.forEach(trackApproval);
@@ -1571,8 +1598,10 @@ async function loadSidebar() {
           toast(`${a ? agentLabel(a) : "An agent"} suggested a lesson: “${e.lesson.text}”`, { onclick: () => openInbox() });
         }
       } else if (e.type === "lesson.deleted") state.lessons.delete(e.lessonId);
+      else if (e.type === "artifact.upserted") state.artifacts.set(e.artifact.id, e.artifact);
+      else if (e.type === "artifact.deleted") state.artifacts.delete(e.artifactId);
       else if (e.type === "setting.upserted") {
-        const map = { "briefing.time": "briefingTime", "briefing.enabled": "briefingEnabled", "notifications": "notifications" };
+        const map = { "briefing.time": "briefingTime", "briefing.enabled": "briefingEnabled", "notifications": "notifications", "artifacts.claude": "claudeArtifacts", "artifacts.lastSync": "artifactsLastSync" };
         if (map[e.key]) state.settings[map[e.key]] = e.value;
       }
       else if (e.type === "turn-item.upserted" && e.item.kind === "approval_request") {
@@ -1590,6 +1619,8 @@ async function loadSidebar() {
     if (state.threadId) { state.thread = state.threads.get(state.threadId) ?? state.thread; renderTopbar(); }
     else if (state.view === "inbox") renderInbox();
     else if (state.view === "teams") renderTeams();
+    else if (state.view === "artifacts") renderArtifacts();
+    else if (state.view === "artifact") renderArtifact(false);
     else refreshHome();
   });
   renderSidebar();
@@ -1627,6 +1658,9 @@ function renderSidebar() {
   const teamsNeed = teamThreads.some((t) => t.team.needsYou);
   $("teams-count").replaceChildren(...(activeTeams ? [h("span", { class: "count" + (teamsNeed ? " attn" : ""), title: teamsNeed ? "A team needs you" : `${activeTeams} running` }, String(activeTeams))] : []));
   $("teams-row").classList.toggle("active", state.view === "teams" && !state.threadId);
+  $("artifacts-row").classList.toggle("active", (state.view === "artifacts" || state.view === "artifact") && !state.threadId);
+  const nArt = state.artifacts?.size ?? 0;
+  $("artifacts-count").replaceChildren(...(nArt ? [h("span", { class: "count" }, String(nArt))] : []));
 }
 
 // ---------- jobs in the sidebar ----------
@@ -2271,7 +2305,9 @@ function itemElInner(item) {
   switch (item.kind) {
     case "note":
       return h("div", { ...base, class: "note" }, icon(item.action ? "external" : "branch", 13), h("span", {}, richText(item.text)),
-        item.action?.kind === "open_pr" && state.thread?.worktree && !state.thread.worktree.prUrl
+        item.action?.kind === "open_artifact"
+          ? h("button", { class: "btn sm", onclick: () => openArtifact(item.action.artifactId) }, icon("layers", 13), "Open")
+          : item.action?.kind === "open_pr" && state.thread?.worktree && !state.thread.worktree.prUrl
           ? h("button", { class: "btn sm primary", onclick: (ev) => { ev.currentTarget.disabled = true; toast("Pushing and opening the pull request…");
               dispatch({ type: "worktree.pr", threadId: item.threadId, title: item.action.title, body: item.action.body })
                 .then((r) => { toast("Pull request opened."); if (r.url) window.open(r.url, "_blank", "noopener"); }).catch((err) => { ev.currentTarget.disabled = false; fail(err); }); } }, "Open pull request")
@@ -2834,6 +2870,131 @@ setInterval(() => {
     if (iso) el.textContent = since(iso);
   }
 }, 15000);
+
+// ---------- artifacts: pages agents made here, and your claude.ai artifacts ----------
+const artFilter = { source: "all", q: "" };
+function leaveThread() {
+  if (state.sub) call("unsubscribe", { subscription: state.sub }).catch(() => {});
+  state.sub = null; state.threadId = null; state.thread = null;
+}
+function openArtifacts(fromHistory = false) {
+  leaveThread(); state.view = "artifacts";
+  if (!fromHistory) routeTo("#/artifacts");
+  renderSidebar(); renderArtifacts(true);
+}
+function openArtifact(id, fromHistory = false) {
+  leaveThread(); state.view = "artifact"; state.artifactId = id; state.artifactVersion = null;
+  if (!fromHistory) routeTo(`#/a/${id}`);
+  renderSidebar(); renderArtifact(true);
+}
+$("artifacts-row").addEventListener("click", () => openArtifacts());
+const artAuthor = (a) => {
+  if (a.source === "claude") return { el: h("span", { class: "src-claude" }, "claude.ai"), text: a.owner === "shared" ? "Shared with you on claude.ai" : "Your claude.ai artifact" };
+  const agent = a.agentId ? state.agents.get(a.agentId) : null;
+  return { el: agent ? agentTile(agent, 18) : icon("bot", 14), text: agent ? agentLabel(agent) : "Made in Bullpen" };
+};
+function syncArtifacts(btn) {
+  if (btn) { btn.disabled = true; btn.lastChild.textContent = "Syncing…"; }
+  dispatch({ type: "artifacts.sync" })
+    .then((r) => toast(r.added ? `Pulled in ${r.added} new artifact${r.added === 1 ? "" : "s"} from claude.ai.` : `Up to date with claude.ai (${r.total}).`))
+    .catch(fail)
+    .finally(() => { if (btn?.isConnected) { btn.disabled = false; btn.lastChild.textContent = "Sync with claude.ai"; } });
+}
+function renderArtifacts(force = false) {
+  if (state.view !== "artifacts") return;
+  if (!force && $("art-grid")) { drawArtGrid(); return; } // live updates: just the cards, so scroll and typing aren't lost
+  const on = state.settings?.claudeArtifacts !== false;
+  const last = state.settings?.artifactsLastSync;
+  const sync = h("button", { class: "btn sm", onclick: (ev) => syncArtifacts(ev.currentTarget) }, icon("refresh", 13), h("span", {}, "Sync with claude.ai"));
+  const toggle = h("label", { class: "check", title: "Every 30 minutes, list your claude.ai artifacts here (uses a few tokens of your Claude plan)" },
+    h("input", { type: "checkbox", checked: on, onchange: (ev) => dispatch({ type: "settings.update", claudeArtifacts: ev.target.checked }).catch(fail) }), " Pull from claude.ai");
+  const search = h("input", { id: "art-search", type: "search", placeholder: "Search artifacts", value: artFilter.q, oninput: (ev) => { artFilter.q = ev.target.value; drawArtGrid(); } });
+  const chips = h("div", { class: "chips" }, ...[["all", "All"], ["bullpen", "Made here"], ["claude", "claude.ai"]].map(([k, label]) =>
+    h("button", { class: "chip" + (artFilter.source === k ? " on" : ""), onclick: () => { artFilter.source = k; renderArtifacts(true); } }, label)));
+  $("main").replaceChildren(
+    pageTopbar("layers", "Artifacts", last?.at ? `claude.ai last synced ${ago(last.at)}${last.ok ? "" : " (failed)"}` : "Pages, reports and diagrams", [toggle, sync]),
+    h("div", { class: "page" }, h("div", { class: "column wide" },
+      h("div", { class: "art-tools" }, chips, search),
+      h("div", { id: "art-grid", class: "art-grid" }))));
+  drawArtGrid();
+}
+function drawArtGrid() {
+  const grid = $("art-grid"); if (!grid) return;
+  const q = artFilter.q.trim().toLowerCase();
+  const list = [...(state.artifacts?.values() ?? [])]
+    .filter((a) => artFilter.source === "all" || a.source === artFilter.source)
+    .filter((a) => !q || a.title.toLowerCase().includes(q) || (a.description ?? "").toLowerCase().includes(q))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  if (!state.artifacts) { grid.replaceChildren(h("div", { class: "faint" }, "Loading…")); return; }
+  if (!list.length) {
+    grid.replaceChildren(h("div", { class: "box-empty" }, state.artifacts?.size
+      ? "Nothing matches."
+      : "No artifacts yet. Ask any agent to “make an artifact” (a report, a dashboard, a diagram) and it shows up here. Your claude.ai artifacts appear here too once they sync."));
+    return;
+  }
+  grid.replaceChildren(...list.map((a) => {
+    const who = artAuthor(a);
+    return h("button", { class: "art-card", onclick: () => openArtifact(a.id) },
+      h("div", { class: "art-thumb " + (a.kind === "link" ? "link" : a.kind) }, icon(a.kind === "markdown" ? "filetext" : a.kind === "link" ? "external" : "layers", 22)),
+      h("div", { class: "art-title" }, a.title),
+      h("div", { class: "art-meta" }, who.el, h("span", {}, who.text), a.updatedAt > "2001" ? h("span", { class: "faint" }, "· " + ago(a.updatedAt)) : null),
+      a.description ? h("div", { class: "art-desc" }, a.description) : null);
+  }));
+}
+async function renderArtifact(force = true) {
+  if (state.view !== "artifact") return;
+  const a = state.artifacts?.get(state.artifactId);
+  if (!a) {
+    if (!state.artifacts) return; // still connecting
+    $("main").replaceChildren(pageTopbar("layers", "Artifact", null), h("div", { class: "page" }, h("div", { class: "column" }, h("div", { class: "box-empty" }, "That artifact was deleted."))));
+    return;
+  }
+  // Server events redraw the sidebar constantly; only redraw this page if the artifact itself changed.
+  const sig = JSON.stringify([a.id, a.version, a.title, a.kind, state.artifactVersion]);
+  if (!force && $("main").dataset.sig === sig) return;
+  $("main").dataset.sig = sig;
+  const v = state.artifactVersion ?? a.version;
+  const who = artAuthor(a);
+  const actions = [];
+  if (a.version > 1) {
+    const sel = h("select", { class: "qsel", "aria-label": "Version", onchange: (ev) => { state.artifactVersion = Number(ev.target.value); renderArtifact(); } },
+      ...Array.from({ length: a.version }, (_, i) => a.version - i).map((n) => h("option", { value: n }, n === a.version ? `Version ${n} (latest)` : `Version ${n}`)));
+    sel.value = String(v);
+    actions.push(sel);
+  }
+  if (a.source === "claude") actions.push(h("button", { class: "btn sm", onclick: () => window.open(a.url, "_blank", "noopener") }, icon("external", 13), "Open on claude.ai"));
+  if (a.source === "claude") actions.push(h("button", { class: "btn sm", onclick: (ev) => copyIn(a, ev.currentTarget) }, icon("refresh", 13), a.version ? "Copy again" : "Copy into Bullpen"));
+  if (a.kind === "html" && a.version) actions.push(ibtn("external", "Open in a new tab", () => window.open(`/av/${a.key}/${v}`, "_blank", "noopener")));
+  if (a.threadId && state.threads.has(a.threadId)) actions.push(ibtn("message", "Go to the chat it came from", () => openThread(a.threadId)));
+  actions.push(ibtn("trash", a.source === "claude" ? "Remove from Bullpen (stays on claude.ai)" : "Delete", async () => {
+    if (!confirm(a.source === "claude" ? `Remove “${a.title}” from Bullpen? It stays on claude.ai and comes back on the next sync.` : `Delete “${a.title}” and all its versions?`)) return;
+    try { await dispatch({ type: "artifact.delete", artifactId: a.id }); openArtifacts(); } catch (err) { fail(err); }
+  }));
+  const top = pageTopbar("layers", a.title, `${who.text}${a.updatedAt > "2001" ? ` · ${ago(a.updatedAt)}` : ""}${a.version > 1 ? ` · ${a.version} versions` : ""}`, actions);
+  let body;
+  if (!a.version) {
+    body = h("div", { class: "page" }, h("div", { class: "column" }, h("div", { class: "art-link" },
+      h("p", {}, "This artifact lives on claude.ai. Copy it into Bullpen to see it here and let agents read and build on it."),
+      h("div", { class: "row-actions" },
+        h("button", { class: "btn primary", onclick: (ev) => copyIn(a, ev.currentTarget) }, "Copy into Bullpen"),
+        h("button", { class: "btn", onclick: () => window.open(a.url, "_blank", "noopener") }, "Open on claude.ai")),
+      a.owner === "shared" ? h("p", { class: "muted" }, "Shared artifacts usually can't be copied, only ones you own.") : null)));
+  } else if (a.kind === "html") {
+    body = h("div", { class: "art-frame" }, h("iframe", { src: `/av/${a.key}/${v}`, title: a.title, sandbox: "allow-scripts allow-forms allow-popups allow-modals allow-downloads", referrerpolicy: "no-referrer" }),
+      a.source === "claude" ? h("div", { class: "art-note" }, "Copied from claude.ai. Features that need claude.ai (saved data, sign-in) won't work here.") : null);
+  } else {
+    body = h("div", { class: "page" }, h("div", { class: "column art-md" }, h("div", { class: "faint" }, "Loading…")));
+    call("artifact.content", { artifactId: a.id, version: v }).then((r) => {
+      const box = document.querySelector(".art-md"); if (box) box.replaceChildren(richText(r.content));
+    }).catch((err) => { const box = document.querySelector(".art-md"); if (box) box.textContent = err.message; });
+  }
+  $("main").replaceChildren(top, body);
+}
+async function copyIn(a, btn) {
+  btn.disabled = true; const label = btn.textContent; btn.textContent = "Copying…";
+  try { await dispatch({ type: "artifact.fetch", artifactId: a.id }); toast(`“${a.title}” is in Bullpen now. Agents can read it with read_artifact.`); renderArtifact(); }
+  catch (err) { fail(err); btn.disabled = false; btn.textContent = label; }
+}
 
 // ---------- teams: every goal the leads are running, in one place ----------
 let teamsTimer = null;
@@ -3763,6 +3924,7 @@ function paletteItems() {
   add("Go to", { icon: "inbox", title: "Inbox", sub: "briefing, lessons, what needs you", kbd: "⌘1", run: () => openInbox() });
   add("Go to", { icon: "users", title: "Teams", sub: "every goal your leads are running", kbd: "⌘2", run: () => openTeams() });
   add("Go to", { icon: "compose", title: "New chat", sub: "start something new", kbd: "⌥N", run: () => newThread() });
+  add("Go to", { icon: "layers", title: "Artifacts", sub: "pages agents made, and your claude.ai artifacts", run: () => openArtifacts() });
   add("Go to", { icon: "folderplus", title: "New project", sub: "create a folder or add one you have", kbd: "⌥⇧N", run: () => newProject(true) });
   const homes = new Set([...state.agents.values()].map((a) => a.homeThreadId));
   for (const a of [...state.agents.values()].sort((x, y) => agentLabel(x).localeCompare(agentLabel(y))))
@@ -3900,6 +4062,8 @@ const routed = location.hash.match(/^#\/t\/([\w-]+)/);
 if (routed) state.threadId = routed[1];
 if (location.hash === "#/inbox") state.view = "inbox";
 if (location.hash === "#/teams") state.view = "teams";
+if (location.hash === "#/artifacts") state.view = "artifacts";
+if (location.hash.startsWith("#/a/")) { state.view = "artifact"; state.artifactId = location.hash.slice(4); }
 renderMain();
 connect();
 </script>

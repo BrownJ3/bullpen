@@ -7,7 +7,7 @@
 // the engine's saved conversation, once.
 
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HOME } from "./home.ts";
 import { Jobs } from "./jobs.ts";
@@ -15,6 +15,7 @@ import { Team, isLimitError, type ConsultOutcome } from "./team.ts";
 import * as checkpoints from "./checkpoints.ts";
 import * as worktrees from "./worktrees.ts";
 import { BrowserHub } from "./browser.ts";
+import { Artifacts } from "./artifacts.ts";
 import { workdirOf } from "./types.ts";
 import { expandHome } from "./projects.ts";
 import type { Store } from "./store.ts";
@@ -38,6 +39,13 @@ import type {
 } from "./types.ts";
 
 export class CommandError extends Error {}
+
+/** A text file an agent points at (for create_artifact), within reason. */
+function readText(path: string): string {
+  if (!existsSync(path)) throw new Error(`No file ${path}.`);
+  if (statSync(path).size > 8 * 1024 * 1024) throw new Error("That file is over 8 MB.");
+  return readFileSync(path, "utf8");
+}
 
 /** "Code Reviewer 🐛" → "code-reviewer": the @handle used to mention an agent. */
 function toHandle(text: string): string {
@@ -86,6 +94,8 @@ export class Orchestrator {
   readonly #jobs: Jobs;
   /** One real browser tab per thread, shared by its agent's browser tools and the Browser panel. */
   readonly browser = new BrowserHub();
+  /** Pages and reports agents make here, plus your claude.ai artifacts. */
+  readonly artifacts: Artifacts;
   /** Hooks for a run that a team task is waiting on (to time it out and map its approvals). */
   readonly #runHooks = new Map<string, (homeThreadId: string, runId: string) => void>();
 
@@ -119,6 +129,8 @@ export class Orchestrator {
       },
     });
     this.#jobs.start();
+    this.artifacts = new Artifacts(store);
+    this.artifacts.start();
   }
 
   async dispatch(command: Command): Promise<unknown> {
@@ -295,6 +307,20 @@ export class Orchestrator {
         this.#store.commit(`lesson:${lesson.id}`, [{ type: "lesson.upserted", lesson: next }]);
         return { ok: true };
       }
+      case "artifact.delete":
+        this.artifacts.delete(command.artifactId);
+        return { ok: true };
+      case "artifacts.sync": {
+        const r = await this.artifacts.sync();
+        if (!r.ok) throw new CommandError(r.error ?? "Couldn't reach claude.ai.");
+        return r;
+      }
+      case "artifact.fetch":
+        try {
+          return { artifact: await this.artifacts.fetch(command.artifactId) };
+        } catch (err) {
+          throw new CommandError((err as Error).message);
+        }
       case "lesson.delete":
         this.#store.commit(`lesson:${command.lessonId}`, [{ type: "lesson.deleted", lessonId: command.lessonId }]);
         return { ok: true };
@@ -306,6 +332,7 @@ export class Orchestrator {
         }
         if (command.briefingEnabled !== undefined) events.push({ type: "setting.upserted", key: "briefing.enabled", value: command.briefingEnabled });
         if (command.notifications !== undefined) events.push({ type: "setting.upserted", key: "notifications", value: command.notifications });
+        if (command.claudeArtifacts !== undefined) events.push({ type: "setting.upserted", key: "artifacts.claude", value: command.claudeArtifacts });
         this.#store.commit("settings", events);
         return { ok: true };
       }
@@ -389,6 +416,7 @@ export class Orchestrator {
 
   shutdown() {
     void this.browser.shutdown();
+    this.artifacts.stop();
     this.#jobs.stop();
     this.#team.stop();
     for (const s of this.#sessions.values()) s.close();
@@ -784,6 +812,7 @@ export class Orchestrator {
     return [
       ...leadTools,
       ...this.#threadTools(threadId),
+      ...this.#artifactTools(threadId),
       ...this.#browserTools(threadId),
       {
         name: "propose_lesson",
@@ -977,6 +1006,102 @@ export class Orchestrator {
             },
           ]);
           return { text: "Proposed. The person will open it with one click; tell them briefly." };
+        },
+      },
+    ];
+  }
+
+  /** Artifacts: agents publish pages and reports to the person's Artifacts list (and read the ones there). */
+  #artifactTools(threadId: string): HarnessTool[] {
+    const posted = (a: { id: string; title: string; version: number }, verb: string) => {
+      const t = this.#store.getThread(threadId);
+      const id = randomUUID();
+      this.#store.commit(threadId, [
+        {
+          type: "turn-item.upserted",
+          item: { id: `note:${id}`, threadId, runId: t?.activeRunId ?? `note:${id}`, kind: "note", text: `${verb} the artifact **${a.title}**${a.version > 1 ? ` (version ${a.version})` : ""}.`, action: { kind: "open_artifact", artifactId: a.id } },
+        },
+      ]);
+    };
+    const line = (a: { id: string; title: string; source: string; kind: string; version: number; updatedAt: string }) =>
+      `${a.id.slice(0, 8)}  ${a.source === "claude" ? "claude.ai" : "bullpen"}  ${a.kind}${a.version ? ` v${a.version}` : ""}  "${a.title}"  ${a.updatedAt.slice(0, 10)}`;
+    return [
+      {
+        name: "create_artifact",
+        description:
+          "Publish a page for the person: an HTML page (report, dashboard, diagram, prototype, slides) or a Markdown document. It appears in their Artifacts list and opens beside the chat. " +
+          "Make HTML self-contained (inline CSS/JS; libraries only from a CDN). Use this for anything they'll look at rather than files for the project.",
+        params: {
+          title: { description: "Short name, e.g. 'Q3 latency report'." },
+          content: { description: "The full HTML page or Markdown text. Or leave empty and pass file.", optional: true },
+          file: { description: "Absolute path of an .html or .md file you wrote, instead of content.", optional: true },
+          description: { description: "One sentence on what it is.", optional: true },
+        },
+        run: async (a) => {
+          try {
+            const content = a.content?.trim() ? a.content : a.file ? readText(a.file) : "";
+            if (!content.trim()) return { isError: true, text: "Pass content or file." };
+            const t = this.#requireThread(threadId);
+            const art = this.artifacts.create({
+              title: a.title ?? "",
+              content,
+              kind: a.file?.endsWith(".md") ? "markdown" : undefined,
+              description: a.description,
+              threadId,
+              agentId: t.agentId,
+              project: this.#projectOf(threadId),
+            });
+            posted(art, "Made");
+            return { text: `Published as artifact ${art.id.slice(0, 8)} ("${art.title}"). Update it with update_artifact; tell the person it's in Artifacts.` };
+          } catch (err) {
+            return { isError: true, text: (err as Error).message };
+          }
+        },
+      },
+      {
+        name: "update_artifact",
+        description: "Replace an artifact's content with a new version (the old ones are kept).",
+        params: {
+          artifact: { description: "Its id (or first 8 characters)." },
+          content: { description: "The full new content. Or pass file.", optional: true },
+          file: { description: "Absolute path of the new .html or .md file.", optional: true },
+          title: { description: "New title, if it changes.", optional: true },
+        },
+        run: async (a) => {
+          try {
+            const content = a.content?.trim() ? a.content : a.file ? readText(a.file) : "";
+            if (!content.trim()) return { isError: true, text: "Pass content or file." };
+            const art = this.artifacts.update(a.artifact ?? "", content, a.title);
+            posted(art, "Updated");
+            return { text: `Artifact ${art.id.slice(0, 8)} is now version ${art.version}.` };
+          } catch (err) {
+            return { isError: true, text: (err as Error).message };
+          }
+        },
+      },
+      {
+        name: "list_artifacts",
+        description: "List the person's artifacts: ones made in Bullpen and ones from their claude.ai account.",
+        params: { search: { description: "Only titles containing this.", optional: true } },
+        run: async ({ search }) => {
+          const q = (search ?? "").toLowerCase();
+          const list = this.#store.listArtifacts().filter((x) => !q || x.title.toLowerCase().includes(q)).slice(0, 40);
+          return { text: list.map(line).join("\n") || "(no artifacts)" };
+        },
+      },
+      {
+        name: "read_artifact",
+        description: "Read an artifact's content (HTML or Markdown). claude.ai artifacts must be copied into Bullpen first (the person can do that from Artifacts).",
+        params: { artifact: { description: "Its id (or first 8 characters)." } },
+        run: async ({ artifact }) => {
+          try {
+            const { artifact: x, content, version } = this.artifacts.content(artifact ?? "");
+            const clipped = content.length > 60_000 ? `${content.slice(0, 60_000)}\n…[truncated]` : content;
+            return { text: `${line(x)} (showing version ${version})\n\n${clipped}` };
+          } catch (err) {
+            const x = this.#store.listArtifacts().find((y) => y.id.startsWith(artifact ?? "-"));
+            return { isError: true, text: x?.url ? `${(err as Error).message} It's on claude.ai at ${x.url}.` : (err as Error).message };
+          }
         },
       },
     ];

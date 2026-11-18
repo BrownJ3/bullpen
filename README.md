@@ -230,6 +230,21 @@ Implement `ProviderAdapter` from `src/types.ts`: `openSession()` returns `startT
 `respondToRuntimeRequest` and `close`, and calls `emit()` with `turn_item.updated` / `turn.terminal` /
 `native_session.updated`. Register it in `server.ts`. `codex.ts` is the template for any agent that speaks JSON-RPC over stdio (e.g. ACP agents).
 
+## Artifacts
+
+**Artifacts** in the sidebar lists pages, reports and diagrams from two places:
+
+- **Made here:** any agent can publish one with `create_artifact` (an HTML page or Markdown) and revise it with
+  `update_artifact`; every version is kept in `~/.bullpen/artifacts/`. Ask for "an artifact" and it appears in the
+  chat with an Open button. Pages run sandboxed in their own origin, so their scripts can't reach Bullpen.
+- **Your claude.ai artifacts:** pulled in every 30 minutes (and on **Sync with claude.ai**) through Claude Code's own
+  Artifact tool, with your Claude Code sign-in: a tiny headless session (Haiku, a few thousand tokens) lists them.
+  Turn it off with **Pull from claude.ai**. **Copy into Bullpen** brings a page you own here, so you can view it
+  locally and agents can read it (`read_artifact`); features that need claude.ai itself (saved data) won't work
+  in the copy.
+
+Agents also get `list_artifacts` and `read_artifact`.
+
 ## Branches, reliability, tools and reach (closing the gap with T3)
 
 - **Branches (worktrees).** Start a thread "On a new branch", or move one with the branch button in its top bar. It

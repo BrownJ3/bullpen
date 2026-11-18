@@ -3,7 +3,7 @@
 // subscribers. Events are full-row upserts, so the projector is a trivial switch.
 
 import { DatabaseSync } from "node:sqlite";
-import type { Agent, Checkpoint, Goal, Job, JobRun, Lesson, Project, TeamTask, DomainEvent, Run, StoredEvent, Thread, TurnItem } from "./types.ts";
+import type { Agent, Artifact, Checkpoint, Goal, Job, JobRun, Lesson, Project, TeamTask, DomainEvent, Run, StoredEvent, Thread, TurnItem } from "./types.ts";
 
 type Listener = (event: StoredEvent) => void;
 
@@ -50,6 +50,7 @@ export class Store {
       );
       CREATE INDEX IF NOT EXISTS job_runs_job ON job_runs(job_id, started_at);
       CREATE TABLE IF NOT EXISTS lessons (id TEXT PRIMARY KEY, payload_json TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY, payload_json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS goals (
         id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, status TEXT NOT NULL, payload_json TEXT NOT NULL
@@ -176,6 +177,13 @@ export class Store {
           )
           .run(event.run.id, event.run.jobId, event.run.startedAt, JSON.stringify(event.run));
         return;
+      case "artifact.upserted":
+        this.#db.prepare(`INSERT INTO artifacts (id, payload_json) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload_json = excluded.payload_json`)
+          .run(event.artifact.id, JSON.stringify(event.artifact));
+        return;
+      case "artifact.deleted":
+        this.#db.prepare("DELETE FROM artifacts WHERE id = ?").run(event.artifactId);
+        return;
       case "lesson.upserted":
         this.#db.prepare(`INSERT INTO lessons (id, payload_json) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload_json = excluded.payload_json`)
           .run(event.lesson.id, JSON.stringify(event.lesson));
@@ -236,6 +244,14 @@ export class Store {
 
   listLessons(): Lesson[] {
     return this.#rows<Lesson>("SELECT payload_json FROM lessons").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  listArtifacts(): Artifact[] {
+    return this.#rows<Artifact>("SELECT payload_json FROM artifacts").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  getArtifact(id: string): Artifact | undefined {
+    return this.#rows<Artifact>("SELECT payload_json FROM artifacts WHERE id = ?", id)[0];
   }
 
   getLesson(id: string): Lesson | undefined {
