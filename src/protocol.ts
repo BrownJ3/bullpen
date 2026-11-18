@@ -45,6 +45,8 @@ export type Request =
   | { id: number; method: "browser.close"; params: { threadId: string } }
   | { id: number; method: "remote.info"; params?: undefined }
   | { id: number; method: "listEngines"; params?: undefined }
+  | { id: number; method: "version"; params?: undefined }
+  | { id: number; method: "update.run"; params?: undefined }
   | { id: number; method: "jobRuns"; params: { jobId: string } }
   | { id: number; method: "createFolder"; params: { parent: string; name: string; git: boolean } }
   /** Threads, agents and pending approvals, then live thread/agent/approval events across all threads. */

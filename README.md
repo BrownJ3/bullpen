@@ -5,6 +5,33 @@ A home for long-running coding agents you can call into any problem. Built on th
 It drives Claude Code (through the Claude Agent SDK) or Codex (through `codex app-server`), stores everything as events in SQLite, snapshots your
 repo into hidden git refs every turn, and talks to clients over a local WebSocket.
 
+## Install
+
+On a Mac (or Linux), one line. It gets Node 24 if you don't have it (a private copy in `~/.bullpen/node`, checked
+against nodejs.org's checksums), puts Bullpen in `~/.bullpen/app` at the newest release, starts it at login, adds the
+`bullpen` command and a Bullpen app, and opens it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/BrownJ3/bullpen/main/install.sh | sh
+```
+
+While the repository is private, people you've given access sign in with the GitHub CLI and use:
+
+```bash
+gh auth login
+gh api repos/BrownJ3/bullpen/contents/install.sh -H "Accept: application/vnd.github.raw" | sh
+```
+
+Bullpen drives Claude Code and/or Codex with your existing sign-ins; the installer says how to get them if missing.
+Update with `bullpen update`, or the "Update to …" button that appears in the sidebar when a new release is out
+(`bullpen version` shows what you have). A checkout on a branch (like this development copy) follows its branch
+instead of releases.
+
+**Releasing a version:** bump `version` in `package.json`, commit, then `git tag v0.2.0 && git push origin main --tags`.
+Installs pick up the newest `v*` tag.
+
+## Develop
+
 Requires Node 24+ (runs `.ts` directly, no build) and a logged-in `claude` and/or `codex` CLI; it uses your existing logins.
 The Codex binary is found via `BULLPEN_CODEX_BIN`, then `PATH`, then the copy T3 Code downloads to `~/.t3/tools/codex`.
 
@@ -13,7 +40,7 @@ npm install
 npm run install-app            # once: starts at login, adds `bullpen` to your PATH and a bullpen app
 
 bullpen                   # open the web UI (starts the server if needed), from any folder
-bullpen stop              # also: start, restart, status, logs, uninstall
+bullpen stop              # also: start, restart, status, logs, update, version, remote, uninstall
 ```
 
 Without `install-app`, `npm run open` / `npm run stop` do the same from this folder. The web UI has a

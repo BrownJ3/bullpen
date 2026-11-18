@@ -638,6 +638,8 @@ button:focus-visible, [role="button"]:focus-visible { outline: 2px solid color-m
 .app.side-hidden { grid-template-columns: 0 1fr; }
 .app.side-hidden .sidebar { visibility: hidden; border-right: 0; overflow: hidden; }
 .brand { padding: 13px 16px 8px; }
+.update-pill { margin: 0 14px 8px; border: 0; border-radius: 8px; padding: 6px 10px; font-size: 12.5px; font-weight: 600; background: var(--primary); color: var(--on-primary); text-align: left; }
+.update-pill[hidden] { display: none; }
 .side-new { display: flex; gap: 6px; margin: 4px 14px 8px; }
 .new-chat { flex: 1; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 9px; border: 0; background: var(--primary); color: var(--on-primary); font-size: 13.5px; font-weight: 600; text-align: left; transition: filter 0.12s; }
 .new-chat:hover { filter: brightness(1.12); }
@@ -1017,6 +1019,7 @@ button.hrow:hover { background: var(--hover); }
         <button class="icon-btn" id="new-thread" title="Add or create a project" aria-label="Add or create a project" data-icon="plus" data-size="15"></button></span></div>
       <div id="threads"></div>
     </div>
+    <button class="update-pill" id="update-pill" hidden type="button"></button>
     <div class="side-foot"><span><span class="conn" id="conn" title="disconnected"></span><span id="conn-text">Connecting…</span></span><select class="palette-pick" id="palette-pick" title="Colour theme" aria-label="Colour theme">
       <option value="harbor">Harbor</option><option value="night">Night</option><option value="paper">Paper</option><option value="graphite">Graphite</option>
     </select><button class="icon-btn" id="remote-btn" title="Use Bullpen from your phone or another computer" aria-label="Use from another device" data-icon="phone" data-size="14"></button><button class="icon-btn" id="stop-server" title="Stop the Bullpen server" aria-label="Stop the Bullpen server" data-icon="power" data-size="14"></button></div>
@@ -1476,6 +1479,7 @@ function connect() {
     subs.clear();
     resetTerminalViews(); // their subscriptions died with the old connection
     try { ENGINES = await call("listEngines"); } catch {}
+    checkForUpdate();
     await loadSidebar();
     if (state.threadId) openThread(state.threadId, true);
     else if (state.view === "inbox") renderInbox();
@@ -3377,6 +3381,21 @@ async function showDiff(from, to) {
     $("diff-dialog").showModal();
   } catch (err) { fail(err); }
 }
+// ---------- updates: a small notice when a newer release is out ----------
+async function checkForUpdate() {
+  let v; try { v = await call("version"); } catch { return; }
+  const pill = $("update-pill");
+  pill.hidden = !v.updateAvailable;
+  if (!v.updateAvailable) return;
+  pill.textContent = `Update to ${v.latest}`;
+  pill.title = `You have v${v.current}. Updating takes a few seconds and restarts Bullpen; running agents are resumed.`;
+  pill.onclick = async () => {
+    if (!confirm(`Update Bullpen to ${v.latest}? It restarts in a few seconds; work in progress picks back up.`)) return;
+    try { await call("update.run"); toast("Updating… Bullpen reconnects on its own."); pill.disabled = true; } catch (err) { fail(err); }
+  };
+}
+setInterval(() => { if (ws?.readyState === 1) checkForUpdate(); }, 6 * 3600_000);
+
 // ---------- use from another device ----------
 async function openRemote() {
   let info;

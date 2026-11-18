@@ -6,6 +6,8 @@
 //   bullpen restart
 //   bullpen status
 //   bullpen logs       follow the server log
+//   bullpen update     get the newest release (or pull, on a branch checkout) and restart
+//   bullpen version
 //   bullpen remote     use it from your phone or another computer (on [--lan] | off | ssh | reset)
 //   bullpen install    start at login, `bullpen` on your PATH, and a Bullpen app for Spotlight/Dock
 //   bullpen uninstall  undo install (keeps your threads and agents)
@@ -17,6 +19,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HOME, ensureHome, loadOrCreateToken } from "./home.ts";
 import { DEFAULT_PORT } from "./protocol.ts";
+import { compareVersions, currentVersion, latestRelease } from "./version.ts";
 import { deviceToken, pairingUrl, qrTerminal, readRemote, resetDeviceToken, resolveHost, sshCommand, writeRemote } from "./remote.ts";
 
 const PORT = Number(process.env.BULLPEN_PORT ?? DEFAULT_PORT);
@@ -134,8 +137,65 @@ function xml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+function linkCommand() {
+  mkdirSync(dirname(BIN_LINK), { recursive: true });
+  try {
+    if (lstatSync(BIN_LINK)) unlinkSync(BIN_LINK);
+  } catch {}
+  symlinkSync(join(ROOT, "bin", "bullpen"), BIN_LINK);
+}
+
+/** Get the newest release (or the latest on this branch), reinstall dependencies if they changed, restart. */
+async function update(): Promise<boolean> {
+  const git = (...args: string[]) => execFileSync("git", ["-C", ROOT, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  try {
+    git("rev-parse", "--git-dir");
+  } catch {
+    say("This copy of Bullpen isn't a git checkout, so it can't update itself. Reinstall with the install script.");
+    return false;
+  }
+  if (git("status", "--porcelain", "--untracked-files=no")) {
+    say(`${ROOT} has local changes; commit or stash them first (it's a development copy).`);
+    return false;
+  }
+  const before = git("rev-parse", "HEAD");
+  const lockBefore = git("rev-parse", "HEAD:package-lock.json");
+  const cur = currentVersion();
+  say("Checking for updates…");
+  git("fetch", "--quiet", "--tags", "origin");
+  if (cur.branch) {
+    git("merge", "--quiet", "--ff-only", `origin/${cur.branch}`);
+  } else {
+    const latest = await latestRelease(true);
+    if (!latest || compareVersions(latest, `v${cur.version}`) <= 0) {
+      say(`Up to date (${cur.describe}).`);
+      return true;
+    }
+    git("checkout", "--quiet", latest);
+  }
+  const after = git("rev-parse", "HEAD");
+  if (after === before) {
+    say(`Up to date (${currentVersion().describe}).`);
+    return true;
+  }
+  if (git("rev-parse", "HEAD:package-lock.json") !== lockBefore) {
+    say("Installing updated dependencies…");
+    const npm = join(dirname(NODE), "npm");
+    execFileSync(existsSync(npm) ? npm : "npm", ["ci", "--omit=dev", "--no-audit", "--no-fund", "--loglevel=error"], { cwd: ROOT, stdio: "inherit" });
+  }
+  // The new version's own install step (service file, app) and a restart onto the new code.
+  execFileSync(NODE, [join(ROOT, "src", "cli.ts"), "_after-update"], { stdio: "inherit" });
+  say(`Updated to ${currentVersion().describe}.`);
+  return true;
+}
+
 function install() {
-  if (process.platform !== "darwin") throw new Error("install is macOS-only; use `bullpen start` elsewhere.");
+  if (process.platform !== "darwin") {
+    // No launchd: just the command. Start it with `bullpen start` (or your own systemd unit).
+    ensureHome();
+    linkCommand();
+    return Promise.resolve(true);
+  }
   ensureHome();
   // The agents need `claude` and `codex` on PATH; launchd starts with almost none.
   const path = [dirname(NODE), join(homedir(), ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(":");
@@ -169,11 +229,7 @@ function install() {
   );
 
   // `bullpen` on PATH (~/.local/bin is where the claude CLI lives too).
-  mkdirSync(dirname(BIN_LINK), { recursive: true });
-  try {
-    if (lstatSync(BIN_LINK)) unlinkSync(BIN_LINK);
-  } catch {}
-  symlinkSync(join(ROOT, "bin", "bullpen"), BIN_LINK);
+  linkCommand();
 
   // A tiny app so it opens from Spotlight, Launchpad or the Dock.
   rmSync(APP, { recursive: true, force: true });
@@ -296,6 +352,26 @@ switch (cmd) {
     uninstall();
     say("Removed the login service, the command and the app. Your threads and agents are kept in " + HOME);
     break;
+  case "update":
+    if (!(await update())) process.exit(1);
+    break;
+  case "_after-update": {
+    // Run by `update` with the new code: refresh the service/app, then restart onto it.
+    const wasRunning = await running();
+    // Only touch the login service if it runs this copy (another checkout may own it).
+    const mine = serviceInstalled() && readFileSync(PLIST, "utf8").includes(`<string>${xml(ROOT)}</string>`);
+    if (mine) await install(); // rewrites the service and restarts it on the new code
+    else if (wasRunning) await stop();
+    if (wasRunning || mine) await start();
+    break;
+  }
+  case "version": {
+    const v = currentVersion();
+    say(`Bullpen ${v.describe}${v.branch ? ` (branch ${v.branch})` : ""}`);
+    const latest = await latestRelease(true);
+    if (!v.branch && latest && compareVersions(latest, `v${v.version}`) > 0) say(`${latest} is available: run \`bullpen update\`.`);
+    break;
+  }
   case "remote": {
     const sub = process.argv[3] ?? "status";
     const cfg = readRemote();
@@ -360,6 +436,6 @@ switch (cmd) {
     break;
   }
   default:
-    say("usage: bullpen [open|start|stop|restart|status|logs|install|uninstall|remote]");
+    say("usage: bullpen [open|start|stop|restart|status|logs|update|version|install|uninstall|remote]");
     process.exit(1);
 }

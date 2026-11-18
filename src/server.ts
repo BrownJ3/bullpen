@@ -37,6 +37,11 @@ import {
 import { listEntries, previewFile, revealFile } from "./files.ts";
 import { devScripts, localServers, startStaticPreview, staticEntry } from "./preview.ts";
 import { Store } from "./store.ts";
+import { ROOT as APP_ROOT, updateInfo } from "./version.ts";
+import { spawn } from "node:child_process";
+import { openSync, closeSync } from "node:fs";
+import { join as joinPath } from "node:path";
+import { HOME as DATA_HOME } from "./home.ts";
 import { deviceToken, pairingUrl, qrSvg, readRemote, resolveHost, sshCommand } from "./remote.ts";
 import { TerminalManager } from "./terminals.ts";
 import { workdirOf, type StoredEvent } from "./types.ts";
@@ -338,6 +343,16 @@ wss.on("connection", (socket: WebSocket) => {
       case "browser.close":
         await orchestrator.browser.close(String((req.params as { threadId: string }).threadId));
         return { ok: true };
+      case "version":
+        return updateInfo();
+      case "update.run": {
+        // Runs `bullpen update` on its own: it restarts this server onto the new version.
+        const log = openSync(joinPath(DATA_HOME, "update.log"), "a");
+        const child = spawn(process.execPath, [joinPath(APP_ROOT, "src", "cli.ts"), "update"], { cwd: APP_ROOT, detached: true, stdio: ["ignore", log, log] });
+        closeSync(log);
+        child.unref();
+        return { ok: true };
+      }
       case "listEngines":
         return ENGINES;
       case "remote.info": {
