@@ -1,5 +1,7 @@
 # Bullpen
 
+**Install (macOS or Linux):** `curl -fsSL https://raw.githubusercontent.com/BrownJ3/bullpen/main/install.sh | sh`
+
 A home for long-running coding agents you can call into any problem. Built on the architecture of T3 Code
 (see `docs/t3code-harness-architecture.md`).
 It drives Claude Code (through the Claude Agent SDK) or Codex (through `codex app-server`), stores everything as events in SQLite, snapshots your
@@ -14,24 +16,6 @@ against nodejs.org's checksums), puts Bullpen in `~/.bullpen/app` at the newest 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/BrownJ3/bullpen/main/install.sh | sh
 ```
-
-While the repository is private, people you've given access use one of these.
-
-With the GitHub CLI (`brew install gh`, then `gh auth login`):
-
-```bash
-gh api repos/BrownJ3/bullpen/contents/install.sh -H "Accept: application/vnd.github.raw" | sh
-```
-
-Without it, if git can already sign in to GitHub (GitHub Desktop or an earlier clone on that Mac, or an SSH key on
-GitHub; use `git@github.com:BrownJ3/bullpen.git` then):
-
-```bash
-git clone https://github.com/BrownJ3/bullpen.git ~/.bullpen/app && sh ~/.bullpen/app/install.sh
-```
-
-The installer itself tries HTTPS, then SSH, then the GitHub CLI, then asks for a username and personal access token,
-and says what to do if none work.
 
 Bullpen drives Claude Code and/or Codex with your existing sign-ins; the installer says how to get them if missing.
 Update with `bullpen update`, or the "Update to …" button that appears in the sidebar when a new release is out
@@ -288,3 +272,7 @@ this server's own origin (blocks other web pages). With remote access on, it als
 Tailscale or LAN address and accepts the separate device token (`~/.bullpen/device-token`). Agents' browser tools
 can reach any site without asking. The agent can run commands in the thread's
 directory, so keep `approval-required` (the default) unless you trust the task.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

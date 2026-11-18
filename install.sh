@@ -2,17 +2,15 @@
 # Bullpen installer.
 #
 #   curl -fsSL https://raw.githubusercontent.com/BrownJ3/bullpen/main/install.sh | sh
-#   (private repo, with the GitHub CLI:)  gh api repos/BrownJ3/bullpen/contents/install.sh -H "Accept: application/vnd.github.raw" | sh
-#   (private repo, with plain git:)       git clone https://github.com/BrownJ3/bullpen.git ~/.bullpen/app && sh ~/.bullpen/app/install.sh
 #
 # What it does: makes sure Node 24+ is available (installs a private copy in ~/.bullpen/node if not), downloads
 # Bullpen to ~/.bullpen/app at the latest release, installs its dependencies, sets it to start at login with a
 # `bullpen` command and a Bullpen app, and opens it. Run it again any time; it updates in place.
 #
 # Options (environment variables):
-#   BULLPEN_DIR=…        where to put the app (default ~/.bullpen/app)
-#   BULLPEN_REPO=…       git URL to install from (default https://github.com/BrownJ3/bullpen.git)
-#   BULLPEN_REF=…        branch or tag to install (default: the newest release tag, else the default branch)
+#   BULLPEN_DIR=...        where to put the app (default ~/.bullpen/app)
+#   BULLPEN_REPO=...       git URL to install from (default https://github.com/BrownJ3/bullpen.git)
+#   BULLPEN_REF=...        branch or tag to install (default: the newest release tag, else the default branch)
 #   BULLPEN_NO_SERVICE=1 don't set up start-at-login or open the UI (for testing)
 
 set -eu
@@ -54,7 +52,7 @@ elif command -v node >/dev/null 2>&1 && node_ok "$(command -v node)"; then
   NODE="$(command -v node)"
 fi
 if [ -z "$NODE" ]; then
-  info "Node $NODE_MAJOR isn't installed; getting a private copy for Bullpen (in $NODE_DIR)…"
+  info "Node $NODE_MAJOR isn't installed; getting a private copy for Bullpen (in $NODE_DIR)..."
   command -v curl >/dev/null 2>&1 || die "curl is missing."
   BASE="https://nodejs.org/dist/latest-v$NODE_MAJOR.x"
   TMP="$(mktemp -d)"
@@ -106,11 +104,11 @@ clone() {
 }
 
 if [ -d "$DIR/.git" ]; then
-  info "Updating $DIR…"
+  info "Updating ${DIR}..."
   git -C "$DIR" fetch --quiet --tags origin
 else
   mkdir -p "$(dirname "$DIR")"
-  info "Downloading Bullpen to $DIR…"
+  info "Downloading Bullpen to ${DIR}..."
   clone "$DIR"
 fi
 
@@ -127,7 +125,7 @@ else
 fi
 info "Version $(git -C "$DIR" describe --tags --always)"
 
-info "Installing dependencies…"
+info "Installing dependencies..."
 (cd "$DIR" && npm ci --omit=dev --no-audit --no-fund --no-update-notifier --loglevel=error) || die "npm install failed (see above). On a Mac without Apple's command-line tools, run: xcode-select --install"
 
 # ---------------------------------------------------------------- engines
