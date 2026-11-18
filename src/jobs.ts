@@ -382,6 +382,11 @@ export class Jobs {
     if (t < due) return;
     const last = this.#store.getSetting<string | null>("briefing.lastAt", null);
     if (last && Date.parse(last) >= due.getTime()) return;
+    if (!last && !this.#store.jobRunsSince(new Date(0).toISOString()).length) {
+      // A fresh install: nothing has run yet, so start the clock quietly instead of announcing an empty briefing.
+      this.#store.commit("settings", [{ type: "setting.upserted", key: "briefing.lastAt", value: t.toISOString() }]);
+      return;
+    }
     const b = this.briefing(last ?? undefined);
     this.#store.commit("settings", [
       { type: "setting.upserted", key: "briefing.latest", value: b },

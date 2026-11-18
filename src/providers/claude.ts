@@ -112,6 +112,8 @@ class ClaudeSession implements ProviderSession {
   readonly #baseMode: PermissionMode;
   /** The current turn is a team task: edits in the project and safe commands don't need approval. */
   #teamTurn = false;
+  #allowAll = false;
+  #currentMode: PermissionMode = "default";
   readonly #ownFolder: string | undefined;
   #sessionId: string | undefined;
   /** Project folder added for the current turn (consults run in the caller's project). */
@@ -141,6 +143,7 @@ class ClaudeSession implements ProviderSession {
     this.#threadId = input.threadId;
     this.#cwd = input.cwd;
     this.#baseMode = permissionModeFor(input.runtimeMode);
+    this.#currentMode = this.#baseMode;
     this.#ownFolder = input.ownFolder;
     this.#sessionId = input.resumeNativeSessionId;
     this.#options = {
@@ -159,7 +162,7 @@ class ClaudeSession implements ProviderSession {
           }
         : {}),
       canUseTool: (toolName, toolInput, { signal, suggestions }) =>
-        this.#teamAllows(toolName, toolInput)
+        this.#allowAll || this.#teamAllows(toolName, toolInput)
           ? Promise.resolve<PermissionResult>({ behavior: "allow", updatedInput: toolInput })
           : this.#askPermission(toolName, toolInput, signal).then((decision): PermissionResult => {
           switch (decision) {
@@ -194,7 +197,7 @@ class ClaudeSession implements ProviderSession {
     void this.#pump(this.#query);
   }
 
-  startTurn({ runId, text, workdir, team }: { runId: string; text: string; workdir?: string; team?: boolean }) {
+  startTurn({ runId, text, workdir, team, mode }: { runId: string; text: string; workdir?: string; team?: boolean; mode?: RuntimeMode }) {
     const extra = workdir && workdir !== this.#cwd ? workdir : undefined;
     if (extra !== this.#extraDir) {
       // Between turns, so nothing is in flight: reopen on the same conversation with the new folder.
@@ -202,20 +205,24 @@ class ClaudeSession implements ProviderSession {
       this.#input.close();
       this.#query.close();
       this.#open();
+      this.#currentMode = this.#baseMode; // a fresh query starts on the session's own setting
     }
     this.#runId = runId;
     this.#interruptRequested = false;
-    const wasTeam = this.#teamTurn;
-    this.#teamTurn = Boolean(team);
+    // The project's level for this turn: "build automatically" runs like a team task (edits in the project,
+    // safe commands); "full access" allows every tool. Never switch into bypassPermissions mid-session.
+    this.#allowAll = mode === "full-access" && this.#baseMode !== "bypassPermissions";
+    this.#teamTurn = Boolean(team) || mode === "auto-accept-edits";
     const push = () =>
       this.#input.push({
         type: "user",
         message: { role: "user", content: text },
         parent_tool_use_id: null,
       } as SDKUserMessage);
-    // Team tasks auto-accept file edits; other turns go back to the agent's own setting.
-    const want: PermissionMode = this.#teamTurn && this.#baseMode === "default" ? "acceptEdits" : this.#baseMode;
-    if (this.#teamTurn !== wasTeam || want !== this.#baseMode) {
+    // Team tasks and projects that build automatically accept file edits; other turns use the session's own setting.
+    const want: PermissionMode = (this.#teamTurn || this.#allowAll) && this.#baseMode === "default" ? "acceptEdits" : this.#baseMode;
+    if (want !== this.#currentMode) {
+      this.#currentMode = want;
       this.#query.setPermissionMode(want).then(push, push);
     } else {
       push();
@@ -420,6 +427,7 @@ class ClaudeSession implements ProviderSession {
           runId,
           outcome,
           costUsd: message.total_cost_usd,
+          tokens: message.usage ? (message.usage.input_tokens ?? 0) + (message.usage.cache_creation_input_tokens ?? 0) + (message.usage.output_tokens ?? 0) : undefined,
           error: outcome === "failed" ? (message.subtype === "success" ? message.result : message.subtype) : undefined,
         });
         return;

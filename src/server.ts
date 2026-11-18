@@ -68,6 +68,7 @@ function threadRoot(threadId: string): string {
 const VENDOR: Record<string, { file: URL; type: string }> = {
   "/vendor/xterm.js": { file: new URL("../node_modules/@xterm/xterm/lib/xterm.js", import.meta.url), type: "text/javascript" },
   "/vendor/xterm.css": { file: new URL("../node_modules/@xterm/xterm/css/xterm.css", import.meta.url), type: "text/css" },
+  "/vendor/inter.woff2": { file: new URL("../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2", import.meta.url), type: "font/woff2" },
   "/vendor/addon-fit.js": { file: new URL("../node_modules/@xterm/addon-fit/lib/addon-fit.js", import.meta.url), type: "text/javascript" },
 };
 
@@ -109,7 +110,7 @@ const http = createServer((req, res) => {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
       "content-security-policy":
-        "default-src 'self'; img-src 'self' data:; frame-src http: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src ws://127.0.0.1:* ws://localhost:*",
+        "default-src 'self'; img-src 'self' data:; frame-src http: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src ws://127.0.0.1:* ws://localhost:*",
       "x-frame-options": "DENY",
     });
     res.end(readFileSync(UI_HTML));

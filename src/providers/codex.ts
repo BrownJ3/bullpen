@@ -195,7 +195,7 @@ class CodexSession implements ProviderSession {
     return id;
   }
 
-  startTurn({ runId, text, workdir, team }: { runId: string; text: string; workdir?: string; team?: boolean }) {
+  startTurn({ runId, text, workdir, team, mode }: { runId: string; text: string; workdir?: string; team?: boolean; mode?: RuntimeMode }) {
     this.#runId = runId;
     this.#turnId = undefined;
     this.#interruptRequested = false;
@@ -209,7 +209,7 @@ class CodexSession implements ProviderSession {
           // Sticky in Codex, so always say where (the caller's project, or the session's own folder)
           // and which rules apply: team tasks may write inside the project without asking.
           cwd: workdir ?? this.#cwd,
-          ...turnPolicy(this.#mode, workdir ?? this.#cwd, Boolean(team)),
+          ...turnPolicy(mode ?? this.#mode, workdir ?? this.#cwd, Boolean(team)),
         });
         this.#turnId ??= res.turn?.id;
         if (this.#interruptRequested) await this.#sendInterrupt();

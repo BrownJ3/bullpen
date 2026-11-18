@@ -44,6 +44,11 @@ export interface Project {
   createdAt: string;
   /** Last time you worked here outside Bullpen (newest Claude Code session), for ordering. */
   lastUsedAt?: string;
+  /**
+   * What every agent working here may do without asking. Applies to the project's own threads and to any agent
+   * pulled in (mentions, team tasks, jobs); an agent or thread set to more than this keeps its own setting.
+   */
+  runtimeMode?: RuntimeMode;
 }
 
 export interface Run {
@@ -53,6 +58,8 @@ export interface Run {
   status: "running" | "completed" | "interrupted" | "failed";
   error?: string;
   costUsd?: number;
+  /** Tokens this turn used against your plan (input incl. cache writes, plus output; cache reads not counted). */
+  tokens?: number;
   startedAt: string;
   endedAt?: string;
 }
@@ -331,7 +338,7 @@ export type Command =
     }
   | { type: "project.add"; path: string; title?: string }
   | { type: "project.import"; projects: Array<{ path: string; lastUsedAt?: string }> }
-  | { type: "project.update"; projectId: string; title?: string; pinned?: boolean; archived?: boolean }
+  | { type: "project.update"; projectId: string; title?: string; pinned?: boolean; archived?: boolean; runtimeMode?: RuntimeMode | null }
   /** Show/hide many projects at once (the project manager dialog). */
   | { type: "project.bulk"; archive: string[]; unarchive: string[] }
   /** Removes it from the sidebar; its threads and files are kept. */
@@ -411,6 +418,7 @@ export type AdapterEvent =
       outcome: "completed" | "interrupted" | "failed";
       error?: string;
       costUsd?: number;
+      tokens?: number;
     };
 
 /**
@@ -441,7 +449,8 @@ export interface OpenSessionInput {
 export interface ProviderSession {
   /** `workdir`: the project to work in this turn, when it isn't the session's own folder. */
   /** `team`: a team task, so edits inside the project and safe commands run without asking. */
-  startTurn(input: { runId: string; text: string; workdir?: string; team?: boolean }): void;
+  /** `mode`: the permission level for this turn (the project's, when it allows more than the session's own). */
+  startTurn(input: { runId: string; text: string; workdir?: string; team?: boolean; mode?: RuntimeMode }): void;
   interruptTurn(): Promise<void>;
   respondToRuntimeRequest(requestId: string, decision: Decision): boolean;
   close(): void;

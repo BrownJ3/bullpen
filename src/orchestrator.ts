@@ -14,6 +14,7 @@ import { Team, isLimitError, type ConsultOutcome } from "./team.ts";
 import * as checkpoints from "./checkpoints.ts";
 import { expandHome } from "./projects.ts";
 import type { Store } from "./store.ts";
+const MODE_RANK = { "approval-required": 0, "auto-accept-edits": 1, "full-access": 2 } as const;
 import type {
   AdapterEvent,
   Agent,
@@ -26,6 +27,7 @@ import type {
   ProviderAdapter,
   ProviderSession,
   Run,
+  RuntimeMode,
   Thread,
   TurnItem,
 } from "./types.ts";
@@ -156,6 +158,7 @@ export class Orchestrator {
         if (command.title !== undefined) next.title = command.title.trim() || project.title;
         if (command.pinned !== undefined) next.pinnedAt = command.pinned ? new Date().toISOString() : undefined;
         if (command.archived !== undefined) next.archivedAt = command.archived ? new Date().toISOString() : undefined;
+        if (command.runtimeMode !== undefined) next.runtimeMode = command.runtimeMode ?? undefined;
         this.#store.commit(`project:${project.id}`, [{ type: "project.upserted", project: next }]);
         return { ok: true };
       }
@@ -775,8 +778,14 @@ export class Orchestrator {
     this.#runChains.set(threadId, chain);
     if (project) this.#runProjects.set(threadId, project);
     else this.#runProjects.delete(threadId);
-    this.#session(threadId).startTurn({ runId: run.id, text: agentText, workdir: project, team });
+    this.#session(threadId).startTurn({ runId: run.id, text: agentText, workdir: project, team, mode: this.#turnMode(thread, project) });
     return { runId: run.id, ordinal };
+  }
+
+  /** The project's permission level reaches every agent working there; a thread or agent set higher keeps its own. */
+  #turnMode(thread: Thread, workdir?: string): RuntimeMode {
+    const projectMode = this.#store.getProjectByPath(workdir ?? thread.cwd)?.runtimeMode;
+    return projectMode && MODE_RANK[projectMode] > MODE_RANK[thread.runtimeMode] ? projectMode : thread.runtimeMode;
   }
 
   #session(threadId: string): ProviderSession {
@@ -833,7 +842,7 @@ export class Orchestrator {
     const events: DomainEvent[] = [
       {
         type: "run.upserted",
-        run: { ...run, status: event.outcome, error: event.error, costUsd: event.costUsd, endedAt: new Date().toISOString() },
+        run: { ...run, status: event.outcome, error: event.error, costUsd: event.costUsd, tokens: event.tokens, endedAt: new Date().toISOString() },
       },
     ];
     if (event.error) {
