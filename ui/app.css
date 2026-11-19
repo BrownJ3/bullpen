@@ -1103,6 +1103,8 @@ button.hrow:hover { background: var(--hover); }
 .dock-counts { padding: 0 12px 6px; font-size: 12px; }
 .team-line { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; }
 .team-line b { color: var(--text); font-weight: 600; }
+.team-line.quiet { border-style: dashed; background: transparent; }
+.team-line.quiet b { font-weight: 500; color: var(--muted); }
 .team-line > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .team-strip { display: flex; align-items: center; gap: 10px; width: 100%; margin-bottom: 8px; padding: 7px 12px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); font-size: 12.5px; text-align: left; }
 .team-strip.needs { border-color: var(--accent); }

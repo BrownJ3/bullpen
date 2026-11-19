@@ -624,10 +624,11 @@ function itemElInner(item) {
       // The card lives in the Team panel; the chat just marks where the team started (and how it's doing).
       const open = goalOpen(item);
       const done = item.tasks.filter((t) => t.status === "accepted").length;
-      return h("div", { ...base, class: "team-line" },
-        icon("users", 14), h("span", {}, h("b", {}, open ? "Team working: " : `Team ${GOAL_LABEL[item.status].toLowerCase()}: `), item.title),
-        h("span", { class: "faint" }, `${done}/${item.tasks.length} tasks done`),
-        h("button", { class: "link", onclick: () => { if (!ui.team) togglePanel("team"); } }, "Show team"));
+      // While it works, the live status is the strip above the message box (or the panel), not this line.
+      return h("div", { ...base, class: "team-line" + (open ? " quiet" : "") },
+        icon("users", 14), h("span", {}, h("b", {}, open ? "Team started: " : `Team ${GOAL_LABEL[item.status].toLowerCase()}: `), item.title),
+        open ? null : h("span", { class: "faint" }, `${done}/${item.tasks.length} tasks done`),
+        h("button", { class: "link", onclick: () => { if (!ui.team) togglePanel("team"); } }, open ? "Show team" : "See what they did"));
     }
     case "checkpoint":
       return h("div", { ...base, class: "checkpoint" },
