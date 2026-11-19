@@ -210,8 +210,59 @@ function attachMentions(input, composer, onSubmit) {
   });
 }
 
+/**
+ * Speak instead of typing: a mic button that dictates into the box (the browser's own speech recognition; in Safari
+ * and Chrome the audio goes to Apple's or Google's speech service). Click to start, click again or press Enter to stop.
+ * Hidden where the browser can't do it (Firefox, or a phone on plain http).
+ */
+let activeMic = null;
+function micButton(input) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR || !window.isSecureContext) return null;
+  const btn = h("button", { type: "button", class: "mic-btn", "aria-label": "Dictate", "data-tip": "Speak instead of typing", "data-tip-pos": "up" }, icon("mic", 16));
+  let rec = null, base = "", finalText = "", sent = false;
+  // stop(true): the message is being sent with what's in the box, so drop anything still arriving.
+  const stop = (sending = false) => { if (!rec) return; if (sending) { sent = true; rec.abort(); } else rec.stop(); };
+  const render = (interim) => {
+    const spoken = (finalText + interim).trim();
+    input.value = base + (base && spoken && !/\s$/.test(base) ? " " : "") + spoken;
+    input.dispatchEvent(new Event("input"));
+    input.scrollTop = input.scrollHeight;
+  };
+  btn.addEventListener("click", () => {
+    if (rec) { stop(); return; }
+    if (activeMic && activeMic !== stop) activeMic();
+    rec = new SR();
+    rec.continuous = true; rec.interimResults = true; rec.lang = navigator.language || "en-US";
+    base = input.value; finalText = ""; sent = false;
+    rec.onresult = (ev) => {
+      let interim = "";
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const r = ev.results[i];
+        if (r.isFinal) finalText += r[0].transcript + " "; else interim += r[0].transcript;
+      }
+      render(interim);
+    };
+    rec.onerror = (ev) => {
+      if (ev.error === "not-allowed" || ev.error === "service-not-allowed") toast("Microphone blocked. Allow it for this page in your browser's settings, then try again.", { error: true });
+      else if (ev.error === "no-speech") toast("Didn't hear anything.");
+      else if (ev.error !== "aborted") toast(`Dictation stopped: ${ev.error}`, { error: true });
+    };
+    rec.onend = () => { if (!sent) render(""); rec = null; activeMic = null; btn.classList.remove("on"); btn.dataset.tip = "Speak instead of typing"; input.focus(); };
+    try { rec.start(); } catch (err) { rec = null; fail(err); return; }
+    activeMic = stop;
+    btn.classList.add("on"); btn.dataset.tip = "Listening… click to stop";
+  });
+  // Sending or pressing Enter ends dictation, so the next message doesn't keep listening.
+  input.addEventListener("keydown", (ev) => { if (rec && ev.key === "Enter" && !ev.shiftKey) stop(true); });
+  return btn;
+}
+
 function setupComposer() {
   const input = $("input"), send = $("send");
+  const mic = micButton(input);
+  if (mic) $("mic-slot")?.replaceWith(mic);
+  send.addEventListener("click", () => activeMic?.(true), { capture: true });
   const submit = async () => {
     const text = input.value.trim(); if (!text) return;
     send.disabled = true;
@@ -831,7 +882,8 @@ function renderStart() {
   const moreBtn = h("button", { type: "button", class: "qbtn", onclick: () => more.classList.toggle("open") }, "Model");
   const go = h("button", { type: "button", class: "send-btn", "aria-label": "Start", "data-tip": "Start   ↵", "data-tip-pos": "end" }, icon("send", 16));
   const composer = h("div", { class: "composer" }, input,
-    h("div", { class: "start-bar" }, projectBtn, where, engine, mode, moreBtn, h("span", { class: "spacer" }), go), more);
+    h("div", { class: "start-bar" }, projectBtn, where, engine, mode, moreBtn, h("span", { class: "spacer" }), micButton(input), go), more);
+  go.addEventListener("click", () => activeMic?.(true), { capture: true });
 
   const submit = async () => {
     const text = input.value.trim();

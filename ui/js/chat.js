@@ -26,11 +26,15 @@ function renderMain() {
         h("div", { class: "transcript", id: "transcript" }, h("div", { class: "column", id: "column" })),
         h("div", { class: "composer-wrap" },
           h("div", { id: "team-dock" }),
-          h("div", { class: "composer", id: "composer" },
-            h("textarea", { id: "input", rows: 1, placeholder: "Message… type @ to bring in an agent" }),
-            h("button", { type: "button", class: "stop-btn", id: "stop", hidden: true, "aria-label": "Stop", "data-tip": "Stop the agent", "data-tip-pos": "up",
-              onclick: () => state.threadId && dispatch({ type: "run.interrupt", threadId: state.threadId }).catch(fail) }, icon("stop", 14)),
-            h("button", { type: "button", class: "send-btn", id: "send", "aria-label": "Send", "data-tip": "Send   ↵", "data-tip-pos": "up", disabled: true }, icon("send", 17))),
+          h("div", { class: "composer t3", id: "composer" },
+            h("textarea", { id: "input", rows: 1, placeholder: "Ask anything… type @ to bring in an agent" }),
+            h("div", { class: "composer-bar" },
+              h("div", { class: "composer-tools", id: "composer-tools" }),
+              h("span", { class: "spacer" }),
+              h("span", { id: "mic-slot" }),
+              h("button", { type: "button", class: "stop-btn", id: "stop", hidden: true, "aria-label": "Stop", "data-tip": "Stop the agent", "data-tip-pos": "up",
+                onclick: () => state.threadId && dispatch({ type: "run.interrupt", threadId: state.threadId }).catch(fail) }, icon("stop", 13)),
+              h("button", { type: "button", class: "send-btn", id: "send", "aria-label": "Send", "data-tip": "Send   ↵", "data-tip-pos": "up", disabled: true }, icon("send", 16)))),
           h("div", { class: "hint", id: "hint" })),
         h("div", { class: "drawer", id: "drawer", hidden: true })),
       h("aside", { class: "files", id: "files", hidden: true }),
@@ -71,9 +75,8 @@ function renderTopbar() {
   // One chip for where this chat works and what agents may do there; one menu for both.
   const accessItems = proj ? ["-", { header: `What agents may do in ${proj.title}` },
     ...Object.entries(MODE_INFO).map(([m, info]) => ({ icon: m === pmode ? "check" : info.icon, label: info.label, desc: info.desc, active: m === pmode, run: () => setProjectMode(proj, m) }))] : [];
-  const perm = null;
-  const branchBtn = proj ? h("button", { type: "button", class: "btn sm perm" + (t.worktree || pmode !== "approval-required" ? " on" : ""), "aria-haspopup": "menu",
-      "data-tip": `${t.worktree ? `Working in a separate copy (branch ${t.worktree.branch}); your folder isn't touched until you merge.` : "Working in your project folder."}\nAgents here: ${MODE_INFO[pmode].label.toLowerCase()}.`, "data-tip-pos": "end",
+  const branchBtn = proj ? h("button", { type: "button", class: "cbtn" + (t.worktree || pmode !== "approval-required" ? " on" : ""), "aria-haspopup": "menu",
+      "data-tip": `${t.worktree ? `Working in a separate copy (branch ${t.worktree.branch}); your folder isn't touched until you merge.` : "Working in your project folder."}\nAgents here: ${MODE_INFO[pmode].label.toLowerCase()}.`, "data-tip-pos": "up",
       onclick: (ev) => { ev.stopPropagation(); branchMenu(ev.currentTarget, t, accessItems); } },
     icon(t.worktree ? "branch" : "files", 14), t.worktree ? shortBranch(t.worktree.branch) : "Your folder",
     h("span", { class: "chip-sep" }, "·"), icon(MODE_INFO[pmode].icon, 13), MODE_SHORT[pmode], icon("chevdown", 12)) : null;
@@ -126,13 +129,20 @@ function renderTopbar() {
     h("div", { class: "tb-title" }, h("div", { class: "crumbs-row" }, ...crumbs), h("div", { class: "tb-sub", title: sub.filter(Boolean).join(" · ") }, sub.filter(Boolean).join("  ·  "))),
     status,
     h("span", { class: "spacer" }),
-    branchBtn,
-    perm,
     ...actions,
-    actions.length || perm ? h("span", { class: "vsep" }) : null,
+    actions.length ? h("span", { class: "vsep" }) : null,
     panels,
     ibtn("more", "More", (ev) => { ev.stopPropagation(); popMenu(ev.currentTarget, moreItems, "end"); }, { pos: "end" }),
-  ].filter(Boolean)); }
+  ].filter(Boolean));
+    // Like T3: what the agent runs on and what it may do sit under the message box, not in the title bar.
+    const tools = $("composer-tools");
+    if (tools) tools.replaceChildren(...[
+      h("span", { class: "cbtn static", "data-tip": agent ? `${agentLabel(agent)} runs on ${engine}${t.model ? ` (${t.model})` : ""}. Change it in the agent's settings.` : `This chat runs on ${engine}${t.model ? ` (${t.model})` : " with its default model"}.`, "data-tip-pos": "up" },
+        icon("bot", 14), h("span", { class: "tx" }, t.model || engine)),
+      branchBtn ? h("span", { class: "cbar-sep" }) : null,
+      branchBtn,
+    ].filter(Boolean));
+  }
   const hint = $("hint");
   if (hint) hint.textContent = agent
     ? `You're talking to ${agentLabel(agent)} directly. Its context carries over to every chat that calls it.`
@@ -153,7 +163,7 @@ async function branchMenu(anchor, t, extra = []) {
         try { toast("Making a separate copy…"); await dispatch({ type: "worktree.create", threadId: t.id }); toast("This chat now works in a separate copy, on its own branch."); } catch (err) { fail(err); }
       } },
       ...extra,
-    ], "end");
+    ]);
     return;
   }
   const wt = t.worktree;

@@ -56,6 +56,7 @@ const ICONS = {
   star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
   x: '<path d="M18 6 6 18M6 6l12 12"/>',
   send: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+  mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>',
   external: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
   home: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
   power: '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>',
@@ -180,7 +181,8 @@ function popMenu(anchor, items, align = "start") {
       it.sub ? h("span", { class: "ms" }, it.sub) : null, it.kbd ? kbd(it.kbd) : null)));
   document.body.append(m);
   const w = m.offsetWidth, hgt = m.offsetHeight;
-  m.style.top = `${Math.min(r.bottom + 6, innerHeight - hgt - 8)}px`;
+  // No room below (a button at the bottom, like the message box toolbar): open upward instead of covering it.
+  m.style.top = `${r.bottom + 6 + hgt > innerHeight - 8 && r.top - hgt - 6 >= 8 ? r.top - hgt - 6 : Math.min(r.bottom + 6, innerHeight - hgt - 8)}px`;
   m.style.left = `${align === "end" ? Math.max(8, r.right - w) : Math.max(8, Math.min(r.left, innerWidth - w - 8))}px`;
   m.style.maxHeight = `${innerHeight - 24}px`; m.style.overflowY = "auto";
   openMenu = m;

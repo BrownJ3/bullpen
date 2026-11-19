@@ -1108,3 +1108,23 @@ button.hrow:hover { background: var(--hover); }
 .team-strip.needs { border-color: var(--accent); }
 .team-strip .go { color: var(--primary); font-weight: 600; }
 @media (max-width: 760px) { .teampanel { position: fixed; z-index: 40; inset: 0; width: auto !important; border-left: 0; } }
+
+/* ---------- message box, T3 style: text on top, a quiet toolbar underneath, round send ---------- */
+.composer.t3 { flex-direction: column; align-items: stretch; gap: 0; padding: 0; border-radius: 20px; border-color: var(--line-strong); background: var(--panel); box-shadow: 0 1px 2px rgba(20, 33, 61, 0.05), 0 6px 20px -12px rgba(20, 33, 61, 0.18); }
+.composer.t3:focus-within { border-color: color-mix(in srgb, var(--primary) 45%, var(--line-strong)); }
+.composer.t3 textarea { padding: 14px 16px 6px; min-height: 52px; font-size: 14.5px; line-height: 1.5; }
+.composer-bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px 8px 10px; min-width: 0; }
+.composer-tools { display: flex; align-items: center; gap: 2px; min-width: 0; overflow: hidden; }
+.cbtn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 12.5px; white-space: nowrap; min-width: 0; }
+.cbtn .tx { overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+button.cbtn:hover { background: var(--hover); color: var(--text); }
+.cbtn.static { cursor: default; }
+.cbtn.on { color: var(--text); }
+.cbtn .chip-sep { color: var(--faint); }
+.cbar-sep { width: 1px; height: 14px; background: var(--line-strong); margin: 0 4px; flex: none; }
+.composer .send-btn, .composer .stop-btn { width: 32px; height: 32px; border-radius: 999px; }
+.mic-btn { flex: none; width: 32px; height: 32px; border-radius: 999px; border: 0; display: grid; place-items: center; background: transparent; color: var(--muted); transition: background 0.12s, color 0.12s; }
+.mic-btn:hover { background: var(--hover); color: var(--text); }
+.mic-btn.on { background: color-mix(in srgb, var(--danger, #e5484d) 14%, transparent); color: var(--danger, #e5484d); animation: mic-pulse 1.4s ease-in-out infinite; }
+@keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger, #e5484d) 35%, transparent); } 50% { box-shadow: 0 0 0 6px transparent; } }
+@media (prefers-reduced-motion: reduce) { .mic-btn.on { animation: none; } }
