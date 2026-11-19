@@ -15,8 +15,9 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { resolve, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { EDIT_TOOLS, isSafeCommand } from "../team-policy.ts";
+import { mainCheckoutOf } from "../worktrees.ts";
 import type {
   AdapterEvent,
   Decision,
@@ -166,8 +167,9 @@ class ClaudeSession implements ProviderSession {
             allowedTools: input.tools.map((t) => `mcp__harness__${t.name}`),
           }
         : {}),
-      canUseTool: (toolName, toolInput, { signal, suggestions }) =>
-        this.#allowAll || this.#teamAllows(toolName, toolInput)
+      canUseTool: (toolName, rawInput, { signal, suggestions }) => {
+        const toolInput = this.#intoWorktree(toolName, rawInput);
+        return this.#allowAll || this.#teamAllows(toolName, toolInput)
           ? Promise.resolve<PermissionResult>({ behavior: "allow", updatedInput: toolInput })
           : this.#askPermission(toolName, toolInput, signal).then((decision): PermissionResult => {
           switch (decision) {
@@ -180,7 +182,8 @@ class ClaudeSession implements ProviderSession {
             case "cancel":
               return { behavior: "deny", message: "The user cancelled the turn.", interrupt: true };
           }
-        }),
+        });
+      },
     };
     this.#open();
   }
@@ -235,6 +238,24 @@ class ClaudeSession implements ProviderSession {
     } else {
       push();
     }
+  }
+
+  /**
+   * Working in a worktree (its own copy of the project), an edit aimed at the same file in the main checkout belongs
+   * in the copy: agents often pick up the project's real path from a brief. Redirect it instead of asking.
+   */
+  #intoWorktree(tool: string, input: Record<string, unknown>): Record<string, unknown> {
+    if (!EDIT_TOOLS.has(tool)) return input;
+    const key = input.file_path !== undefined ? "file_path" : input.notebook_path !== undefined ? "notebook_path" : undefined;
+    if (!key) return input;
+    const root = this.#extraDir ?? this.#cwd;
+    const main = mainCheckoutOf(root);
+    if (!main || main === root) return input;
+    const abs = resolve(root, String(input[key]));
+    const strip = (p: string) => p.replace(/^\/private(?=\/(tmp|var)\/)/, "");
+    const [a, m] = [strip(abs), strip(main)];
+    if (!a.startsWith(m + sep)) return input;
+    return { ...input, [key]: join(root, a.slice(m.length + 1)) };
   }
 
   /** Team mode: edits inside the project folder and read-only/test/build commands run without asking. */

@@ -134,7 +134,7 @@ export type TurnItem = TurnItemBase &
         /** While running: what the agent is doing (live progress). */
         activity?: Activity;
       }
-    | { kind: "note"; text: string; progress?: boolean; action?: { kind: "open_pr"; title: string; body: string } | { kind: "open_artifact"; artifactId: string } }
+    | { kind: "note"; text: string; progress?: boolean; team?: boolean; agentId?: string; action?: { kind: "open_pr"; title: string; body: string } | { kind: "open_artifact"; artifactId: string } }
     | { kind: "error"; message: string }
     | ({ kind: "team_goal" } & GoalCard)
   );

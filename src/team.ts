@@ -747,7 +747,7 @@ export class Team {
             goal.id,
             resolving
               ? `${task.ref} (@${agent.name}: ${task.title}) resolved its merge conflicts and is merged in:\n${clip(res.text, 800)}`
-              : `${task.ref} (@${agent.name}: ${task.title}) finished and was accepted automatically:\n${clip(res.text, 1500)}`,
+              : `${task.ref} (@${agent.name}: ${task.title}) finished and was accepted automatically${task.workspace ? "; its changes are merged into the project folder" : ""}:\n${clip(res.text, 1500)}`,
           );
           this.#maybeWakeForFinish(goal.id);
         }
@@ -906,6 +906,7 @@ export class Team {
         "- Speed matters more than ceremony: every handoff costs a turn. If it's small or just a question, answer or do it yourself and don't create tasks.",
         `- Size tasks to about 10 minutes of work each (a task's run has a ${LIMITS.taskBudgetMs / 60_000}-minute budget; at the budget it wraps up and submits what's done plus what's left). A request with five parts is several tasks, not one.`,
         "- Prefer parallel tasks on separate files over one long chain: a single big task that everything else depends on makes the whole team wait.",
+        "- In briefs, give file paths relative to the project root: each teammate works in its own copy of the project, at a different path.",
         "- Open-ended goals ('keep improving until…', 'make it great'): first call set_goal_criteria with checkable criteria and a round limit, then run it in rounds: delegate a round, review, and next_round until the criteria are met.",
         "- Hand out each piece with the delegate tool: one owner per task, a self-contained brief (teammates can't see this conversation), the exact deliverable, the files or folders it may change, and depends_on for tasks that need another's result.",
         `- Tasks without dependencies run in parallel (up to ${LIMITS.maxParallel} at once), so give parallel tasks separate files. Add a reviewer task (code review, QA, security) only when the change is risky enough to need one.`,
@@ -1156,11 +1157,79 @@ export class Team {
   }
 
   #saveGoal(goal: Goal) {
+    const prev = this.#store.getGoal(goal.id);
     this.#store.commit(`goal:${goal.id}`, [{ type: "goal.upserted", goal: { ...goal, updatedAt: now() } }]);
+    if (prev && prev.status !== goal.status) {
+      const lead = this.#store.getAgent(goal.leadAgentId);
+      const text =
+        goal.status === "paused" ? `Team paused: ${goal.note ?? "usage limit reached"}` :
+        goal.status === "stuck" ? `Team is stuck: ${goal.note ?? "nothing is moving"}` :
+        goal.status === "failed" ? `Team stopped: ${goal.note ?? "it failed"}` :
+        goal.status === "cancelled" ? "Team stopped." :
+        prev.status === "paused" && goal.status === "working" ? "Team resumed." : "";
+      if (text) this.#event(goal, text, lead?.id);
+    }
   }
 
   #saveTask(task: TeamTask) {
+    const prev = this.#store.getTask(task.id);
     this.#store.commit(`goal:${task.goalId}`, [{ type: "task.upserted", task }]);
+    this.#taskEvent(prev, task);
+  }
+
+  /** A one-line update in the goal's chat whenever a task moves, so you can follow along without opening anything. */
+  #taskEvent(prev: TeamTask | undefined, t: TeamTask) {
+    const goal = this.#store.getGoal(t.goalId);
+    if (!goal) return;
+    const who = `@${this.#store.getAgent(t.agentId)?.name ?? "?"}`;
+    const lastNote = t.progress?.at(-1);
+    if (prev && lastNote && lastNote.at !== prev.progress?.at(-1)?.at) {
+      this.#event(goal, `${t.ref} · ${who}: ${lastNote.text}`, t.agentId, true);
+    }
+    if (prev?.status === t.status) return;
+    const ref = (ids: string[]) => ids.map((id) => this.#store.getTask(id)?.ref ?? "?").join(", ");
+    let text = "";
+    switch (t.status) {
+      case "queued":
+      case "waiting":
+        if (!prev) text = `${t.ref} · ${who} will do “${t.title}”${t.status === "waiting" ? ` after ${ref(t.dependsOn)}` : ""}.`;
+        break;
+      case "working":
+        text = t.resumed
+          ? `${t.ref} · ${who} is continuing “${t.title}” after a restart.`
+          : prev?.status === "changes"
+            ? `${t.ref} · ${who} is reworking “${t.title}”.`
+            : `${t.ref} · ${who} started “${t.title}”${t.attempts > 1 ? " (trying again)" : ""}.`;
+        break;
+      case "submitted":
+        text = `${t.ref} · ${who} submitted${t.partial ? " what it got done in its time (some is left)" : ""}; the lead is reviewing.`;
+        break;
+      case "accepted":
+        text = `${t.ref} accepted${t.autoAccept && prev?.status === "working" ? " (no review needed)" : ""}${t.filesTouched?.length ? ` · ${t.filesTouched.length} file${t.filesTouched.length === 1 ? "" : "s"} changed` : ""}.`;
+        break;
+      case "changes":
+        text = t.conflicts?.length
+          ? `${t.ref} clashes with work merged meanwhile (${t.conflicts.slice(0, 3).join(", ")}); ${who} is resolving it.`
+          : `The lead sent ${t.ref} back to ${who}: ${clip(t.reviewNotes, 160)}`;
+        break;
+      case "parked":
+        text = `${t.ref} is stuck and needs a decision: ${clip(t.error, 160)}`;
+        break;
+      case "paused":
+        text = `${t.ref} paused: usage limit reached; it resumes on its own.`;
+        break;
+      case "cancelled":
+        text = `${t.ref} cancelled.`;
+        break;
+    }
+    if (text) this.#event(goal, text, t.agentId);
+  }
+
+  #event(goal: Goal, text: string, agentId?: string, progress = false) {
+    const id = randomUUID();
+    this.#store.commit(goal.threadId, [
+      { type: "turn-item.upserted", item: { id: `teamev:${id}`, threadId: goal.threadId, runId: `team:${goal.id}`, kind: "note", text, team: true, progress, agentId } },
+    ]);
   }
 }
 

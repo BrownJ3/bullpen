@@ -29,7 +29,7 @@ export function runActivity(store: Store, threadId: string, runId: string, note?
 /** Keep only what's needed to describe a step (no file contents). */
 function compact(input: unknown): unknown {
   if (!input || typeof input !== "object") return input;
-  const keep = ["command", "file_path", "notebook_path", "path", "pattern", "url", "query", "description", "target", "key", "title", "agent", "question", "thread", "message"];
+  const keep = ["command", "file_path", "notebook_path", "path", "pattern", "url", "query", "description", "target", "key", "title", "agent", "question", "thread", "message", "note"];
   const out: Record<string, unknown> = {};
   for (const k of keep) {
     const v = (input as Record<string, unknown>)[k];

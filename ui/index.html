@@ -362,6 +362,19 @@ code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
 .team-rounds summary b { color: var(--text); }
 .team-rounds .lbl { font-size: 11.5px; color: var(--faint); margin-top: 8px; }
 .note.progress { color: var(--text); font-style: italic; }
+.note.team-ev { align-items: center; color: var(--muted); }
+.note.team-ev.progress { color: var(--text); }
+.note.team-ev .atile { flex: none; }
+.dock { border: 1px solid var(--line-strong); border-radius: 12px; background: var(--panel); margin-bottom: 8px; overflow: hidden; }
+.dock.needs { border-color: var(--accent); }
+.dock-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 12px; border: 0; background: color-mix(in srgb, var(--primary) 6%, transparent); color: var(--text); font-size: 12.5px; text-align: left; }
+.dock-head b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; font-weight: 600; }
+.dock-needs { color: var(--accent-ink); font-weight: 600; }
+.dock-row { display: flex; align-items: flex-start; gap: 9px; padding: 6px 12px; border-top: 1px solid var(--line); font-size: 12.5px; }
+.dock-row .act-line { flex: 1; min-width: 0; }
+.dock-task { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dock-t { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dock-t .mono { color: var(--faint); font-size: 11px; }
 .team-note { padding: 8px 14px; font-size: 13px; color: var(--warn); background: var(--warn-soft); border-bottom: 1px solid var(--line); }
 .team-progress { height: 3px; background: var(--line); }
 .team-progress i { display: block; height: 100%; background: var(--accent); transition: width 0.4s; }
@@ -2012,6 +2025,7 @@ function renderMain() {
       h("div", { class: "center" },
         h("div", { class: "transcript", id: "transcript" }, h("div", { class: "column", id: "column" })),
         h("div", { class: "composer-wrap" },
+          h("div", { id: "team-dock" }),
           h("div", { class: "composer", id: "composer" },
             h("textarea", { id: "input", rows: 1, placeholder: "Message… type @ to bring in an agent" }),
             h("button", { type: "button", class: "stop-btn", id: "stop", hidden: true, "aria-label": "Stop", "data-tip": "Stop the agent", "data-tip-pos": "up",
@@ -2205,6 +2219,7 @@ function toolLabel(tool, input = {}) {
     case "WebSearch": return said("search", "Searched the web for", inp.query);
     case "TodoWrite": return said("list", "Updated the plan", "");
     case "Task": case "Agent": return said("users", "Sub-agent:", inp.description ?? inp.prompt, `start a sub-agent: ${short(inp.description ?? "", 60)}`);
+    case "report_progress": return said("message", "Noted:", inp.note);
     case "list_threads": return said("list", "Looked at threads", inp.project ?? "");
     case "read_thread": return said("message", "Read thread", inp.thread);
     case "start_thread": return said("compose", "Started a thread:", inp.title ?? inp.prompt);
@@ -2325,6 +2340,7 @@ function renderTranscript() {
   for (const id of state.order) { const el = itemEl(state.items.get(id)); if (el) col.append(el); }
   for (const run of state.runs.values()) if (run.status !== "running") renderRunMeta(run, false);
   renderLive();
+  renderDock();
   toBottom();
 }
 
@@ -2336,7 +2352,34 @@ function upsertItemEl(item) {
   const old = col.querySelector(`[data-id="${CSS.escape(item.id)}"]`);
   if (old && el) old.replaceWith(el); else if (old) old.remove(); else if (el) col.append(el);
   renderLive(); // keep the live status line last and current
+  if (item.kind === "team_goal") renderDock();
   if (stick) toBottom();
+}
+
+/** While a team works on a goal from this chat: who's doing what right now, always in view above the message box. */
+function renderDock() {
+  const dock = $("team-dock"); if (!dock) return;
+  const goals = state.order.map((id) => state.items.get(id)).filter((i) => i?.kind === "team_goal" && ["planning", "working", "paused", "stuck"].includes(i.status));
+  if (!goals.length) { dock.replaceChildren(); return; }
+  const g = goals.at(-1);
+  const working = g.tasks.filter((t) => t.status === "working");
+  const done = g.tasks.filter((t) => t.status === "accepted").length;
+  const waiting = g.tasks.filter((t) => ["queued", "waiting"].includes(t.status)).length;
+  const review = g.tasks.filter((t) => t.status === "submitted").length;
+  const needs = g.tasks.reduce((n, t) => n + t.approvals.length + (t.status === "parked" ? 1 : 0), 0) + (g.status === "stuck" ? 1 : 0);
+  const counts = [working.length && `${working.length} working`, review && `${review} in review`, waiting && `${waiting} waiting`, `${done}/${g.tasks.length} done`].filter(Boolean).join(" · ");
+  const rows = [];
+  if (g.lead?.busy) rows.push(h("div", { class: "dock-row" }, badge(g.leadName),
+    g.lead.activity ? activityLine(g.lead.activity, { label: g.tasks.length ? "Reviewing and planning" : "Planning", compact: true }) : h("span", { class: "act-what" }, "Planning…")));
+  for (const t of working) rows.push(h("div", { class: "dock-row" }, badge(t.agentName),
+    h("div", { class: "dock-task" }, h("div", { class: "dock-t" }, h("span", { class: "mono" }, t.ref), " ", t.title),
+      t.activity ? activityLine(t.activity, { label: t.wrapping ? "Out of time, wrapping up" : "Working", compact: true }) : null)));
+  if (!rows.length) rows.push(h("div", { class: "dock-row faint" }, g.status === "paused" ? g.note ?? "Paused." : g.status === "stuck" ? g.note ?? "Stuck." : review ? "Waiting for the lead's review…" : "Between steps…"));
+  dock.replaceChildren(h("div", { class: "dock" + (needs ? " needs" : "") },
+    h("button", { class: "dock-head", title: "Show the team card", onclick: () => document.querySelector(`[data-id="team:${g.goalId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" }) },
+      icon("users", 14), h("b", {}, g.title), g.rounds ? h("span", { class: "faint" }, `Round ${g.rounds.round}/${g.rounds.max}`) : null,
+      h("span", { class: "spacer" }), needs ? h("span", { class: "dock-needs" }, `Needs you (${needs})`) : null, h("span", { class: "faint" }, counts)),
+    ...rows));
 }
 
 /** The status line under a running turn: elapsed, steps, what it's doing now, its latest note. */
@@ -2387,6 +2430,10 @@ function itemElInner(item) {
   const base = { "data-id": item.id, "data-run": item.runId };
   switch (item.kind) {
     case "note":
+      if (item.team) {
+        const a = item.agentId ? state.agents.get(item.agentId) : null;
+        return h("div", { ...base, class: "note team-ev" + (item.progress ? " progress" : "") }, a ? agentTile(a, 16) : icon("users", 13), h("span", {}, item.text));
+      }
       if (item.progress) return h("div", { ...base, class: "note progress" }, icon("message", 13), h("span", {}, item.text));
       return h("div", { ...base, class: "note" }, icon(item.action ? "external" : "branch", 13), h("span", {}, richText(item.text)),
         item.action?.kind === "open_artifact"
