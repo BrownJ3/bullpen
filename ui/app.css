@@ -1084,10 +1084,18 @@ button.hrow:hover { background: var(--hover); }
 }
 
 /* ---------- team panel (right side, like files and browser) ---------- */
-.teampanel { flex: none; width: var(--team-w, 400px); display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--bg); min-height: 0; }
+.teampanel { flex: none; width: var(--team-w, 560px); display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--bg); min-height: 0; position: relative; container-type: inline-size; }
+/* Board in the panel: four columns when there's room; otherwise columns keep a readable width and scroll sideways. */
+.tp-body .board { grid-template-columns: repeat(4, minmax(150px, 1fr)); overflow-x: auto; padding: 10px; }
+.tp-body .bcard .b-top { min-width: 0; }
+.tp-body .bcard .b-top > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-body .bcard .b-top .mono-badge { flex: none; }
+@container (max-width: 520px) { .tp-body .bcard .b-top > span:last-child { display: none; } }
 .teampanel[hidden] { display: none; }
 .tp-bar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13.5px; }
 .tp-body { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.tp-body > * { flex: none; } /* never squash the card to fit: the panel scrolls instead */
+.tp-body { overscroll-behavior: contain; }
 .tp-body .team { border-radius: 12px; }
 .tp-body .trow2 .who { width: auto; max-width: 120px; }
 .tp-body .trow2-live { padding-left: 14px; }

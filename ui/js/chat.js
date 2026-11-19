@@ -394,6 +394,12 @@ function renderDock() {
     needs ? h("span", { class: "dock-needs" }, `Needs you (${needs})`) : null,
     h("span", { class: "spacer" }), h("span", { class: "go" }, "Show team →")));
 }
+/** Wide enough for the four-column board by default (about 40% of the window); drag the left edge to change it. */
+function teamWidth() {
+  const max = Math.max(360, innerWidth - 520);
+  return Math.min(max, Math.max(360, ui.teamW || Math.round(innerWidth * 0.42)));
+}
+addEventListener("resize", () => { const tp = $("teampanel"); if (tp && !tp.hidden) tp.style.setProperty("--team-w", teamWidth() + "px"); });
 /** The Team panel: live status (what needs you, who's doing what) and the team card (list or board, log). */
 function renderTeamPanel() {
   const panel = $("teampanel"); if (!panel || panel.hidden) return;
@@ -402,7 +408,7 @@ function renderTeamPanel() {
   const head = h("div", { class: "tp-bar" }, icon("users", 15), h("b", {}, "Team"), h("span", { class: "spacer" }),
     h("button", { class: "icon-btn", title: "Hide team panel (⌘⇧M)", onclick: () => togglePanel("team") }, icon("x", 15)));
   if (!g) {
-    panel.replaceChildren(head, h("div", { class: "launcher" }, h("div", { class: "note" },
+    panel.replaceChildren(teamGrip(panel), head, h("div", { class: "launcher" }, h("div", { class: "note" },
       "No team in this chat yet. @mention a lead (e.g. @lead) with a goal and the team's progress shows up here: who's doing what, what needs you, and how fast it's going.")));
     return;
   }
@@ -410,8 +416,15 @@ function renderTeamPanel() {
   const top = scroller?.scrollTop ?? 0;
   const body = h("div", { class: "tp-body" }, goalOpen(g) ? teamLive(g) : null, teamCard(g, () => renderTeamPanel(), { approvalsAbove: goalOpen(g) }),
     goals.length > 1 ? h("div", { class: "faint tp-older" }, `${goals.length - 1} earlier team goal${goals.length > 2 ? "s" : ""} in this chat (see Teams).`) : null);
-  panel.replaceChildren(head, body);
+  panel.replaceChildren(teamGrip(panel), head, body);
   body.scrollTop = top;
+}
+function teamGrip(panel) {
+  const g = h("div", { class: "files-grip", title: "Drag to resize" });
+  let startW = 0;
+  g.addEventListener("pointerdown", () => { startW = teamWidth(); });
+  grip(g, "x", (dx) => { ui.teamW = Math.max(360, Math.min(innerWidth - 520, startW - dx)); panel.style.setProperty("--team-w", ui.teamW + "px"); });
+  return g;
 }
 /** The live part of the Team panel: what needs you (with buttons), the lead, and each working task. */
 function teamLive(g) {
@@ -584,7 +597,7 @@ function itemElInner(item) {
 const ui = (() => {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem("bp-panels") || "{}"); } catch {}
-  return { team: !!saved.team, live: !!saved.live, files: !!saved.files, terminal: !!saved.terminal, browser: !!saved.browser, drawerH: saved.drawerH || 280, filesW: saved.filesW || 340, browserW: saved.browserW || 560, device: saved.device || "full" };
+  return { team: !!saved.team, live: !!saved.live, files: !!saved.files, terminal: !!saved.terminal, browser: !!saved.browser, drawerH: saved.drawerH || 280, filesW: saved.filesW || 340, browserW: saved.browserW || 560, teamW: saved.teamW || 0, device: saved.device || "full" };
 })();
 const saveUi = () => { try { localStorage.setItem("bp-panels", JSON.stringify(ui)); } catch {} };
 function togglePanel(which) { ui[which] = !ui[which]; saveUi(); renderTopbar(); syncPanels(); }
@@ -603,7 +616,7 @@ function syncPanels() {
     if (ui.browser) renderBrowser();
   }
   const tp = $("teampanel");
-  if (tp) { tp.hidden = !ui.team; if (ui.team) renderTeamPanel(); }
+  if (tp) { tp.hidden = !ui.team; tp.style.setProperty("--team-w", teamWidth() + "px"); if (ui.team) renderTeamPanel(); }
   renderDock();
 }
 document.addEventListener("keydown", (ev) => {
