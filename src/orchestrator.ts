@@ -15,6 +15,7 @@ import { Team, isLimitError, type ConsultOutcome } from "./team.ts";
 import * as checkpoints from "./checkpoints.ts";
 import * as worktrees from "./worktrees.ts";
 import { BrowserHub } from "./browser.ts";
+import { claudeSessions, codexSessions, findSession, sessionHistory, type PastSession } from "./sessions.ts";
 import { Artifacts } from "./artifacts.ts";
 import { workdirOf } from "./types.ts";
 import { expandHome } from "./projects.ts";
@@ -243,8 +244,40 @@ export class Orchestrator {
           }
         }
         this.#store.commit("settings", [{ type: "setting.upserted", key: "projects.onboarded", value: true }]);
-        return { added };
+        let sessions = 0;
+        if (command.sessions) {
+          const since = Date.now() - 30 * 24 * 3600_000;
+          for (const item of command.projects) {
+            let dir: string;
+            try {
+              dir = this.#resolveDir(item.path);
+            } catch {
+              continue;
+            }
+            const recent = [...claudeSessions(dir, command.sessions), ...codexSessions(dir, command.sessions)]
+              .filter((x) => Date.parse(x.updatedAt) >= since)
+              .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+              .slice(0, command.sessions);
+            for (const x of recent) {
+              if (this.#importSession(dir, x).created) sessions++;
+            }
+          }
+        }
+        return { added, sessions };
       }
+      case "session.import": {
+        const dir = this.#resolveDir(command.path);
+        const found = findSession(command.tool, command.id, dir);
+        if (!found) throw new CommandError("That session wasn't found (it may have been deleted).");
+        return { threadId: this.#importSession(dir, found).threadId };
+      }
+      case "thread.backfill":
+        return this.#serial(command.threadId, async () => {
+          const t = this.#requireThread(command.threadId);
+          if (!t.importedFrom || !t.nativeSessionId || t.importedFrom.history) return { ok: true, items: 0 };
+          const found = findSession(t.importedFrom.tool, t.nativeSessionId, t.cwd);
+          return { ok: true, items: found ? this.#writeHistory(t, found) : 0 };
+        });
       case "projects.dismissSuggestions": {
         const dismissed = new Set(this.#store.getSetting<string[]>("projects.dismissed", []));
         for (const p of command.paths) dismissed.add(p);
@@ -496,6 +529,38 @@ export class Orchestrator {
     };
     this.#store.commit(thread.id, [{ type: "thread.upserted", thread }]);
     return { threadId: thread.id };
+  }
+
+  /** A thread that continues a past session, with its recent conversation shown. Reuses one already imported. */
+  #importSession(dir: string, s: PastSession): { threadId: string; created: boolean } {
+    const existing = this.#store.listThreads().find((t) => t.nativeSessionId === s.id);
+    if (existing) return { threadId: existing.id, created: false };
+    if (!this.#adapters.has(s.tool)) throw new CommandError(`${s.tool === "codex" ? "Codex" : "Claude Code"} isn't available in this Bullpen.`);
+    const { threadId } = this.#createThread({ type: "thread.create", cwd: dir, provider: s.tool, title: s.title, model: s.model });
+    const t = this.#requireThread(threadId);
+    const imported: Thread = { ...t, nativeSessionId: s.id, importedFrom: { tool: s.tool, title: s.title, at: s.updatedAt }, updatedAt: s.updatedAt };
+    this.#store.commit(threadId, [{ type: "thread.upserted", thread: imported }]);
+    this.#writeHistory(imported, s);
+    return { threadId, created: true };
+  }
+
+  /** Put a past session's recent conversation into its thread (shown, and given to @mentioned agents as context). */
+  #writeHistory(thread: Thread, s: PastSession): number {
+    const { items, truncated } = sessionHistory(s);
+    const runId = `import:${s.id}`;
+    const events: DomainEvent[] = items.map((it, n): DomainEvent => {
+      const base = { id: `import:${thread.id}:${n}`, threadId: thread.id, runId };
+      if (it.kind === "tool_call") {
+        return { type: "turn-item.upserted", item: { ...base, kind: "tool_call", tool: it.tool, input: it.input, status: it.failed ? "failed" : "completed", output: it.output } };
+      }
+      if (it.kind === "assistant_message") return { type: "turn-item.upserted", item: { ...base, kind: "assistant_message", text: it.text, streaming: false } };
+      return { type: "turn-item.upserted", item: { ...base, kind: "user_message", text: it.text } };
+    });
+    const latest = this.#requireThread(thread.id);
+    events.push({ type: "thread.upserted", thread: { ...latest, importedFrom: { ...(latest.importedFrom ?? { tool: s.tool, title: s.title, at: s.updatedAt }), history: { items: items.length, truncated } } } });
+    // One transaction per few hundred rows keeps the UI responsive.
+    for (let i = 0; i < events.length; i += 200) this.#store.commit(thread.id, events.slice(i, i + 200));
+    return items.length;
   }
 
   async #addWorktree(threadId: string, opts: { base?: string; branch?: string }) {

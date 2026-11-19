@@ -29,7 +29,6 @@ import {
   importCandidates,
   listDirs,
   locationOf,
-  pastClaudeSessions,
   projectFor,
   resolveProjectIcon,
   tilde,
@@ -37,6 +36,7 @@ import {
 import { listEntries, previewFile, revealFile } from "./files.ts";
 import { devScripts, localServers, startStaticPreview, staticEntry } from "./preview.ts";
 import { Store } from "./store.ts";
+import { pastSessions } from "./sessions.ts";
 import { ROOT as APP_ROOT, updateInfo } from "./version.ts";
 import { spawn } from "node:child_process";
 import { openSync, closeSync } from "node:fs";
@@ -279,7 +279,7 @@ wss.on("connection", (socket: WebSocket) => {
       case "pastSessions": {
         // Hide sessions this Bullpen has already picked up.
         const taken = new Set(store.listThreads().map((t) => t.nativeSessionId).filter(Boolean));
-        return pastClaudeSessions(req.params.path).filter((s) => !taken.has(s.id));
+        return pastSessions(req.params.path).filter((s) => !taken.has(s.id)).map(({ file: _file, ...s }) => s);
       }
       case "terminal.list":
         return terminals.list(req.params.threadId);

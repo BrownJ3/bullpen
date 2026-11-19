@@ -42,7 +42,7 @@ export interface Thread {
   /** A rollback to apply to the engine's conversation the next time it opens. */
   rewind?: { keepThrough?: string; dropFrom?: string };
   /** Set when this thread continues a session started outside Bullpen (e.g. in Claude Code). */
-  importedFrom?: { tool: "claude"; title: string; at: string };
+  importedFrom?: { tool: "claude" | "codex"; title: string; at: string; history?: { items: number; truncated: boolean } };
 }
 
 /** A folder you work in (T3: OrchestrationProjectShell). Threads belong to the project at their cwd. */
@@ -399,7 +399,16 @@ export type Command =
       resumeClaudeSession?: { id: string; title: string; updatedAt: string };
     }
   | { type: "project.add"; path: string; title?: string }
-  | { type: "project.import"; projects: Array<{ path: string; lastUsedAt?: string }> }
+  | {
+      type: "project.import";
+      projects: Array<{ path: string; lastUsedAt?: string }>;
+      /** Also bring in each project's recent Claude Code / Codex sessions (from the last 30 days), up to this many. */
+      sessions?: number;
+    }
+  /** Bring a past Claude Code or Codex session in as a thread, with its recent history; it continues that session. */
+  | { type: "session.import"; path: string; tool: "claude" | "codex"; id: string }
+  /** Load the earlier conversation into a thread that continues an outside session (threads imported before history existed). */
+  | { type: "thread.backfill"; threadId: string }
   /** Stop suggesting these folders (the "found your projects" prompt). */
   | { type: "projects.dismissSuggestions"; paths: string[] }
   | {

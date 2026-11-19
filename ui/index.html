@@ -651,6 +651,7 @@ button:focus-visible, [role="button"]:focus-visible { outline: 2px solid color-m
 .tool-chip { font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; }
 .tool-chip.claude { background: #d9775722; color: #c2603e; }
 .tool-chip.codex { background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--muted); }
+.suggest-chats { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--muted); margin-top: 10px; }
 .suggest-dlg .dialog-actions { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
 .update-pill { margin: 0 14px 8px; border: 0; border-radius: 8px; padding: 6px 10px; font-size: 12.5px; font-weight: 600; background: var(--primary); color: var(--on-primary); text-align: left; }
 .update-pill[hidden] { display: none; }
@@ -2254,7 +2255,11 @@ async function openThread(threadId, reconnecting = false, fromHistory = false) {
 function apply({ sequence, event: e }) {
   if (sequence <= state.seq) return;
   state.seq = sequence;
-  if (e.type === "thread.upserted") { state.thread = e.thread; renderTopbar(); }
+  if (e.type === "thread.upserted") {
+    const hadHistory = Boolean(state.thread?.importedFrom?.history);
+    state.thread = e.thread; renderTopbar();
+    if (!hadHistory && e.thread.importedFrom?.history) renderTranscript(); // the past conversation just arrived
+  }
   else if (e.type === "run.upserted") {
     const was = state.runs.get(e.run.id);
     state.runs.set(e.run.id, e.run);
@@ -2277,8 +2282,15 @@ function renderTranscript() {
   col.replaceChildren();
   if (state.thread?.importedFrom) {
     const imp = state.thread.importedFrom;
-    col.append(h("div", { class: "imported-note" },
-      `Continues a Claude Code session last used ${ago(imp.at)}. Its earlier messages aren't shown here, but Claude remembers them; just keep going.`));
+    const who = imp.tool === "codex" ? "Codex" : "Claude Code";
+    col.append(h("div", { class: "imported-note" }, !imp.history
+      ? `Continues a ${who} session last used ${ago(imp.at)}. Loading its earlier conversation…`
+      : `Continues a ${who} session last used ${ago(imp.at)}. ${imp.history.truncated ? "Its most recent conversation is shown below (older parts aren't)" : "Its conversation is shown below"}; ${imp.tool === "codex" ? "Codex" : "Claude"} remembers all of it, so just keep going.`));
+    // Imported before history was brought in: fetch it once.
+    if (!imp.history && state.thread.nativeSessionId && !state.backfilling?.has(state.thread.id)) {
+      (state.backfilling ??= new Set()).add(state.thread.id);
+      dispatch({ type: "thread.backfill", threadId: state.thread.id }).catch(() => {});
+    }
   }
   if (!state.order.length && !state.thread?.importedFrom) {
     const agent = state.thread?.agentId ? state.agents.get(state.thread.agentId) : null;
@@ -3645,7 +3657,8 @@ function openProjectSuggestions(items, first) {
       h("span", { class: "suggest-tools" }, ...r.it.tools.map((t) => h("span", { class: "tool-chip " + t }, t === "codex" ? "Codex" : "Claude Code"))),
       r.it.lastUsedAt ? h("span", { class: "faint", style: "white-space:nowrap" }, ago(r.it.lastUsedAt)) : null);
   }));
-  const all = (on) => { rows.forEach((r) => (r.on = on)); list.querySelectorAll("input").forEach((b) => (b.checked = on)); sync(); };
+  const all = (on) => { rows.forEach((r) => (r.on = on)); list.querySelectorAll(".import-row input").forEach((b) => (b.checked = on)); sync(); };
+  const withChats = h("input", { type: "checkbox", checked: true });
   const dlg = h("dialog", { class: "suggest-dlg" },
     h("div", { class: "dlg-head" }, h("h3", {}, first ? "Bring in your projects" : "New projects found"),
       h("button", { class: "icon-btn", "aria-label": "Close", onclick: () => dlg.close() }, icon("x", 15))),
@@ -3653,6 +3666,7 @@ function openProjectSuggestions(items, first) {
     h("div", { class: "suggest-bar" }, count, h("span", { class: "spacer" }),
       h("button", { class: "link", type: "button", onclick: () => all(true) }, "Select all"), h("button", { class: "link", type: "button", onclick: () => all(false) }, "None")),
     list,
+    h("label", { class: "check suggest-chats" }, withChats, h("span", {}, "Also bring in their recent chats (last 30 days), with the conversation so far, so you can pick them up here")),
     h("div", { class: "dialog-actions" },
       h("button", { class: "link", type: "button", onclick: () => { dlg.close(); openImport(); } }, "Choose from all folders…"),
       h("span", { class: "spacer" }),
@@ -3666,10 +3680,11 @@ function openProjectSuggestions(items, first) {
     add.disabled = true;
     const picked = rows.filter((r) => r.on), skipped = rows.filter((r) => !r.on);
     try {
-      await dispatch({ type: "project.import", projects: picked.map((r) => ({ path: r.it.path, lastUsedAt: r.it.lastUsedAt })) });
+      add.textContent = withChats.checked ? "Bringing in chats…" : "Adding…";
+      const res = await dispatch({ type: "project.import", projects: picked.map((r) => ({ path: r.it.path, lastUsedAt: r.it.lastUsedAt })), sessions: withChats.checked ? 10 : 0 });
       if (skipped.length) await dispatch({ type: "projects.dismissSuggestions", paths: skipped.map((r) => r.it.path) });
       dlg.close(); $("project-suggest").replaceChildren();
-      toast(`Added ${picked.length} project${picked.length === 1 ? "" : "s"} to the sidebar.`);
+      toast(`Added ${picked.length} project${picked.length === 1 ? "" : "s"}${res.sessions ? ` and ${res.sessions} chat${res.sessions === 1 ? "" : "s"}` : ""} to the sidebar.`);
     } catch (err) { fail(err); add.disabled = false; }
   });
   dlg.addEventListener("close", () => dlg.remove());
@@ -3981,14 +3996,16 @@ function renderStart() {
     try { sessions = await call("pastSessions", { path: forPath }); } catch { return; }
     if (forPath !== cwd || !sessions.length) return;
     resumeBox.replaceChildren(
-      h("h3", {}, `Pick up a Claude Code session in ${folderName(cwd)}`),
-      ...sessions.slice(0, 6).map((ss) => h("button", { type: "button", class: "row", title: ss.title, onclick: async () => {
+      h("h3", {}, `Pick up where you left off in ${folderName(cwd)}`),
+      ...sessions.slice(0, 6).map((ss) => h("button", { type: "button", class: "row", title: ss.title, onclick: async (ev) => {
+        ev.currentTarget.disabled = true;
         try {
-          const { threadId } = await dispatch({ type: "thread.create", cwd: forPath, provider: "claude", runtimeMode: mode.value, resumeClaudeSession: ss });
+          const { threadId } = await dispatch({ type: "session.import", path: forPath, tool: ss.tool, id: ss.id });
           openThread(threadId);
-        } catch (err) { fail(err); }
+        } catch (err) { fail(err); ev.currentTarget.disabled = false; }
       } },
-        h("span", { class: "row-main" }, h("div", { class: "row-title" }, ss.title), h("div", { class: "row-sub" }, `${ago(ss.updatedAt)} · ${ss.sizeKb > 1024 ? (ss.sizeKb / 1024).toFixed(1) + " MB" : ss.sizeKb + " KB"}`)),
+        h("span", { class: "row-main" }, h("div", { class: "row-title" }, ss.title),
+          h("div", { class: "row-sub" }, h("span", { class: "tool-chip " + ss.tool }, ss.tool === "codex" ? "Codex" : "Claude Code"), ` ${ago(ss.updatedAt)} · ${ss.sizeKb > 1024 ? (ss.sizeKb / 1024).toFixed(1) + " MB" : ss.sizeKb + " KB"}`)),
         h("span", { class: "go" }, "Resume →"))));
   };
   renderProject();
