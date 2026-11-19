@@ -11,7 +11,7 @@ import { dirname, isAbsolute, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
 import { JsonRpc } from "./jsonrpc.ts";
 import { registerMcp } from "../mcp.ts";
-import { isSafeCommand } from "../team-policy.ts";
+import { isSafeCommand, localContext } from "../team-policy.ts";
 import { clipOutput } from "../util.ts";
 import type { AdapterEvent, Decision, OpenSessionInput, ProviderAdapter, ProviderSession, RuntimeMode, TurnItem } from "../types.ts";
 
@@ -239,7 +239,7 @@ class AcpSession implements ProviderSession {
     const auto =
       this.#turnMode === "full-access" ||
       ((this.#turnMode === "auto-accept-edits" || this.#team) &&
-        (["read", "search", "think", "fetch", "edit"].includes(kind) || (kind === "execute" && isSafeCommand((input as Json)?.command))));
+        (["read", "search", "think", "fetch", "edit"].includes(kind) || (kind === "execute" && isSafeCommand((input as Json)?.command, localContext([this.#workdir, this.#ownFolder])))));
     if (auto) return this.#answerPermission(rpcId, options, "accept");
     const requestId = `acp:${call.toolCallId ?? rpcId}:${rpcId}`;
     const item: ApprovalItem = {

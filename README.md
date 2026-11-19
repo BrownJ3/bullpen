@@ -127,6 +127,10 @@ send-back, and stopping a team mid-way.
 ## How agents keep moving
 
 - **Live progress:** while an agent works, the chat shows a status line that keeps updating (time so far, steps, what it's doing now, its latest note). @mention replies and the team card show the same for each agent, the lead included, with a time-budget bar per task.
+- **Local testing without asking:** under "Build automatically" (and on team tasks), agents can check their own work:
+  run the project's own scripts and package scripts (also in the background, with settings like `PORT=3123`), `curl`
+  only `localhost`, `kill` only processes running from their own folders (or `$!` / `%1`), and write output only
+  into their folders or temp space. Anything else still asks. `node scripts/policy-test.ts` checks the rules.
 - **report_progress:** agents post a one-line note after each meaningful step; it shows live.
 - **Time budget, then wrap-up:** each run of a team task gets 12 minutes. Then the agent is told time's up and, in the same conversation, submits what's done plus what's left (marked "partial"), so nothing is thrown away. The lead turns what's left into follow-up tasks.
 - **Smaller, parallel tasks:** the lead sizes tasks to about 10 minutes and prefers parallel tasks on separate files over one big task everything waits on. Agents are told not to wait around (no sleeping, no repeated screenshots) and not to end a turn while something they started is still running.

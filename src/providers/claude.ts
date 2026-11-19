@@ -16,7 +16,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { join, resolve, sep } from "node:path";
-import { EDIT_TOOLS, isSafeCommand } from "../team-policy.ts";
+import { EDIT_TOOLS, isSafeCommand, localContext } from "../team-policy.ts";
 import { mainCheckoutOf } from "../worktrees.ts";
 import { clipOutput } from "../util.ts";
 import type {
@@ -267,7 +267,8 @@ class ClaudeSession implements ProviderSession {
     }
     if (process.env.BULLPEN_DEBUG) console.error(`[team] ${tool} team=${this.#teamTurn} root=${this.#extraDir ?? this.#cwd} input=${JSON.stringify(input).slice(0, 120)}`);
     if (!this.#teamTurn) return false;
-    if (tool === "Bash") return isSafeCommand(input.command);
+    // Plus local testing in its own folders: start the project's code, curl it on localhost, stop it again.
+    if (tool === "Bash") return isSafeCommand(input.command, localContext([this.#extraDir ?? this.#cwd, this.#ownFolder]));
     if (EDIT_TOOLS.has(tool)) {
       const target = String(input.file_path ?? input.notebook_path ?? "");
       const root = this.#extraDir ?? this.#cwd;
