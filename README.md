@@ -1,317 +1,241 @@
 # Bullpen
 
-**Install (macOS or Linux):** `curl -fsSL https://raw.githubusercontent.com/BrownJ3/bullpen/main/install.sh | sh`
+**A home for long-running coding agents.** Keep a bench of specialists (a reviewer, a debugger, a project lead)
+that remember their work, call them into any project with an `@mention`, and let a lead run a whole team on a goal
+while you watch from one window.
 
-A home for long-running coding agents you can call into any problem. Built on the architecture of T3 Code
-(see `docs/t3code-harness-architecture.md`).
-It drives Claude Code (through the Claude Agent SDK) or Codex (through `codex app-server`), stores everything as events in SQLite, snapshots your
-repo into hidden git refs every turn, and talks to clients over a local WebSocket.
-
-## Install
-
-On a Mac (or Linux), one line. It gets Node 24 if you don't have it (a private copy in `~/.bullpen/node`, checked
-against nodejs.org's checksums), puts Bullpen in `~/.bullpen/app` at the newest release, starts it at login, adds the
-`bullpen` command and a Bullpen app, and opens it:
+Bullpen runs on your Mac (or Linux box), drives **Claude Code** and **Codex** with the sign-ins you already have, and
+keeps everything local.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/BrownJ3/bullpen/main/install.sh | sh
 ```
 
-Bullpen drives Claude Code and/or Codex with your existing sign-ins; the installer says how to get them if missing. On first open,
-Bullpen finds the folders you've worked in with Claude Code or Codex and asks which to add to the sidebar; projects
-you start in those tools later show up as a "Review" notice above your projects. Their recent chats (last 30 days) come too, as threads that
-show the conversation so far and continue the same Claude Code or Codex session when you write in them. Older
-sessions are under "Pick up where you left off" on the start screen.
-Update with `bullpen update`, or the "Update to …" button that appears in the sidebar when a new release is out
-(`bullpen version` shows what you have). A checkout on a branch (like this development copy) follows its branch
-instead of releases.
+---
 
-**Releasing a version:** bump `version` in `package.json`, commit, then `git tag v0.2.0 && git push origin main --tags`.
-Installs pick up the newest `v*` tag.
+## Contents
 
-## Develop
+- [What it does](#what-it-does)
+- [Install](#install)
+- [Getting started](#getting-started)
+- [Agents](#agents)
+- [Teams](#teams)
+- [Jobs and lessons](#jobs-and-lessons)
+- [The workspace](#the-workspace)
+- [Permissions](#permissions)
+- [Remote access and other engines](#remote-access-and-other-engines)
+- [Command line](#command-line)
+- [Security](#security)
+- [Development](#development)
+- [Acknowledgments](#acknowledgments)
 
-Requires Node 24+ (runs `.ts` directly, no build) and a logged-in `claude` and/or `codex` CLI; it uses your existing logins.
-The Codex binary is found via `BULLPEN_CODEX_BIN`, then `PATH`, then the copy T3 Code downloads to `~/.t3/tools/codex`.
+## What it does
+
+| | |
+|---|---|
+| **Agents that remember** | Named specialists, each with its own instructions, memory file and one ongoing conversation. Call one into any chat with `@name`. |
+| **Teams** | `@lead <goal>` plans the work, hands tasks to specialists in parallel, reviews each one and reports back. |
+| **Jobs** | Agents that run on a schedule or on new commits, and tell you only what needs you. |
+| **Lessons** | Correct an agent once, approve the lesson, and it remembers in every project. |
+| **Branches** | Run a chat or each team task in its own git worktree; merge when you're happy. |
+| **Undo** | Every turn is checkpointed. Undo restores the files *and* rewinds the conversation. |
+| **Workspace** | Terminal, file tree, a real browser, and a live Team panel beside every chat. |
+| **Dictation** | Speak instructions into the message box. |
+| **Your history** | Imports the projects and recent chats you already have in Claude Code and Codex. |
+
+## Install
+
+Paste this into Terminal:
 
 ```bash
-npm install
-npm run install-app            # once: starts at login, adds `bullpen` to your PATH and a bullpen app
-
-bullpen                   # open the web UI (starts the server if needed), from any folder
-bullpen stop              # also: start, restart, status, logs, update, version, remote, uninstall
+curl -fsSL https://raw.githubusercontent.com/BrownJ3/bullpen/main/install.sh | sh
 ```
 
-Without `install-app`, `npm run open` / `npm run stop` do the same from this folder. The web UI has a
-"Stop server" link at the bottom of the sidebar.
+The installer:
 
-Lower-level commands:
+- uses your Node 24+, or downloads a private copy to `~/.bullpen/node` and verifies its checksum
+- puts the latest release in `~/.bullpen/app`, starts it at login, and adds the `bullpen` command and a Bullpen app
+- opens Bullpen in your browser when it's done
 
-```bash
-npm run server                 # run the server in the foreground: http+ws on 127.0.0.1:4773, data in ~/.bullpen
-npm run client -- chat --cwd /path/to/repo                       # Claude
-npm run client -- chat --cwd /path/to/repo --provider codex --model gpt-6-astra   # Codex
-npm run client -- list
-npm run client -- chat <threadId>   # reopen; the Claude session resumes
-```
+**You also need** at least one engine, signed in: [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+(`claude`) or [Codex](https://github.com/openai/codex) (`codex`). The installer tells you if neither is found.
 
-In chat: type a message; answer approvals with `a` / `s` / `d` / `c`; `/interrupt`, `/diff [from] [to]`,
-`/rollback <n>`, `/quit`.
+**Updating:** click **Update to …** in the sidebar when a release is out, or run `bullpen update`. Updates wait for
+running agents to finish their step.
 
-## Standing jobs
+**Uninstalling:** `bullpen uninstall` removes the service and command; your chats and agents stay in `~/.bullpen`.
 
-Agents that work while you're away. A job is an agent + a project + what to do + when:
+## Getting started
 
-- **When:** every day at a time, weekdays, a day of the week, every few hours, **on new commits to a branch**
-  (checked every minute; the agent gets the list of new commits), or only when you press Run now.
-- **How:** each run happens in the job's own thread (listed under **Jobs** in the sidebar), in team mode: edits
-  inside the project and tests/builds run without asking, anything else waits for you. If the agent can lead a
-  team, a job can run as a team goal.
-- **Reporting:** the agent ends each run with a summary and a `NEEDS YOU:` line for anything that needs your
-  decision. Those raise a Mac notification and appear in the **Inbox**.
-- **Presets:** nightly tests & fix, review new commits, weekly dependency check, morning changes summary.
-- **Usage limits:** if your plan's limit is hit, all jobs pause until it resets (shown in the Inbox).
+1. **Open Bullpen** (`bullpen`, or the Bullpen app). On first run it finds folders you've used with Claude Code or
+   Codex and offers to add them, along with their recent chats, which continue the same session when you reply.
+2. **Start a chat** with **New chat** (⌥N): pick a project, describe the work, press Enter.
+3. **Add agents** with **+** next to *Agents*. Pick from the gallery (Code Reviewer, Debugger, Architect, Project
+   Lead, …) or make your own.
+4. **Bring one in** by typing `@` in any chat: `@code-reviewer look at the last change`.
+5. **Hand off a goal** to a lead: `@lead make the checkout flow work on mobile`, then open the Team panel (⌘⇧M).
 
-**Morning briefing:** at a time you choose (default 8:00) Bullpen summarises everything since the last briefing (runs
-per job, what needs you, lessons waiting) and sends one notification. The **Inbox** (top of the sidebar) shows it
-alongside everything waiting on you: jobs needing a decision, teams needing you, and lessons to review.
+## Agents
 
-## Lessons
+An agent is a long-running specialist that lives in the sidebar. Each one has:
 
-Agents learn from your corrections, with your approval:
+- a **name** and **@handle** (`Rock RMS Expert` becomes `@rock-rms-expert`)
+- **instructions**, an engine and model, and a permission level
+- **one conversation** that carries its context across every chat it's called into, and across restarts
+- a **memory file**, `~/.bullpen/agents/<name>/MEMORY.md`, for notes it wants to keep
 
-- When you correct an agent ("no, we always…", "from now on…", "don't…"), it can call `propose_lesson` with a
-  one-line rule. A lead reviewing a teammate's work can attach a lesson to its review too.
-- Suggested lessons appear in the Inbox and on the agent's **Lessons** button. Approve (optionally editing the
-  wording) or dismiss; you can also add your own, for one agent or for every agent.
-- Approved lessons are given to the agent at the start of every turn, in every project, so they survive context
-  resets and new conversations.
+Agents aren't tied to a project. When you `@mention` one, it works in *that chat's* project for that request.
+Agents can also ask each other (`ask_agent`). When an agent is busy, a second request runs on a spare copy with the
+same instructions and memory, instead of waiting in line.
 
 ## Teams
 
-A **lead** (any agent with "Can lead a team" ticked; the Project Lead in the gallery has it) turns a goal into
-tracked work for specialists. Modeled on AgentOffice: delegate → submit → one-round review → report.
+Write `@lead <goal>` in a project chat. The lead (any agent with *Can lead a team*; the gallery's Project Lead has it):
 
-1. **Start:** in a project thread, write `@lead <goal>`. Other @names in that message are suggestions for the lead,
-   not separate requests. Mention the lead again any time to steer it.
-2. **Plan:** the lead reads the project and calls `delegate` for each piece: one owner, a self-contained brief,
-   the deliverable, the files it may change, and `depends_on` for tasks that need another's result. Small requests
-   get answered directly, with no team.
-3. **Work:** tasks run in the project in parallel (up to 3 at once), each on the owner's own long-running session.
-   Dependent tasks start when what they wait on is accepted, and get those results in their brief.
-4. **Review:** each submission wakes the lead, which accepts it or sends it back **once** with every note in one
-   message; after that it fixes small leftovers itself. Wake-ups are reason-tagged and batched; nobody holds a turn
-   open waiting for someone else.
-5. **Report:** when everything is accepted, the lead checks the whole and calls `finish_goal`; the report is posted
-   in the thread (and handed to the thread's own agent on your next message).
+1. **Sizes the work.** It can bring in a planner to estimate the effort and suggest how many people to put on it.
+2. **Delegates** small tasks (about 10 minutes each) with a clear brief, owner, deliverable and the files each may
+   change. Tasks on separate files run **in parallel** (up to 4 at once); dependent tasks wait for what they need.
+3. **Hires** more specialists if progress is slow, and splits the remaining work.
+4. **Reviews** each submission: accept, or send it back once with every note.
+5. **Reports** when everything is accepted, or after each round for open-ended goals ("keep improving until …").
 
-**The team card** in the thread shows every task (owner, status, elapsed time, submission, review notes, files
-touched), as a list or a board (To do / Working / In review / Done), with Watch links, Retry and Stop. The
-sidebar shows a working dot for threads with a team and a badge when one needs you.
+**The Team panel** (⌘⇧M) shows it live: what needs you, who's doing what, a list or board (To do / Working /
+In review / Done), the log, and speed. Drag its edge to resize it.
 
-**Team mode (permissions):** team tasks and the lead's goal turns may edit files inside the project and run safe
-commands (tests, builds, type checks, linters, git status/diff/log, read-only inspection, including loops and
-pipes of those) without asking. Installs, pushes, deletes, writes by shell redirection, network commands and
-anything outside the project still ask; those approvals appear right on the team card. The rules are in
-`src/team-policy.ts`.
+**Built to keep moving:** each task has a 12-minute budget, then submits what's done plus what's left, so nothing is
+lost. A stalled goal gets nudged, then flagged. If your plan's usage limit is hit, the team pauses and resumes when
+it resets. After a restart, interrupted work picks up where it was. Limits live in `src/limits.ts`.
 
-**Guardrails** (`LIMITS` in `src/team.ts`): 12 tasks per goal, 3 in parallel, 20 minutes per task, one automatic
-retry then **parked** (with a Retry button), one send-back per task, 30 lead turns per goal, duplicate tasks
-refused, and `ask_agent` blocked for leads during a goal so work always goes through `delegate`. A sweep every
-30 seconds nudges a goal where nothing is moving, then marks it **Needs you**. If your plan's usage limit is hit,
-the team **pauses** and resumes when the limit resets. After a server restart, interrupted tasks are requeued.
+## Jobs and lessons
 
-`scripts/jobs-smoke.ts` tests jobs (manual, on commit, scheduled), the briefing, and a lesson learned from a correction and followed in a fresh conversation. `scripts/team-smoke.ts` runs three scenarios end to end: a parallel team with a dependent check, a one-round
-send-back, and stopping a team mid-way.
+**Jobs** are agents that work while you're away: an agent, a project, what to do, and when. That can be daily,
+weekdays, every few hours, on new commits to a branch, or only when you press Run. Presets include nightly tests and
+fixes, reviewing new commits, and a weekly dependency check. Each run ends with a summary. Anything that needs your
+decision raises a notification and shows on **Home**, along with a morning briefing.
 
-## How agents keep moving
+**Lessons** come from your corrections. When you say "no, we always …" or "from now on …", the agent proposes a
+one-line rule. You approve or edit it on Home, and from then on that agent follows it in every project. You can
+also add lessons yourself, for one agent or for all of them.
 
-- **Live progress:** while an agent works, the chat shows a status line that keeps updating (time so far, steps, what it's doing now, its latest note). @mention replies and the team card show the same for each agent, the lead included, with a time-budget bar per task.
-- **Local testing without asking:** under "Build automatically" (and on team tasks), agents can check their own work:
-  run the project's own scripts and package scripts (also in the background, with settings like `PORT=3123`), `curl`
-  only `localhost`, `kill` only processes running from their own folders (or `$!` / `%1`), and write output only
-  into their folders or temp space. Anything else still asks. `node scripts/policy-test.ts` checks the rules.
-- **report_progress:** agents post a one-line note after each meaningful step; it shows live.
-- **Time budget, then wrap-up:** each run of a team task gets 12 minutes. Then the agent is told time's up and, in the same conversation, submits what's done plus what's left (marked "partial"), so nothing is thrown away. The lead turns what's left into follow-up tasks.
-- **Smaller, parallel tasks:** the lead sizes tasks to about 10 minutes and prefers parallel tasks on separate files over one big task everything waits on. Agents are told not to wait around (no sleeping, no repeated screenshots) and not to end a turn while something they started is still running.
-- **Spare copies:** when an agent is busy, another request to it runs on a spare copy (same instructions and memory, up to 3) instead of queuing.
-- **Improvement rounds:** for open-ended goals ("keep improving until…") the lead sets checkable criteria and a round limit (5 by default), then works in rounds, posting a short report after each, until the criteria are met.
-- **Safe restarts:** `bullpen restart` and `bullpen update` stop new turns from starting and wait (up to 30 minutes) for running ones to finish; `--now` skips the wait. Work interrupted anyway picks up where it was.
+## The workspace
 
-Test: `node scripts/loops-smoke.ts` (starts its own server with a 30-second budget).
+Everything opens from the **panels** button at the top right of a chat:
 
-## Projects
-
-The sidebar groups threads under **projects**, the folders you work in (modeled on T3 Code's folder mode).
-Starting a thread in a folder adds it as a project.
-
-**Choosing what shows.** The ☰ button next to Projects opens a list of every project folder Bullpen can
-find: in `~/Documents`, anywhere in your home folder (`~/*` and the usual code folders such as `~/code`,
-`~/dev`, `~/Desktop`), and any folder you've used Claude Code in. Tick the ones you want in the sidebar;
-unticked ones are **archived** (hidden, never deleted). **Add a folder…** adds one from anywhere.
-
-**Pinning and archiving.** Hover a project for ☆ (pin), + (new thread) and ⋯ (menu: pin, archive, copy
-path, remove), or right-click it. Pinned projects stay at the top, marked ★; the rest are ordered by when
-you last worked in them. Archived projects collapse into "Archived (N)" at the bottom; starting a thread in
-one brings it back.
-
-Each project shows its own favicon or logo if it has one, otherwise a monogram. A collapsed project shows a
-dot when a thread inside needs you. Click a project with no threads (or +) to start work there; the start
-screen lists that folder's recent **Claude Code sessions**, and "Resume" continues one in Bullpen with its
-full history (earlier messages aren't shown in the thread).
-
-## Terminal and files
-
-Each thread has a **Terminal** drawer and a **Files** panel (buttons at the top right; ⌃\` and ⌘⇧E), as in T3 Code.
-
-- **Terminal:** real shells (`node-pty`, your login shell) running in the thread's project folder, shown with
-  xterm.js. Open several as tabs. Shells live on the server: closing or reloading the page keeps them running,
-  and reopening replays recent output. Drag the top edge to resize.
-- **Files:** the project's folder tree, loaded as you expand it. Git-ignored files are dimmed, as in T3. Click a
-  file to preview it (text with line numbers, images); **Mention** adds its path to your message, **Reveal** shows
-  it in Finder, **Open** opens it in its default app. Everything stays inside the project folder.
-
-`node-pty` is a native module; its install script is allowed in `package.json` (`allowScripts`). If shells fail
-with "posix_spawnp failed", Bullpen makes its helper executable at startup.
-
-## Browser
-
-The **Browser** panel (⌘⇧B) previews a project's site next to the conversation. Its start page lists:
-
-- **Running in this project:** local web servers started from the project's folder (found with `lsof`).
-- **Start a dev server:** `npm run dev`/`start`/`preview` (or pnpm/yarn/bun) from `package.json`. Bullpen runs it
-  in a new terminal tab and opens the page as soon as the server is listening.
-- **Static site:** an `index.html` (root, `public/`, `dist/`, `build/`, `docs/`), served read-only by Bullpen on the
-  next port (4774), a separate origin, so the site's scripts can't reach Bullpen.
-- Other web servers running on this Mac.
-
-There's an address bar (`3000` means `localhost:3000`), back/forward, reload, Fit/Tablet/Phone widths, and ↗ to open
-in your real browser. The page is sandboxed and can't navigate or script Bullpen. Unlike T3's Electron/server-side
-browser, this is an embedded page: local sites work, but many public sites refuse to be shown inside another page.
-
-## Named agents
-
-**Adding agents.** The + next to Agents opens a gallery of ready-made specialists: Code Reviewer, Architect,
-Debugger, Test Writer, Security Reviewer, Docs Writer, Refactorer, Planner, Researcher, UX Critic,
-SQL & Data, Git Helper (defined in `src/agent-templates.ts`). "Add" creates one immediately; "Customize first…"
-opens it in the form. "Create your own…" starts from a blank form.
-
-**Names.** Name an agent anything ("Rock RMS Expert ⛪"). Its **@handle**, used in mentions and `ask_agent`, is
-made from the name (`@rock-rms-expert`) and can be edited; duplicates get `-2`, `-3`. Both can be changed
-later from the agent's Edit dialog.
-
-Agents are long-running specialists that live in the web UI's sidebar. Each has a name, a one-line
-description, instructions, a provider and model, and a permission level. Each also keeps one conversation
-that carries its context across everything it's pulled into and across restarts.
-
-An agent isn't tied to a project. It has its own folder, `~/.bullpen/agents/<name>/`, holding a `MEMORY.md`
-that it reads at the start of a conversation and adds durable notes to. When it's called into a thread,
-it works in **that thread's project** for that request. Claude agents get the folder added to their
-session; Codex agents switch their working folder for the turn. The conversation stays the same.
-
-- **Talk to it directly:** click it in the sidebar. There's no project then, so it just answers, or
-  works on paths you name.
-- **Bring it into a problem:** in any thread, write `@name …`. The agent gets the recent conversation
-  plus your message, and its answer is posted in that thread. A message with an @mention goes only to
-  the mentioned agents; the thread's own agent is handed their answers at the start of your next message.
-- **Let agents call agents:** every session gets two harness tools, `list_agents` and `ask_agent(agent, question)`
-  (an in-process MCP server for Claude, Codex dynamic tools for Codex). The call blocks until the agent
-  answers, and the consulted agent works in the same project as the caller.
-
-Requests to one agent queue up. A request that would come back to an agent already waiting further up
-the chain (A asks B asks A) is refused instead of deadlocking, and chains stop at 3 agents deep. If a
-consulted agent needs an approval, the prompt appears in its own thread and the sidebar shows a badge.
-"Reset context" starts its conversation over (its memory file stays); edited instructions apply from its
-next turn (reset to be certain, since Claude may keep the system prompt it recorded at the start).
-
-Changes an agent makes during an @mention aren't checkpointed in the calling thread; changes made through
-`ask_agent` land in the caller's next checkpoint. Each consult is a full agent turn and costs like one;
-in testing, a one-line Claude answer cost $0.70–$1.30.
-
-## Layout
-
-| File | T3 equivalent | Role |
+| Panel | Shortcut | What it is |
 |---|---|---|
-| `src/types.ts` | `packages/contracts` | Thread / Run / TurnItem projections, domain events, commands, adapter contract |
-| `src/providers/claude.ts` | `ClaudeAdapterV2.ts` | `query()` with streaming input; maps SDK messages → TurnItems; parks `canUseTool` on a promise until the user answers |
-| `src/providers/codex.ts` | `CodexAdapterV2.ts` | Spawns `codex app-server`; ndjson JSON-RPC (`initialize` → `thread/start` or `thread/resume` → `turn/start`); maps `item/*` notifications → TurnItems; answers `item/*/requestApproval` server requests with the user's decision |
-| `src/store.ts` | `EventSink` + `ProjectionStore` | `node:sqlite`; events + projections written in one transaction, published after commit |
-| `src/orchestrator.ts` | `OrchestratorV2` + `RunExecutionService` | Commands → events, per-thread lock, provider event ingestion with a stale-run guard, crash recovery |
-| `src/checkpoints.ts` | `CheckpointService` + `GitVcsDriver` | Temp-index `write-tree`/`commit-tree` into `refs/bullpen/checkpoints/<thread>/<n>`; diff; restore with an undo ref |
-| `src/server.ts` | `ws.ts` | Token-authed WS on 127.0.0.1; snapshot-or-replay subscriptions; 50 ms live batching; slow-client cutoff |
-| `src/client.ts` | `client-runtime` | Terminal client keeping a local projection; `ui` opens the web UI |
-| `ui/index.html`, `ui/app.css`, `ui/js/*.js` | `apps/web` | Web UI, no build step: the page, its styles, and plain scripts loaded in order (core, sidebar, chat, team, pages, boot) |
-| `src/tools/*.ts` | `/mcp` toolkits | Harness tools agents get: chats, artifacts, browser (lead tools live in `team.ts`) |
-| `src/team-prompts.ts`, `src/limits.ts` | — | What the team engine says to agents; team limits and usage-limit handling |
-| `src/notes.ts`, `src/util.ts`, `src/activity.ts` | — | Posting notes and replies in a chat; small shared helpers; live run activity |
-| `src/providers/jsonrpc.ts` | — | Newline JSON-RPC over stdio, shared by the Codex and ACP engines |
-| `scripts/agents-smoke.ts` | — | Agents test: create, @mention, `ask_agent`, delivery, self-mention: `node scripts/agents-smoke.ts <dir> [threadProvider] [agentProvider]` |
-| `scripts/smoke.ts` | — | End-to-end test: `node scripts/smoke.ts <repo> [claude\|codex] [model]` (one real turn) |
+| Team | ⌘⇧M | Live status of the chat's team |
+| Files | ⌘⇧E | The project's file tree with previews; Mention, Reveal and Open |
+| Terminal | ⌃\` | Real shells in the project folder; they keep running when you close the page |
+| Browser | ⌘⇧B | The project's site: its dev server, or its static `index.html`. Switch to a live headless Chrome to load any site, shared with the agent |
 
-## Adding a provider
+**Under the message box** you choose where the chat works (your folder, or a separate branch) and what agents may do
+there. The 🎙 button dictates.
 
-Implement `ProviderAdapter` from `src/types.ts`: `openSession()` returns `startTurn`, `interruptTurn`,
-`respondToRuntimeRequest` and `close`, and calls `emit()` with `turn_item.updated` / `turn.terminal` /
-`native_session.updated`. Register it in `server.ts`. `codex.ts` is the template for any agent that speaks JSON-RPC over stdio (e.g. ACP agents).
+**Branches.** Start a chat *in a separate copy*, or move one later. It works in its own git worktree on
+`bullpen/<name>`, and your checkout isn't touched until you **Merge**. The same menu brings in the latest base,
+opens a pull request, or removes the copy. Team tasks get their own worktrees too, and are merged back when accepted.
 
-## Artifacts
+**Artifacts.** Agents can publish HTML pages and Markdown reports (`create_artifact`), with every version kept.
+You can also import artifacts you made on claude.ai. They're listed under **Artifacts** in the sidebar.
 
-**Artifacts** in the sidebar lists pages, reports and diagrams from two places:
+**Other shortcuts:** ⌘K search and jump · ⌥N new chat · ⌥⇧N new project · ⌘1 Home · ⌘2 Teams · ⌘[ / ⌘] back and forward · ⌘\\ toggle sidebar.
 
-- **Made here:** any agent can publish one with `create_artifact` (an HTML page or Markdown) and revise it with
-  `update_artifact`; every version is kept in `~/.bullpen/artifacts/`. Ask for "an artifact" and it appears in the
-  chat with an Open button. Pages run sandboxed in their own origin, so their scripts can't reach Bullpen.
-- **From claude.ai:** **Import** (or drop a file on the page): paste the artifact's code or choose the file you
-  downloaded, and add its claude.ai link to keep the two tied. Agents can then read it (`read_artifact`); anything
-  that needs claude.ai itself (saved data) won't work in the copy.
-  Automatic syncing is off: Claude Code only lets the Claude desktop app read your claude.ai artifacts, so Bullpen's
-  own service can't. The "Try syncing from claude.ai" menu item works only where Claude Code has that tool.
+## Permissions
 
-Agents also get `list_artifacts` and `read_artifact`.
+Each project has one access level, and every agent working there follows it:
 
-## Branches, reliability, tools and reach (closing the gap with T3)
+| Level | Agents may, without asking |
+|---|---|
+| **Ask first** (default) | read; everything else asks |
+| **Build automatically** | edit files in the project, and run tests, builds, linters, git read-only commands and the project's own scripts. They can also start a local server, `curl` localhost and stop their own processes. |
+| **Full access** | anything. Use it for throwaway projects |
 
-- **Branches (worktrees).** Start a thread "On a new branch", or move one with the branch button in its top bar. It
-  works in `~/.bullpen/worktrees/…` on `bullpen/<name>`; your checkout isn't touched until you **Merge**. The same
-  menu brings in the latest base (conflicts go to the agent), opens a pull request (`gh`), or removes the worktree.
-  `node_modules`, `.venv`, `vendor` are linked and `.env*` copied; set a per-project setup command in the project menu.
-- **Team tasks in their own worktrees** (default in git repos; project menu to turn off). Each task starts from a
-  snapshot of the goal's folder, uncommitted changes included, and is three-way merged back when accepted. A conflict
-  sends it back to its agent with the markers in place (not counted as the lead's one send-back).
-- **Undo rewinds the conversation too.** "Undo this turn" restores files and drops the later turns from the agent's
-  memory (Claude: resume-at + fork; Codex: `thread/revert`). ACP engines get files only.
-- **Resume after a crash.** Each run stores its request in the same transaction that starts it; after a restart,
-  an interrupted thread turn and any unanswered @mention are picked back up once.
-- **Sub-agent steps** (Claude's Task/Agent tool) are recorded, nested under the call.
-- **Harness tools** for every agent: `list_threads`, `read_thread`, `start_thread` (optionally on its own branch),
-  `message_thread`, `wait_for_thread`, `propose_pull_request` (you get a button), and a real browser:
-  `browser_open/snapshot/click/type/press/screenshot`. ACP engines get them over MCP (`/mcp/<secret>`, local only).
-- **Live browser.** The Browser panel's monitor button switches to a real headless Chrome tab (Playwright) shared
-  with the agent: any site loads, and your clicks and typing go through. Fresh profile per thread.
-- **Other engines (ACP).** Gemini CLI, OpenCode, Goose and Qwen Code appear when installed; add any ACP agent in
-  `~/.bullpen/engines.json`: `[{ "id": "my-agent", "name": "My Agent", "command": "…", "args": ["--acp"] }]`.
-- **Remote access.** `bullpen remote on` (Tailscale), `bullpen remote on --lan` (same Wi-Fi, unencrypted), or
-  `bullpen remote ssh` (tunnel). Other devices use their own token: `bullpen remote reset` cuts them all off,
-  `bullpen remote off` stops listening. The phone button in the sidebar shows the QR code. The UI adapts to phones.
+Approvals appear in the chat and on Home. The menu on the access chip explains *why* a level applies. The rules for
+"Build automatically" are in `src/team-policy.ts` and tested by `node scripts/policy-test.ts`.
 
-Still simpler than T3: no Electron app or mobile app, no T3 Connect relay, no Cursor SDK, and Codex child threads
-aren't recorded.
+## Remote access and other engines
 
-Tests: `node scripts/worktrees-smoke.ts` (no agents), `node scripts/branch-smoke.ts [claude|codex] [model]`,
-`node scripts/tools-smoke.ts [claude|codex] [model]`, `node scripts/acp-smoke.ts` (mock agent); each starts its
-own throwaway server.
+**Use it from your phone or another computer:**
+
+```bash
+bullpen remote on          # over Tailscale (recommended)
+bullpen remote on --lan    # same Wi-Fi, unencrypted
+bullpen remote ssh         # print an SSH tunnel command
+bullpen remote reset       # new device token: every other device is signed out
+bullpen remote off
+```
+
+The phone button in the sidebar shows a QR code to pair a device.
+
+**Other engines.** Besides Claude Code and Codex, any [ACP](https://agentclientprotocol.com) agent works. Gemini CLI,
+OpenCode, Goose and Qwen Code show up automatically when installed. Add others in `~/.bullpen/engines.json`:
+
+```json
+[{ "id": "my-agent", "name": "My Agent", "command": "my-agent", "args": ["--acp"] }]
+```
+
+## Command line
+
+| Command | |
+|---|---|
+| `bullpen` | Open Bullpen (starts the server if needed) |
+| `bullpen start` / `stop` / `status` / `logs` | Control the background service |
+| `bullpen restart [--now]` | Restart; waits for running agent steps unless `--now` |
+| `bullpen update` | Update to the newest release |
+| `bullpen version` | Show the installed version |
+| `bullpen remote …` | Remote access (above) |
+| `bullpen uninstall` | Remove the service and command (keeps your data) |
 
 ## Security
 
-The server binds to 127.0.0.1 and requires the token in `~/.bullpen/token` (0600): as a bearer header
-from the CLI, or as a WebSocket subprotocol from the web UI, which reads it from the URL fragment that
-`npm run client -- ui` opens (fragments never reach the server; the page keeps it in sessionStorage).
-Connections must carry this server's own `Host` (blocks DNS rebinding) and, if they have an `Origin`,
-this server's own origin (blocks other web pages). With remote access on, it also listens on the
-Tailscale or LAN address and accepts the separate device token (`~/.bullpen/device-token`). Agents' browser tools
-can reach any site without asking. The agent can run commands in the thread's
-directory, so keep `approval-required` (the default) unless you trust the task.
+- The server listens on `127.0.0.1:4773` only, and every connection needs the token in `~/.bullpen/token`
+  (readable only by you). It checks `Host` and `Origin`, so other web pages can't reach it.
+- Remote devices use a separate token, which `bullpen remote reset` revokes.
+- Previewed sites and artifacts run sandboxed on a separate origin, so their scripts can't reach Bullpen.
+- Agents run commands as you. Keep **Ask first** unless you trust the task. The agent browser can open any site.
+
+## Development
+
+Node 24+ runs the TypeScript directly; there's no build step.
+
+```bash
+git clone https://github.com/BrownJ3/bullpen && cd bullpen
+npm install
+npm run install-app      # optional: run this checkout as your `bullpen`
+npm run server           # or run it in the foreground
+```
+
+A checkout on a branch updates from its branch instead of releases.
+
+**How it's built.** The server (`src/server.ts`) keeps every change as an event in SQLite (`src/store.ts`).
+Commands go through `src/orchestrator.ts`, and engines plug in as adapters (`src/providers/`: `claude.ts` uses
+the Claude Agent SDK, `codex.ts` uses `codex app-server`, `acp.ts` covers everything else). Each turn is snapshotted
+into hidden git refs (`src/checkpoints.ts`). Teams are `src/team.ts`, and the web UI is plain JavaScript in `ui/`.
+`docs/t3code-harness-architecture.md` describes the design this started from.
+
+**Adding an engine:** implement `ProviderAdapter` from `src/types.ts` and register it in `src/server.ts`.
+
+**Tests** (each starts its own throwaway server):
+
+```bash
+node scripts/policy-test.ts        # permission rules, no agents
+node scripts/worktrees-smoke.ts    # branches, no agents
+node scripts/acp-smoke.ts          # ACP engine against a mock agent
+node scripts/smoke.ts <repo> [claude|codex]   # one real turn
+node scripts/team-smoke.ts         # teams end to end (uses real agents)
+```
+
+Also `agents-smoke`, `branch-smoke`, `tools-smoke`, `jobs-smoke` and `loops-smoke` in `scripts/`.
+
+**Releasing:** bump `version` in `package.json`, commit, then `git tag vX.Y.Z && git push origin main --tags`.
+Installs pick up the newest `v*` tag.
+
+## Acknowledgments
+
+Bullpen's design draws on [T3 Code](https://github.com/pingdotgg/t3code) by Ping.gg (event-sourced orchestration,
+provider adapters, checkpoints, worktrees and the workspace layout), and on AgentOffice's delegate, review and
+report loop for teams. Bullpen is an independent implementation and isn't affiliated with either.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+[MIT](LICENSE)
