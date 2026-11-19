@@ -725,6 +725,16 @@ button:focus-visible, [role="button"]:focus-visible { outline: 2px solid color-m
 .import-dlg input, .import-dlg textarea { border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); border-radius: 8px; padding: 7px 9px; font-size: 13px; }
 .import-dlg textarea { font: 12px/1.45 var(--mono); resize: vertical; }
 .import-dlg .file-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12.5px; }
+.home-brief { margin: 2px 0 10px; font-size: 14px; }
+.home-brief ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+.home-links { display: flex; gap: 16px; margin-top: 8px; font-size: 13px; }
+.chip-sep { opacity: .45; margin: 0 1px; }
+.settings-dlg { width: min(520px, calc(100vw - 24px)); padding: 16px 20px 18px; }
+.settings-dlg .dlg-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.settings-dlg h3 { margin: 0; font-size: 16px; }
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+.set-row .faint { font-size: 12px; margin-top: 2px; }
+.set-row input[type=time] { border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); border-radius: 7px; padding: 3px 6px; }
 .side-new { display: flex; gap: 6px; margin: 4px 14px 8px; }
 .new-chat { flex: 1; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 9px; border: 0; background: var(--primary); color: var(--on-primary); font-size: 13.5px; font-weight: 600; text-align: left; transition: filter 0.12s; }
 .new-chat:hover { filter: brightness(1.12); }
@@ -1093,7 +1103,7 @@ button.hrow:hover { background: var(--hover); }
     </div>
     <button class="jump" id="jump" type="button"><span data-icon="search" data-size="14"></span><span class="t">Search or jump to…</span><span class="kbd">⌘K</span></button>
     <div class="side-scroll">
-      <button class="inbox-row" id="inbox-row"><span class="ic" data-icon="inbox" data-size="15"></span><span style="flex:1">Inbox</span><span id="inbox-count"></span></button>
+      <button class="inbox-row" id="inbox-row"><span class="ic" data-icon="home" data-size="15"></span><span style="flex:1">Home</span><span id="inbox-count"></span></button>
       <button class="inbox-row" id="teams-row"><span class="ic" data-icon="users" data-size="15"></span><span style="flex:1">Teams</span><span id="teams-count"></span></button>
       <button class="inbox-row" id="artifacts-row"><span class="ic" data-icon="layers" data-size="15"></span><span style="flex:1">Artifacts</span><span id="artifacts-count"></span></button>
       <div class="section-head">Agents <button class="icon-btn" id="new-agent" title="Recruit agents" aria-label="Recruit agents" data-icon="plus" data-size="15"></button></div>
@@ -1101,23 +1111,28 @@ button.hrow:hover { background: var(--hover); }
       <div class="section-head">Jobs <button class="icon-btn" id="new-job" title="New standing job" aria-label="New standing job" data-icon="plus" data-size="15"></button></div>
       <div id="jobs"></div>
       <div class="section-head">Projects <span class="head-actions">
-        <button class="icon-btn" id="import-projects" title="Choose which projects show here" aria-label="Choose projects" data-icon="list" data-size="15"></button>
-        <button class="icon-btn" id="new-thread" title="Add or create a project" aria-label="Add or create a project" data-icon="plus" data-size="15"></button></span></div>
+        <button class="icon-btn" id="new-thread" title="Projects: new, add, choose which show" aria-label="Project actions" data-icon="plus" data-size="15"></button></span></div>
       <div id="project-suggest"></div>
       <div id="threads"></div>
     </div>
     <button class="update-pill" id="update-pill" hidden type="button"></button>
-    <div class="side-foot"><span><span class="conn" id="conn" title="disconnected"></span><span id="conn-text">Connecting…</span></span><select class="palette-pick" id="palette-pick" title="Colour theme" aria-label="Colour theme">
-      <option value="harbor">Harbor</option><option value="night">Night</option><option value="paper">Paper</option><option value="graphite">Graphite</option>
-    </select><button class="icon-btn" id="remote-btn" title="Use Bullpen from your phone or another computer" aria-label="Use from another device" data-icon="phone" data-size="14"></button><button class="icon-btn" id="stop-server" title="Stop the Bullpen server" aria-label="Stop the Bullpen server" data-icon="power" data-size="14"></button></div>
+    <div class="side-foot"><span><span class="conn" id="conn" title="disconnected"></span><span id="conn-text">Connecting…</span></span><button class="icon-btn" id="settings-btn" title="Settings" aria-label="Settings" data-icon="gear" data-size="15"></button></div>
   </aside>
   <main class="main" id="main"></main>
 </div>
+<dialog id="settings-dialog" class="settings-dlg">
+  <div class="dlg-head"><h3>Settings</h3><button class="icon-btn" id="settings-close" aria-label="Close" data-icon="x" data-size="15"></button></div>
+  <div class="set-row"><div><b>Theme</b></div><select class="qsel" id="palette-pick" aria-label="Colour theme"><option value="harbor">Harbor</option><option value="night">Night</option><option value="paper">Paper</option><option value="graphite">Graphite</option></select></div>
+  <div id="settings-dyn"></div>
+  <div class="set-row"><div><b>Use from another device</b><div class="faint">Your phone, or another computer</div></div><button class="btn sm" id="remote-btn" type="button">Set up…</button></div>
+  <div class="set-row"><div><b>Keyboard shortcuts</b></div><button class="btn sm" id="shortcuts-btn" type="button">Show</button></div>
+  <div class="set-row"><div><b>Stop Bullpen</b><div class="faint">Agents stop; start it again with the Bullpen app</div></div><button class="btn sm danger" id="stop-server" type="button">Stop</button></div>
+</dialog>
 
 <dialog id="agent-dialog">
   <form method="dialog" id="agent-form">
     <h3 id="agent-dialog-title">New agent</h3>
-    <p class="sub">A specialist with its own conversation and memory. It isn't tied to a project: @mention it in any thread and it works in that thread's project. Other agents can consult it too.</p>
+    <p class="sub">A specialist with its own chat and memory. It isn't tied to a project: @mention it in any chat and it works in that chat's project. Other agents can consult it too.</p>
     <div class="grid2">
       <label>Name <span class="opt">anything you like</span>
         <input type="text" name="name" required maxlength="60" placeholder="Code Reviewer" autocomplete="off">
@@ -1140,7 +1155,7 @@ button.hrow:hover { background: var(--hover); }
         <input type="text" name="model" placeholder="provider default">
       </label>
     </div>
-    <label class="check"><input type="checkbox" name="canLead"> <span>Can lead a team <span class="faint">— hands tracked tasks to other agents, reviews them, and reports back when you @mention it in a project thread</span></span></label>
+    <label class="check"><input type="checkbox" name="canLead"> <span>Can lead a team <span class="faint">— hands tracked tasks to other agents, reviews them, and reports back when you @mention it in a project chat</span></span></label>
     <label>Permissions <span class="opt">What it may do on its own. A project set higher lets it do more there.</span>
       <select name="runtimeMode">
         <option value="approval-required">Ask before acting</option>
@@ -1353,6 +1368,8 @@ const ICONS = {
   layers: '<path d="m12 2 9 5-9 5-9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/>',
   monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
   phone: '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>',
+  panels: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16M3 14h12"/>',
+  gear: '<path d="M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.3a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4a2 2 0 0 0 .7 2.7l.2.1a2 2 0 0 1 1 1.7v.5a2 2 0 0 1-1 1.7l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.3a2 2 0 0 1 1 1.7v.2a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.3a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.7v-.5a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.3a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
   server: '<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/>',
   bug: '<rect x="8" y="7" width="8" height="13" rx="4"/><path d="M12 7V4M4 13h4M16 13h4M5 8l3 2M19 8l-3 2M5 19l3-2M19 19l-3-2"/>',
   flask: '<path d="M9 3h6"/><path d="M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"/><path d="M7.5 15h9"/>',
@@ -1415,7 +1432,7 @@ window.addEventListener("popstate", (ev) => {
   closeMenu?.(); closePalette();
   const m = location.hash.match(/^#\/t\/([\w-]+)/);
   if (m) openThread(m[1], false, true);
-  else if (location.hash === "#/inbox") openInbox(true);
+  else if (location.hash === "#/inbox") newThread(undefined, true);
   else if (location.hash === "#/teams") openTeams(true);
   else if (location.hash === "#/artifacts") openArtifacts(true);
   else if (location.hash.startsWith("#/a/")) openArtifact(location.hash.slice(4), true);
@@ -1572,7 +1589,6 @@ function connect() {
     await loadSidebar();
     checkProjectSuggestions(true);
     if (state.threadId) openThread(state.threadId, true);
-    else if (state.view === "inbox") renderInbox();
     else if (state.view === "teams") renderTeams();
     else if (state.view === "artifacts") renderArtifacts();
     else if (state.view === "artifact") renderArtifact();
@@ -1677,7 +1693,7 @@ async function loadSidebar() {
         for (const it of state.items.values()) if (it.kind === "agent_reply" && it.status === "running" && (it.runThreadId ?? state.agents.get(it.agentId)?.homeThreadId) === e.item.threadId) upsertItemEl(it);
         if (e.item.status === "pending" && !wasPending && e.item.threadId !== state.threadId) {
           const t = state.threads.get(e.item.threadId);
-          toast(`${t?.title ?? "A thread"} needs approval for ${e.item.tool}`, { onclick: () => openThread(e.item.threadId) });
+          toast(`${t?.title ?? "A chat"} needs approval for ${e.item.tool}`, { onclick: () => openThread(e.item.threadId) });
         }
       } else if (e.type === "turn-item.upserted" && e.item.kind === "agent_reply" && e.item.status !== "running" && e.item.threadId !== state.threadId) {
         toast(`@${e.item.agentName} answered in ${state.threads.get(e.item.threadId)?.title ?? "a thread"}`, { onclick: () => openThread(e.item.threadId) });
@@ -1685,7 +1701,6 @@ async function loadSidebar() {
     }
     renderSidebar();
     if (state.threadId) { state.thread = state.threads.get(state.threadId) ?? state.thread; renderTopbar(); }
-    else if (state.view === "inbox") renderInbox();
     else if (state.view === "teams") renderTeams();
     else if (state.view === "artifacts") renderArtifacts();
     else if (state.view === "artifact") renderArtifact(false);
@@ -1720,7 +1735,7 @@ function renderSidebar() {
   renderProjects();
   const inboxN = inboxCount();
   $("inbox-count").replaceChildren(...(inboxN ? [h("span", { class: "count attn" }, String(inboxN))] : []));
-  $("inbox-row").classList.toggle("active", state.view === "inbox" && !state.threadId);
+  $("inbox-row").classList.toggle("active", !state.view && !state.threadId);
   const teamThreads = [...state.threads.values()].filter((t) => t.team?.active);
   const activeTeams = teamThreads.reduce((n, t) => n + t.team.active, 0);
   const teamsNeed = teamThreads.some((t) => t.team.needsYou);
@@ -1845,7 +1860,7 @@ function renderProjects() {
         h("span", { class: "hover" },
           h("button", { class: "icon-btn" + (p.pinnedAt ? " on" : ""), title: p.pinnedAt ? "Unpin" : "Pin to top",
             onclick: (ev) => { ev.stopPropagation(); dispatch({ type: "project.update", projectId: p.id, pinned: !p.pinnedAt }).catch(fail); } }, icon("star", 13)),
-          h("button", { class: "icon-btn", title: `New thread in ${p.title}`,
+          h("button", { class: "icon-btn", title: `New chat in ${p.title}`,
             onclick: (ev) => { ev.stopPropagation(); newThread(p.path); } }, icon("plus", 14)),
           h("button", { class: "icon-btn", title: "More", "aria-label": "More actions",
             onclick: (ev) => { ev.stopPropagation(); const r = ev.currentTarget.getBoundingClientRect(); projectMenu(p, r.left, r.bottom + 4); } }, icon("more", 14)))),
@@ -1882,7 +1897,7 @@ function projectMenu(p, x, y) {
   const act = (fn) => (ev) => { ev.stopPropagation(); closeMenu(); fn(); };
   const update = (patch) => dispatch({ type: "project.update", projectId: p.id, ...patch }).catch(fail);
   const menu = h("div", { class: "menu", role: "menu" },
-    h("button", { onclick: act(() => newThread(p.path)) }, "New thread here"),
+    h("button", { onclick: act(() => newThread(p.path)) }, "New chat here"),
     h("button", { onclick: act(() => update({ pinned: !p.pinnedAt })) }, p.pinnedAt ? "Unpin" : "Pin to top"),
     h("button", { onclick: act(() => update({ archived: !p.archivedAt })) }, p.archivedAt ? "Unarchive" : "Archive (hide)"),
     h("button", { onclick: act(() => navigator.clipboard?.writeText(p.path).then(() => toast("Path copied."))) }, "Copy path"),
@@ -1907,7 +1922,7 @@ function projectMenu(p, x, y) {
   openMenu = menu;
 }
 async function removeProject(p) {
-  if (!confirm(`Remove ${p.title} from the sidebar? Its threads and files are kept; it comes back if you start a thread there.`)) return;
+  if (!confirm(`Remove ${p.title} from the sidebar? Its chats and files are kept; it comes back if you start a chat there.`)) return;
   try { await dispatch({ type: "project.remove", projectId: p.id }); } catch (err) { fail(err); }
 }
 
@@ -2007,7 +2022,7 @@ $("import-form").addEventListener("submit", async (ev) => {
     toast(parts.join(", ") + ".");
   } catch (err) { fail(err); }
 });
-$("import-projects").addEventListener("click", openImport);
+
 
 // ---------- main pane ----------
 function renderNoToken() {
@@ -2020,7 +2035,7 @@ function renderNoToken() {
 function renderStopped() {
   $("main").replaceChildren(h("div", { class: "empty" },
     h("h2", {}, "Bullpen is stopped"),
-    h("p", {}, "Your threads and agents are saved. To start it again, open the Bullpen app, or run:"),
+    h("p", {}, "Your chats and agents are saved. To start it again, open the Bullpen app, or run:"),
     h("pre", { class: "mono" }, "bullpen"),
     h("div", { class: "actions" }, h("button", { class: "btn", onclick: () => { state.stopping = false; connect(); } }, "Reconnect"))));
 }
@@ -2069,20 +2084,21 @@ function renderTopbar() {
   } else {
     const project = [...state.projects.values()].find((p) => p.path === t.cwd);
     crumbs = [crumb([project ? projectIcon(project) : icon("files", 15), h("span", { class: "tx" }, project?.title ?? folderName(t.cwd))],
-        (ev) => { ev.stopPropagation(); switchMenu(ev.currentTarget, "project", t.cwd); }, "Threads in this project"),
+        (ev) => { ev.stopPropagation(); switchMenu(ev.currentTarget, "project", t.cwd); }, "Chats in this project"),
       crumbSep(), cur(null, t.title)];
     sub = [t.worktree ? `${t.worktree.branch} · ${tildePath(t.worktree.path)}` : tildePath(t.cwd), `${engine}${t.model ? " · " + t.model : ""}`];
   }
   const proj = !agent && !job ? projectAt(t.cwd) : null;
   const pmode = proj?.runtimeMode && MODE_RANK[proj.runtimeMode] > MODE_RANK[t.runtimeMode] ? proj.runtimeMode : t.runtimeMode;
-  const perm = proj ? h("button", { type: "button", class: "btn sm perm" + (pmode !== "approval-required" ? " on" : ""), "aria-haspopup": "menu",
-      "data-tip": `Every agent working in ${proj.title} follows this`, "data-tip-pos": "end",
-      onclick: (ev) => { ev.stopPropagation(); permMenu(ev.currentTarget, proj, pmode); } },
-    icon(MODE_INFO[pmode].icon, 14), MODE_INFO[pmode].label, icon("chevdown", 12)) : null;
-  const branchBtn = proj ? h("button", { type: "button", class: "btn sm perm" + (t.worktree ? " on" : ""), "aria-haspopup": "menu",
-      "data-tip": t.worktree ? `Working in a separate copy on branch ${t.worktree.branch}; your folder isn't touched until you merge` : "Working in your project folder. Click to work in a separate copy instead.", "data-tip-pos": "end",
-      onclick: (ev) => { ev.stopPropagation(); branchMenu(ev.currentTarget, t); } },
-    icon("branch", 14), t.worktree ? shortBranch(t.worktree.branch) : "Your folder", icon("chevdown", 12)) : null;
+  // One chip for where this chat works and what agents may do there; one menu for both.
+  const accessItems = proj ? ["-", { header: `What agents may do in ${proj.title}` },
+    ...Object.entries(MODE_INFO).map(([m, info]) => ({ icon: m === pmode ? "check" : info.icon, label: info.label, desc: info.desc, active: m === pmode, run: () => setProjectMode(proj, m) }))] : [];
+  const perm = null;
+  const branchBtn = proj ? h("button", { type: "button", class: "btn sm perm" + (t.worktree || pmode !== "approval-required" ? " on" : ""), "aria-haspopup": "menu",
+      "data-tip": `${t.worktree ? `Working in a separate copy (branch ${t.worktree.branch}); your folder isn't touched until you merge.` : "Working in your project folder."}\nAgents here: ${MODE_INFO[pmode].label.toLowerCase()}.`, "data-tip-pos": "end",
+      onclick: (ev) => { ev.stopPropagation(); branchMenu(ev.currentTarget, t, accessItems); } },
+    icon(t.worktree ? "branch" : "files", 14), t.worktree ? shortBranch(t.worktree.branch) : "Your folder",
+    h("span", { class: "chip-sep" }, "·"), icon(MODE_INFO[pmode].icon, 13), MODE_SHORT[pmode], icon("chevdown", 12)) : null;
   const waiting = state.approvals.get(t.id)?.size ?? 0;
   const status = waiting ? h("span", { class: "live needs" }, h("span", { class: "pulse" }), waiting === 1 ? "Needs your OK" : `${waiting} need your OK`)
     : t.status === "running" ? h("span", { class: "live" }, h("span", { class: "pulse" }), "Working") : null;
@@ -2098,14 +2114,20 @@ function renderTopbar() {
     const approved = [...state.lessons.values()].filter((l) => l.agentId === agent.id && l.status === "approved").length;
     actions.push(ibtn("bulb", proposed ? `Lessons · ${proposed} to review` : `Lessons${approved ? ` (${approved})` : ""}`, () => openLessons(agent), { badge: proposed || null }));
   }
-  const panels = h("div", { class: "tgroup" },
-    ibtn("files", "Files", () => togglePanel("files"), { on: ui.files, kbd: "⌘⇧E" }),
-    ibtn("terminal", "Terminal", () => togglePanel("terminal"), { on: ui.terminal, kbd: "⌃`" }),
-    ibtn("globe", "Browser", () => togglePanel("browser"), { on: ui.browser, kbd: "⌘⇧B" }));
+  // Files, Terminal and Browser: one button, one menu (each still has its shortcut).
+  const openPanels = ["files", "terminal", "browser"].filter((k) => ui[k]);
+  const panels = ibtn("panels", openPanels.length ? `Panels: ${openPanels.join(", ")}` : "Files, terminal, browser", (ev) => {
+    ev.stopPropagation();
+    popMenu(ev.currentTarget, [
+      { icon: ui.files ? "check" : "files", label: "Files", kbd: "⌘⇧E", active: ui.files, run: () => togglePanel("files") },
+      { icon: ui.terminal ? "check" : "terminal", label: "Terminal", kbd: "⌃`", active: ui.terminal, run: () => togglePanel("terminal") },
+      { icon: ui.browser ? "check" : "globe", label: "Browser", kbd: "⌘⇧B", active: ui.browser, run: () => togglePanel("browser") },
+    ], "end");
+  }, { on: openPanels.length > 0, pos: "end" });
   const moreItems = agent ? [
     { icon: "edit", label: "Edit agent", run: () => openAgentDialog(agent) },
     { icon: "bulb", label: "Lessons", run: () => openLessons(agent) },
-    { icon: "reset", label: "Start conversation over", run: () => resetAgent(agent) },
+    { icon: "reset", label: "Start the chat over", run: () => resetAgent(agent) },
     "-",
     { icon: "trash", label: "Delete agent…", danger: true, run: () => deleteAgent(agent) },
   ] : job ? [
@@ -2113,7 +2135,7 @@ function renderTopbar() {
     { icon: "play", label: "Run now", run: () => dispatch({ type: "job.run", jobId: job.id }).then(() => toast("Running now.")).catch(fail) },
     { icon: job.enabled ? "pause" : "play", label: job.enabled ? "Pause" : "Resume", run: () => dispatch({ type: "job.update", jobId: job.id, enabled: !job.enabled }).catch(fail) },
   ] : [
-    { icon: "compose", label: "New thread in this project", run: () => newThread(t.cwd) },
+    { icon: "compose", label: "New chat in this project", run: () => newThread(t.cwd) },
     { icon: "copy", label: "Copy project path", run: () => navigator.clipboard?.writeText(t.cwd).then(() => toast("Path copied.")) },
   ];
   // Server events arrive constantly; only redraw when something shown changed, so clicks never land mid-redraw.
@@ -2134,23 +2156,24 @@ function renderTopbar() {
   ].filter(Boolean)); }
   const hint = $("hint");
   if (hint) hint.textContent = agent
-    ? `You're talking to ${agentLabel(agent)} directly. Its context carries over to every thread that calls it.`
+    ? `You're talking to ${agentLabel(agent)} directly. Its context carries over to every chat that calls it.`
     : proj ? `${pmode === "auto-accept-edits" ? `${proj.title} builds automatically: every agent here edits files and runs tests and builds on its own. Anything else waits for you.`
         : pmode === "full-access" ? `${proj.title} has full access: agents here run anything without asking.`
         : `${proj.title} asks before acting: agents wait for your OK before editing files or running commands.`}${state.agents.size ? " Type @ to bring in an agent." : ""}`
-    : state.agents.size ? "A message with @name goes to that agent; this thread's agent sees the answer on your next message." : "";
+    : state.agents.size ? "A message with @name goes to that agent; this chat's agent sees the answer on your next message." : "";
   const stop = $("stop"); if (stop) stop.hidden = t.status !== "running";
 }
 // ---------- branches: a thread can work in its own git worktree ----------
 const shortBranch = (b) => { const x = b.replace(/^bullpen\//, ""); return x.length > 22 ? x.slice(0, 21) + "…" : x; };
-async function branchMenu(anchor, t) {
+async function branchMenu(anchor, t, extra = []) {
   if (!t.worktree) {
     popMenu(anchor, [
-      { icon: "branch", label: "Work in a separate copy (new branch)", run: async () => {
-        try { toast("Making a worktree…"); await dispatch({ type: "worktree.create", threadId: t.id }); toast("This chat now works in a separate copy, on its own branch."); } catch (err) { fail(err); }
+      { header: "Where this chat works" },
+      { icon: "files", label: "Your project folder", disabled: true },
+      { icon: "branch", label: "Move to a separate copy (new branch)", desc: "Your folder isn't touched until you merge", run: async () => {
+        try { toast("Making a separate copy…"); await dispatch({ type: "worktree.create", threadId: t.id }); toast("This chat now works in a separate copy, on its own branch."); } catch (err) { fail(err); }
       } },
-      "-",
-      { icon: "files", label: "Working in your project folder", disabled: true },
+      ...extra,
     ], "end");
     return;
   }
@@ -2173,10 +2196,10 @@ async function branchMenu(anchor, t) {
     { icon: "copy", label: "Copy worktree path", run: () => navigator.clipboard?.writeText(wt.path).then(() => toast("Path copied.")) },
     { icon: "trash", label: "Remove worktree…", danger: true, disabled: busy, run: async () => {
       const merged = st?.merged;
-      if (!confirm(`Remove this thread's worktree folder?${merged ? "" : "\n\nIts branch has work that isn't merged; the branch is kept so nothing is lost."}`)) return;
-      act("worktree.remove", "Worktree removed. The thread now works in your project folder.", { deleteBranch: Boolean(merged) })();
+      if (!confirm(`Remove this chat's worktree folder?${merged ? "" : "\n\nIts branch has work that isn't merged; the branch is kept so nothing is lost."}`)) return;
+      act("worktree.remove", "Worktree removed. The chat now works in your project folder.", { deleteBranch: Boolean(merged) })();
     } });
-  popMenu(anchor, items, "end");
+  popMenu(anchor, [{ header: "Where this chat works" }, ...items, ...extra], "end");
 }
 function openPrDialog(t) {
   const title = prompt("Pull request title", t.title);
@@ -2192,6 +2215,7 @@ const MODE_INFO = {
   "full-access": { label: "Full access", desc: "Agents run anything without asking. For throwaway projects.", icon: "shieldcheck" },
 };
 const MODE_RANK = { "approval-required": 0, "auto-accept-edits": 1, "full-access": 2 };
+const MODE_SHORT = { "approval-required": "Asks first", "auto-accept-edits": "Builds automatically", "full-access": "Full access" };
 const projectAt = (path) => [...state.projects.values()].find((p) => p.path === path);
 function setProjectMode(p, mode) {
   dispatch({ type: "project.update", projectId: p.id, runtimeMode: mode })
@@ -2228,11 +2252,11 @@ function toolLabel(tool, input = {}) {
     case "TodoWrite": return said("list", "Updated the plan", "");
     case "Task": case "Agent": return said("users", "Sub-agent:", inp.description ?? inp.prompt, `start a sub-agent: ${short(inp.description ?? "", 60)}`);
     case "report_progress": return said("message", "Noted:", inp.note);
-    case "list_threads": return said("list", "Looked at threads", inp.project ?? "");
-    case "read_thread": return said("message", "Read thread", inp.thread);
-    case "start_thread": return said("compose", "Started a thread:", inp.title ?? inp.prompt);
-    case "message_thread": return said("message", "Messaged thread", inp.message);
-    case "wait_for_thread": return said("clock", "Waited for thread", inp.thread);
+    case "list_threads": return said("list", "Looked at chats", inp.project ?? "");
+    case "read_thread": return said("message", "Read chat", inp.thread);
+    case "start_thread": return said("compose", "Started a chat:", inp.title ?? inp.prompt);
+    case "message_thread": return said("message", "Messaged chat", inp.message);
+    case "wait_for_thread": return said("clock", "Waited for chat", inp.thread);
     case "propose_pull_request": return said("external", "Proposed a pull request:", inp.title);
     case "browser_open": return said("globe", "Opened", inp.url);
     case "browser_snapshot": return said("globe", "Read the page", "");
@@ -2261,7 +2285,7 @@ function switchMenu(anchor, kind, cwd) {
     const homes = new Set([...state.agents.values()].map((a) => a.homeThreadId));
     const threads = [...state.threads.values()].filter((t) => t.cwd === cwd && !homes.has(t.id) && !t.jobId).sort((a, b) => activity(b).localeCompare(activity(a))).slice(0, 14);
     popMenu(anchor, [{ header: folderName(cwd) }, ...threads.map((t) => ({ icon: t.status === "running" ? "refresh" : "message", label: t.title, sub: ago(activity(t)).replace(" ago", ""), active: state.threadId === t.id, run: () => openThread(t.id) })),
-      "-", { icon: "compose", label: "New thread here", run: () => newThread(cwd) }]);
+      "-", { icon: "compose", label: "New chat here", run: () => newThread(cwd) }]);
   }
 }
 async function deleteAgent(agent) {
@@ -2507,7 +2531,7 @@ function itemElInner(item) {
       const agent = state.agents.get(item.agentId);
       return h("div", { ...base, class: "reply" + (item.status === "failed" ? " failed" : "") },
         h("div", { class: "reply-head" }, badge(agent ? agentLabel(agent) : item.agentName), agent ? agentLabel(agent) : "@" + item.agentName,
-          h("span", { class: "muted" }, item.status === "running" ? "working on it…" : item.status === "failed" ? "couldn't answer" : item.delivered ? "shared with this thread's agent" : ""),
+          h("span", { class: "muted" }, item.status === "running" ? "working on it…" : item.status === "failed" ? "couldn't answer" : item.delivered ? "shared with this chat's agent" : ""),
           item.status === "running" && agent ? h("button", { class: "link", onclick: () => openThread(item.runThreadId ?? agent.homeThreadId) }, "watch") : null),
         item.status === "running" ? (item.activity ? activityLine(item.activity, { compact: true }) : h("div", { class: "act-line compact" }, h("span", { class: "act-spin" }), h("span", { class: "act-what" }, "Starting…")))
           : h("div", { class: "reply-body" }, richText(item.text)),
@@ -2779,7 +2803,7 @@ function renderLiveBrowser(panel, g) {
   const addr = h("input", { class: "addr", value: live.threadId === id ? live.url : "", placeholder: "Any address: localhost:3000, github.com…", spellcheck: "false" });
   const img = h("img", { class: "live-img", alt: "Live browser page", draggable: "false" });
   const empty = h("div", { class: "launcher" }, h("div", { class: "note" },
-    "A real Chrome tab for this thread: any site loads, and you can click and type in it. When the agent uses its browser tools you'll see it here."));
+    "A real Chrome tab for this chat: any site loads, and you can click and type in it. When the agent uses its browser tools you'll see it here."));
   const view = h("div", { class: "live-view", tabindex: "0", "aria-label": "Live browser; click to interact, type to send keys" }, empty);
   const go = async (text) => {
     if (!text.trim()) return;
@@ -3135,7 +3159,7 @@ function renderArtifacts(force = false) {
   // Syncing only works when Claude Code runs inside the Claude desktop app; it stays tucked away in the menu.
   const more = ibtn("more", "More", (ev) => { ev.stopPropagation(); popMenu(ev.currentTarget, [
     { icon: "refresh", label: "Try syncing from claude.ai", desc: "Works only where Claude Code can read your claude.ai artifacts", run: () => syncArtifacts() },
-    { icon: on ? "check" : "clock", label: on ? "Auto-sync is on (every 30 min)" : "Auto-sync every 30 minutes", run: () => dispatch({ type: "settings.update", claudeArtifacts: !on }).catch(fail) },
+    { icon: "gear", label: "Auto-sync settings…", run: () => openSettings() },
   ], "end"); }, { pos: "end" });
   const search = h("input", { id: "art-search", type: "search", placeholder: "Search artifacts", value: artFilter.q, oninput: (ev) => { artFilter.q = ev.target.value; drawArtGrid(); } });
   const chips = h("div", { class: "chips" }, ...[["all", "All"], ["bullpen", "Made here"], ["claude", "claude.ai"]].map(([k, label]) =>
@@ -3324,7 +3348,7 @@ function drawTeams(goals) {
           g.endedAt ? h("span", {}, `· ended ${ago(g.endedAt)}`) : null,
           h("span", { class: "spacer" }),
           !isOpenGoal(g) ? h("button", { class: "link", onclick: () => { teamsDone.delete(g.goalId); drawTeams(JSON.parse(teamsData)); } }, "Collapse") : null,
-          h("button", { class: "link", onclick: () => openThread(g.threadId) }, "Open conversation")),
+          h("button", { class: "link", onclick: () => openThread(g.threadId) }, "Open chat")),
         teamCard(g, draw));
     };
     draw();
@@ -3470,7 +3494,7 @@ $("job-form").addEventListener("submit", async (ev) => {
   } catch (err) { $("job-error").textContent = err.message; }
 });
 $("job-delete").addEventListener("click", async () => {
-  if (!editingJob || !confirm(`Delete the job “${editingJob.name}”? Its thread and past results are kept.`)) return;
+  if (!editingJob || !confirm(`Delete the job “${editingJob.name}”? Its chat and past results are kept.`)) return;
   try { await dispatch({ type: "job.delete", jobId: editingJob.id }); $("job-dialog").close(); } catch (err) { $("job-error").textContent = err.message; }
 });
 $("new-job").addEventListener("click", () => openJobDialog());
@@ -3526,7 +3550,7 @@ function renderLessons() {
 function refreshLessonViews() {
   setTimeout(() => {
     if ($("lessons-dialog").open) renderLessons();
-    if (state.view === "inbox" && !state.threadId) renderInbox();
+    if (!state.view && !state.threadId) refreshHome();
     renderTopbar(); renderSidebar();
   }, 120);
 }
@@ -3536,86 +3560,9 @@ $("lesson-add").addEventListener("click", async () => {
 });
 
 // ---------- inbox: briefing, lessons to review, everything waiting on you ----------
-function openInbox(fromHistory = false) {
-  if (state.sub) call("unsubscribe", { subscription: state.sub }).catch(() => {});
-  state.sub = null; state.threadId = null; state.thread = null; state.view = "inbox";
-  if (!fromHistory) routeTo("#/inbox");
-  renderSidebar(); renderInbox();
-}
-$("inbox-row").addEventListener("click", () => openInbox());
-async function renderInbox() {
-  const col = h("div", { class: "column" });
-  if (!$("inbox-page")) $("main").replaceChildren(
-    pageTopbar("inbox", "Inbox", "What your agents did while you were away, and what they need from you", [
-      h("button", { type: "button", class: "btn sm", onclick: () => openLessons(null) }, icon("bulb", 14), "All lessons"),
-      h("button", { type: "button", class: "btn sm", onclick: () => openJobDialog() }, icon("plus", 14), "New job")]),
-    h("div", { class: "page", id: "inbox-page" }, col));
-  else $("inbox-page").replaceChildren(col);
-  let data = null;
-  try { data = await call("inbox"); } catch (err) { col.append(h("div", { class: "box-empty" }, err.message)); return; }
-  if (state.view !== "inbox" || state.threadId) return;
-  const box = (title, count, kids, extra) => h("div", { class: "box" },
-    h("div", { class: "box-h" }, title, count ? h("span", { class: "count" }, String(count)) : null, h("span", { class: "spacer" }), extra ?? null),
-    h("div", { class: "box-b" }, ...(kids.length ? kids : [h("div", { class: "box-empty" }, "Nothing here.")])));
-  // Needs you: jobs whose last run needs a decision or failed, and teams waiting on you.
-  const needs = [];
-  for (const j of state.jobs.values()) {
-    if (j.lastStatus !== "needs-you" && j.lastStatus !== "failed") continue;
-    const run = data.runs.find((r) => r.jobId === j.id);
-    const items = run?.needsYou?.length ? run.needsYou : [run?.summary ?? (j.lastStatus === "failed" ? "The last run failed." : "Needs a decision.")];
-    for (const text of items) needs.push(h("div", { class: "irow" },
-      h("span", { class: "dot " + j.lastStatus, style: "margin-top:6px" }),
-      h("div", { class: "main" }, h("div", {}, text), h("div", { class: "sub" }, `${j.name} · ${run ? ago(run.endedAt ?? run.startedAt) : ""}`)),
-      h("div", { class: "acts" }, h("button", { class: "btn", onclick: () => openThread(j.threadId) }, "Open"))));
-  }
-  const homes = new Map([...state.agents.values()].map((a) => [a.homeThreadId, a]));
-  for (const t of state.threads.values()) {
-    const n = state.approvals.get(t.id)?.size ?? 0;
-    if (!n) continue;
-    const a = homes.get(t.id);
-    needs.push(h("div", { class: "irow" }, h("span", { class: "dot needs-you", style: "margin-top:6px" }),
-      h("div", { class: "main" }, h("div", {}, `${a ? agentLabel(a) : t.title} needs your OK${n > 1 ? ` (${n})` : ""}`), h("div", { class: "sub" }, a ? "Waiting on a command or edit" : folderName(t.cwd))),
-      h("div", { class: "acts" }, h("button", { class: "btn sm", onclick: () => openThread(t.id) }, "Open"))));
-  }
-  for (const t of state.threads.values()) {
-    if (!t.team?.needsYou) continue;
-    needs.push(h("div", { class: "irow" }, h("span", { class: "dot needs-you", style: "margin-top:6px" }),
-      h("div", { class: "main" }, h("div", {}, `A team needs you (${t.team.needsYou})`), h("div", { class: "sub" }, t.title)),
-      h("div", { class: "acts" }, h("button", { class: "btn", onclick: () => openThread(t.id) }, "Open"))));
-  }
-  const proposed = [...state.lessons.values()].filter((l) => l.status === "proposed");
-  const b = data.latest ?? data.recent;
-  const fmtT = (iso) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  const briefing = h("section", { class: "brief" },
-    h("div", { class: "brief-when" }, data.latest
-      ? `Morning briefing · ${fmtT(data.latest.at)} · covers since ${new Date(data.latest.since).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}`
-      : "The last 24 hours · your first briefing arrives at the time set below"),
-    h("h1", {}, b.headline),
-    b.lines.length ? h("ul", {}, ...b.lines.map((l) => h("li", {}, l))) : null);
-  const runs = data.runs.slice(0, 12).map((r) => {
-    const j = state.jobs.get(r.jobId);
-    return h("div", { class: "irow" }, h("span", { class: "dot " + r.status, style: "margin-top:6px" }),
-      h("div", { class: "main" }, h("div", {}, `${j?.name ?? "Deleted job"} · ${r.status}`), h("div", { class: "sub" }, `${r.reason} · ${ago(r.startedAt)}${r.summary ? ` · ${r.summary.slice(0, 140)}` : ""}`)),
-      j ? h("div", { class: "acts" }, h("button", { class: "btn", onclick: () => openThread(j.threadId) }, "Open")) : null);
-  });
-  const time = h("input", { type: "time", value: state.settings.briefingTime });
-  time.addEventListener("change", () => dispatch({ type: "settings.update", briefingTime: time.value }).catch(fail));
-  const en = h("input", { type: "checkbox", checked: state.settings.briefingEnabled });
-  en.addEventListener("change", () => dispatch({ type: "settings.update", briefingEnabled: en.checked }).catch(fail));
-  const no = h("input", { type: "checkbox", checked: state.settings.notifications });
-  no.addEventListener("change", () => dispatch({ type: "settings.update", notifications: no.checked }).catch(fail));
-  col.replaceChildren(...[
-    briefing,
-    data.pausedUntil && Date.parse(data.pausedUntil) > Date.now() ? h("div", { class: "team-note", style: "border-radius:10px" }, `Jobs are paused until ${new Date(data.pausedUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}: your plan's usage limit was reached.`) : null,
-    box("Needs you", needs.length, needs.length ? needs : [h("div", { class: "box-empty" }, "Nothing needs you.")]),
-    proposed.length ? box("Lessons to review", proposed.length, proposed.map((l) => lessonRow(l, true)),
-      h("button", { class: "link", onclick: () => openLessons(null) }, "Lessons for every agent")) : null,
-    box("Recent job runs", 0, runs, h("button", { class: "link", onclick: () => openJobDialog() }, "+ New job")),
-    h("div", { class: "settings-foot" }, h("div", { class: "settings-row", style: "padding:0" },
-      h("label", { class: "check", style: "align-items:center" }, en, " Morning briefing at"), time,
-      h("label", { class: "check", style: "align-items:center" }, no, " Mac notifications"))),
-  ].filter(Boolean));
-}
+/** Inbox and Home are one page now: Home. (Kept for old links and toasts.) */
+function openInbox() { newThread(); }
+$("inbox-row").addEventListener("click", () => newThread());
 
 // ---------- composer with @ autocomplete ----------
 /** Auto-growing textarea with @agent autocomplete; Enter calls onSubmit, Shift+Enter is a newline. */
@@ -3936,7 +3883,7 @@ async function openRemote() {
 }
 
 async function rollback(ordinal) {
-  if (!confirm(`Restore this thread to ${ordinal === 0 ? "before its first turn" : `after turn ${ordinal}`}? Files go back to how they were, and the agent forgets the later turns. A safety snapshot of the files is taken first.`)) return;
+  if (!confirm(`Restore this chat to ${ordinal === 0 ? "before its first turn" : `after turn ${ordinal}`}? Files go back to how they were, and the agent forgets the later turns. A safety snapshot of the files is taken first.`)) return;
   try {
     const r = await dispatch({ type: "checkpoint.rollback", threadId: state.threadId, ordinal });
     toast(r.conversation === "unchanged" ? "Files restored (this engine can't rewind its conversation)." : "Files and conversation restored.");
@@ -3944,7 +3891,30 @@ async function rollback(ordinal) {
 }
 
 $("new-agent").addEventListener("click", () => openAgentGallery());
-$("remote-btn").addEventListener("click", () => openRemote());
+$("remote-btn").addEventListener("click", () => { $("settings-dialog").close(); openRemote(); });
+$("settings-btn").addEventListener("click", () => openSettings());
+$("settings-close").addEventListener("click", () => $("settings-dialog").close());
+$("shortcuts-btn").addEventListener("click", () => { $("settings-dialog").close(); openShortcuts(); });
+/** One place for every preference (theme, briefing, notifications, sync, remote access, version). */
+async function openSettings() {
+  const st = state.settings ?? {};
+  const row = (title, sub, control) => h("div", { class: "set-row" }, h("div", {}, h("b", {}, title), sub ? h("div", { class: "faint" }, sub) : null), control);
+  const time = h("input", { type: "time", value: st.briefingTime ?? "08:00", onchange: (ev) => dispatch({ type: "settings.update", briefingTime: ev.target.value }).catch(fail) });
+  const brief = h("label", { class: "check" }, h("input", { type: "checkbox", checked: st.briefingEnabled !== false, onchange: (ev) => dispatch({ type: "settings.update", briefingEnabled: ev.target.checked }).catch(fail) }), " at ", time);
+  const notes = h("input", { type: "checkbox", checked: st.notifications !== false, onchange: (ev) => dispatch({ type: "settings.update", notifications: ev.target.checked }).catch(fail) });
+  const sync = h("input", { type: "checkbox", checked: st.claudeArtifacts === true, onchange: (ev) => dispatch({ type: "settings.update", claudeArtifacts: ev.target.checked }).catch(fail) });
+  const version = h("span", { class: "faint" }, "…");
+  $("settings-dyn").replaceChildren(
+    row("Morning briefing", "A summary of what your jobs did, on Home", brief),
+    row("Mac notifications", "When something needs you", notes),
+    row("Pull artifacts from claude.ai", "Only works where Claude Code can read them", sync),
+    row("Version", null, version));
+  $("settings-dialog").showModal();
+  try {
+    const v = await call("version");
+    version.replaceChildren(`v${v.current}${v.branch ? ` (${v.branch})` : ""} `, v.updateAvailable ? h("button", { class: "btn sm primary", onclick: () => $("update-pill").click() }, `Update to ${v.latest}`) : "");
+  } catch { version.textContent = ""; }
+}
 $("palette-pick").value = document.documentElement.dataset.palette || "graphite";
 $("palette-pick").addEventListener("change", (ev) => {
   const v = ev.target.value;
@@ -3952,12 +3922,17 @@ $("palette-pick").addEventListener("change", (ev) => {
   try { localStorage.setItem("bp-palette", v); } catch {}
 });
 $("stop-server").addEventListener("click", async () => {
+  $("settings-dialog").close();
   const busy = [...state.threads.values()].filter((t) => t.status === "running").length;
-  if (!confirm(busy ? `Stop the server? ${busy} thread(s) are working and will be interrupted.` : "Stop the Bullpen server? Agents can't be reached until it starts again.")) return;
+  if (!confirm(busy ? `Stop the server? ${busy} chat(s) are working and will be interrupted.` : "Stop the Bullpen server? Agents can't be reached until it starts again.")) return;
   state.stopping = true;
   try { await call("shutdown"); } catch {}
 });
-$("new-thread").addEventListener("click", () => newProject());
+$("new-thread").addEventListener("click", (ev) => { ev.stopPropagation(); popMenu(ev.currentTarget, [
+  { icon: "folderplus", label: "New project", desc: "Make a new folder to work in", run: () => newProject(true) },
+  { icon: "files", label: "Add a folder you have", desc: "Any folder on this Mac", run: () => newProject() },
+  { icon: "list", label: "Choose which projects show", desc: "Including ones from Claude Code and Codex", run: () => openImport() },
+]); });
 $("new-chat").addEventListener("click", () => newThread());
 $("new-project").addEventListener("click", () => newProject(true));
 /** Pick a folder you have, or make a new one (create: open straight on the "new folder" form), then start a chat there. */
@@ -4160,7 +4135,7 @@ function refreshHome() {
     ...(it.lesson
       ? [h("button", { type: "button", class: "btn ghost sm", onclick: () => decide(it.lesson, "reject") }, "Dismiss"), h("button", { type: "button", class: "btn sm", onclick: () => decide(it.lesson, "approve") }, "Approve")]
       : [h("button", { type: "button", class: "btn sm", onclick: it.open }, "Open")])))),
-    h("button", { type: "button", class: "link", onclick: () => openInbox() }, "Open inbox")));
+    needs.length > 6 ? h("span", { class: "faint" }, `and ${needs.length - 6} more`) : null));
   if (running.length) kids.push(sec("Running now", running.length, h("div", { class: "hlist" }, ...running.map((it) => h("button", { type: "button", class: "hrow", onclick: it.open },
     it.el ?? icon(it.icon, 16), h("div", { class: "hm" }, h("div", { class: "ht" }, it.title), h("div", { class: "hs" }, it.sub)),
     h("span", { class: "home-when" }, "Working"))))));
@@ -4169,6 +4144,25 @@ function refreshHome() {
     h("button", { type: "button", class: "btn sm primary", onclick: () => openAgentGallery() }, "Recruit agents")))));
   if (recent.length) kids.push(sec("Recent", 0, h("div", { class: "rlist" }, ...recent.map((t) => h("button", { type: "button", class: "rrow", onclick: () => openThread(t.id) },
     h("span", { class: "rt" }, t.title), h("span", { class: "rp" }, projectAt(t.cwd)?.title ?? folderName(t.cwd)), h("span", { class: "home-when" }, ago(activity(t))))))));
+  // What jobs did (and the briefing that sums it up): was the Inbox page.
+  const ib = state.inbox;
+  if (ib && (state.jobs.size || ib.latest)) {
+    const b = ib.latest ?? ib.recent;
+    kids.push(sec("While you were away", 0, h("div", {},
+      b?.headline ? h("div", { class: "home-brief" }, h("b", {}, b.headline), b.lines?.length ? h("ul", {}, ...b.lines.slice(0, 6).map((l) => h("li", {}, l))) : null) : null,
+      ib.pausedUntil && Date.parse(ib.pausedUntil) > Date.now() ? h("div", { class: "faint" }, `Jobs are paused until ${new Date(ib.pausedUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} (usage limit).`) : null,
+      h("div", { class: "hlist" }, ...ib.runs.slice(0, 6).map((r) => {
+        const j = state.jobs.get(r.jobId);
+        return h("button", { type: "button", class: "hrow", onclick: () => j && openThread(j.threadId) }, h("span", { class: "dot " + r.status }),
+          h("div", { class: "hm" }, h("div", { class: "ht" }, `${j?.name ?? "Deleted job"} · ${r.status === "needs-you" ? "needs you" : r.status}`), h("div", { class: "hs" }, `${ago(r.startedAt)}${r.summary ? ` · ${r.summary.slice(0, 120)}` : ""}`)));
+      }))),
+      h("button", { type: "button", class: "link", onclick: () => openJobDialog() }, "+ New job")));
+  }
+  const nLessons = [...state.lessons.values()].filter((l) => l.status === "approved").length;
+  kids.push(h("div", { class: "home-links" },
+    h("button", { type: "button", class: "link", onclick: () => openLessons(null) }, `Lessons${nLessons ? ` (${nLessons})` : ""}`),
+    h("button", { type: "button", class: "link", onclick: () => openJobDialog() }, "New job"),
+    h("button", { type: "button", class: "link", onclick: () => openSettings() }, "Settings")));
   secs.replaceChildren(...kids);
 }
 function renderStart() {
@@ -4218,8 +4212,8 @@ function renderStart() {
   mode.title = "What every agent working in this project may do on its own";
   mode.value = (cwd && projectAt(cwd)?.runtimeMode) || p.mode || "approval-required";
   const where = h("select", { class: "qsel", "aria-label": "Where to work" },
-    h("option", { value: "local" }, "In the project folder"),
-    h("option", { value: "worktree" }, "In a separate copy (new branch)"));
+    h("option", { value: "local" }, "In your folder"),
+    h("option", { value: "worktree" }, "In a separate copy"));
   where.title = "On a new branch: the work happens in its own git worktree, and your checkout isn't touched until you merge";
   where.value = p.where || "local";
   const more = h("div", { class: "more" }, model);
@@ -4253,6 +4247,7 @@ function renderStart() {
   $("main").replaceChildren(h("div", { class: "topbar ghost", id: "topbar" }, navCluster()),
     h("div", { class: "page", style: "padding:0" }, h("div", { class: "home" }, head, composer, resumeBox, secs)));
   refreshHome();
+  call("inbox").then((d) => { state.inbox = d; refreshHome(); }).catch(() => {});
   input.focus();
   loadResume();
 }
@@ -4264,7 +4259,7 @@ const PALETTES = [["harbor", "Harbor"], ["night", "Night"], ["paper", "Paper"], 
 function paletteItems() {
   const items = [];
   const add = (group, it) => items.push({ group, ...it });
-  add("Go to", { icon: "inbox", title: "Inbox", sub: "briefing, lessons, what needs you", kbd: "⌘1", run: () => openInbox() });
+  add("Go to", { icon: "home", title: "Home", sub: "what needs you, what's running, your briefing", kbd: "⌘1", run: () => newThread() });
   add("Go to", { icon: "users", title: "Teams", sub: "every goal your leads are running", kbd: "⌘2", run: () => openTeams() });
   add("Go to", { icon: "compose", title: "New chat", sub: "start something new", kbd: "⌥N", run: () => newThread() });
   add("Go to", { icon: "layers", title: "Artifacts", sub: "pages agents made, and your claude.ai artifacts", run: () => openArtifacts() });
@@ -4274,11 +4269,11 @@ function paletteItems() {
     add("Agents", { el: badge(agentLabel(a)), title: agentLabel(a), sub: "@" + a.name + (a.description ? " · " + a.description : ""), run: () => openThread(a.homeThreadId) });
   const threads = [...state.threads.values()].filter((t) => !homes.has(t.id) && !t.jobId && !t.cloneOf).sort((a, b) => activity(b).localeCompare(activity(a)));
   for (const t of threads.slice(0, 60))
-    add("Threads", { icon: "message", title: t.title, sub: `${folderName(t.cwd)} · ${ago(activity(t))}`, recent: true, run: () => openThread(t.id) });
+    add("Chats", { icon: "message", title: t.title, sub: `${folderName(t.cwd)} · ${ago(activity(t))}`, recent: true, run: () => openThread(t.id) });
   for (const j of state.jobs.values())
     add("Jobs", { icon: "clock", title: j.name, sub: j.enabled ? describeTrigger(j.trigger) : "paused", run: () => openThread(j.threadId) });
   for (const p of [...state.projects.values()].filter((p) => !p.archivedAt))
-    add("Projects", { el: projectIcon(p), title: p.title, sub: "new thread · " + tildePath(p.path), run: () => newThread(p.path) });
+    add("Projects", { el: projectIcon(p), title: p.title, sub: "new chat · " + tildePath(p.path), run: () => newThread(p.path) });
   add("Actions", { icon: "userplus", title: "Recruit agents", sub: "29 ready-made specialists", run: () => openAgentGallery() });
   add("Actions", { icon: "bot", title: "Create a custom agent", run: () => openAgentDialog() });
   add("Actions", { icon: "clock", title: "New standing job", run: () => openJobDialog() });
@@ -4317,7 +4312,7 @@ function markTitle(title, q) {
 function openPalette(initial = "") {
   if (pal) { pal.input.focus(); return; }
   closeMenu();
-  const input = h("input", { class: "pal-input", placeholder: "Search agents, threads, jobs, projects, actions…", spellcheck: "false", autocomplete: "off", value: initial });
+  const input = h("input", { class: "pal-input", placeholder: "Search agents, chats, jobs, projects, actions…", spellcheck: "false", autocomplete: "off", value: initial });
   const list = h("div", { class: "pal-list", role: "listbox" });
   const box = h("div", { class: "pal", role: "dialog", "aria-label": "Search and jump" },
     h("div", { class: "pal-search" }, icon("search", 17), input, kbd("esc")),
@@ -4327,12 +4322,12 @@ function openPalette(initial = "") {
   document.body.append(overlay);
   const all = paletteItems();
   pal = { overlay, input, list, sel: 0, shown: [], all };
-  const order = ["Go to", "Agents", "Threads", "Jobs", "Projects", "Actions"];
+  const order = ["Go to", "Agents", "Chats", "Jobs", "Projects", "Actions"];
   const draw = () => {
     const q = input.value.trim().toLowerCase();
     let shown;
     if (!q) {
-      const recent = all.filter((it) => it.group === "Threads").slice(0, 6).map((it) => ({ ...it, group: "Recent threads" }));
+      const recent = all.filter((it) => it.group === "Chats").slice(0, 6).map((it) => ({ ...it, group: "Recent chats" }));
       shown = [...all.filter((it) => it.group === "Go to"), ...recent, ...all.filter((it) => it.group === "Agents"), ...all.filter((it) => it.group === "Jobs"), ...all.filter((it) => it.group === "Actions").slice(0, 4)];
     } else {
       const scored = all.map((it) => ({ it, sc: palScore(it, q) })).filter((x) => x.sc >= 0);
@@ -4373,7 +4368,7 @@ function openPalette(initial = "") {
 }
 function closePalette() { if (!pal) return; pal.overlay.remove(); pal = null; }
 function openShortcuts() {
-  const rows = [["Search and jump anywhere", "⌘K"], ["Back / forward", "⌘[  ⌘]"], ["Inbox", "⌘1"], ["Teams", "⌘2"], ["New chat", "⌥N"], ["New project", "⌥⇧N"],
+  const rows = [["Search and jump anywhere", "⌘K"], ["Back / forward", "⌘[  ⌘]"], ["Home", "⌘1"], ["Teams", "⌘2"], ["New chat", "⌥N"], ["New project", "⌥⇧N"],
     ["Show or hide the sidebar", "⌘\\"], ["Files", "⌘⇧E"], ["Terminal", "⌃`"], ["Browser", "⌘⇧B"], ["Send a message", "↵"], ["New line", "⇧↵"], ["Mention an agent", "@"], ["This list", "?"]];
   const d = h("dialog", {}, h("form", { method: "dialog" },
     h("h3", {}, "Keyboard shortcuts"),
@@ -4388,7 +4383,7 @@ document.addEventListener("keydown", (ev) => {
   if (mod && !ev.shiftKey && !ev.altKey && (ev.key === "k" || ev.key === "K")) { ev.preventDefault(); pal ? closePalette() : openPalette(); return; }
   if (pal || document.querySelector("dialog[open]")) return;
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable || document.activeElement?.closest?.(".xterm");
-  if (mod && ev.key === "1") { ev.preventDefault(); openInbox(); }
+  if (mod && ev.key === "1") { ev.preventDefault(); newThread(); }
   else if (mod && ev.key === "2") { ev.preventDefault(); openTeams(); }
   else if (mod && ev.key === "\\") { ev.preventDefault(); toggleSidebar(); }
   else if (mod && ev.key === "[") { ev.preventDefault(); history.back(); }
@@ -4403,7 +4398,7 @@ if (sideHidden) document.querySelector(".app").classList.add("side-hidden");
 // ---------- start ----------
 const routed = location.hash.match(/^#\/t\/([\w-]+)/);
 if (routed) state.threadId = routed[1];
-if (location.hash === "#/inbox") state.view = "inbox";
+
 if (location.hash === "#/teams") state.view = "teams";
 if (location.hash === "#/artifacts") state.view = "artifacts";
 if (location.hash.startsWith("#/a/")) { state.view = "artifact"; state.artifactId = location.hash.slice(4); }
