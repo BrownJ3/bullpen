@@ -347,6 +347,11 @@ code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
 .act-spin { width: 10px; height: 10px; border-radius: 50%; border: 1.6px solid color-mix(in srgb, var(--primary) 30%, transparent); border-top-color: var(--primary); animation: spin 0.9s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .act-what { color: var(--text); font-weight: 550; white-space: nowrap; }
+details.adv { margin-top: 6px; }
+details.adv summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+.access-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); border-radius: 999px; padding: 0 7px; font-size: 11px; line-height: 18px; cursor: pointer; }
+.access-chip:hover { color: var(--text); border-color: var(--text); }
+.access-chip.full-access { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
 .act-now { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
 .act-now span { overflow: hidden; text-overflow: ellipsis; }
 .act-note { flex-basis: 100%; display: flex; align-items: center; gap: 6px; color: var(--text); font-style: italic; }
@@ -1156,13 +1161,15 @@ button.hrow:hover { background: var(--hover); }
       </label>
     </div>
     <label class="check"><input type="checkbox" name="canLead"> <span>Can lead a team <span class="faint">— hands tracked tasks to other agents, reviews them, and reports back when you @mention it in a project chat</span></span></label>
-    <label>Permissions <span class="opt">What it may do on its own. A project set higher lets it do more there.</span>
+    <details class="adv"><summary>Advanced</summary>
+    <label>Its own access <span class="opt">Usually leave this at "Ask first": in a project, the project's access applies (whichever is higher wins). Raise it only to let this agent do more everywhere.</span>
       <select name="runtimeMode">
-        <option value="approval-required">Ask before acting</option>
+        <option value="approval-required">Ask first</option>
         <option value="auto-accept-edits">Build automatically</option>
         <option value="full-access">Full access</option>
       </select>
     </label>
+    </details>
     <div class="form-error" id="agent-error"></div>
     <div class="dialog-actions">
       <button type="button" class="btn danger" id="agent-delete" hidden>Delete agent</button>
@@ -2210,7 +2217,7 @@ function openPrDialog(t) {
 
 // ---------- project permissions: one setting every agent working there follows ----------
 const MODE_INFO = {
-  "approval-required": { label: "Ask before acting", desc: "Agents ask before they edit files or run commands.", icon: "shield" },
+  "approval-required": { label: "Ask first", desc: "Agents ask before they edit files or run commands.", icon: "shield" },
   "auto-accept-edits": { label: "Build automatically", desc: "Edits inside the project, tests and builds run on their own. Anything else asks you.", icon: "shieldcheck" },
   "full-access": { label: "Full access", desc: "Agents run anything without asking. For throwaway projects.", icon: "shieldcheck" },
 };
@@ -2453,7 +2460,7 @@ function renderLive() {
     if (it.kind === "note" && it.progress) note = it.text;
   }
   const waiting = state.approvals.get(t.id)?.size;
-  const line = activityLine({ startedAt: run.startedAt, steps, last, note }, { label: waiting ? "Waiting for your OK" : "Working" });
+  const line = activityLine({ startedAt: run.startedAt, steps, last, note, access: run.access }, { label: waiting ? "Waiting for your OK" : "Working" });
   line.id = "live-status";
   line.classList.add("thread-live");
   const stick = nearBottom();
@@ -3108,6 +3115,14 @@ setInterval(() => {
     el.classList.toggle("late", used > 0.8);
   }
 }, 1000);
+/** "Asks first" / "Builds automatically" for a running turn; click for what decided it. */
+function accessChip(access) {
+  if (!access) return null;
+  const text = MODE_SHORT[access.mode] + (access.team && access.mode !== "full-access" ? " + team rules" : "");
+  return h("button", { type: "button", class: "access-chip " + access.mode, title: "What it may do without asking. Click for why.",
+    onclick: (ev) => { ev.stopPropagation(); popMenu(ev.currentTarget, [{ header: "Why it has this access" }, ...access.reasons.map((r) => ({ icon: "shield", label: r, disabled: true }))]); } },
+    icon(MODE_INFO[access.mode]?.icon ?? "shield", 11), text);
+}
 /** "Working · 2m 14s · 18 steps · Editing src/app.ts" plus the latest progress note: live while an agent works. */
 function activityLine(a, opts = {}) {
   if (!a) return null;
@@ -3116,6 +3131,7 @@ function activityLine(a, opts = {}) {
     h("span", { class: "act-spin" }),
     h("span", { class: "act-what" }, opts.label ?? "Working", " · ", h("span", { "data-clock": a.startedAt }, clock(a.startedAt)),
       a.steps ? ` · ${a.steps} step${a.steps === 1 ? "" : "s"}` : ""),
+    accessChip(a.access),
     step ? h("span", { class: "act-now" }, icon(step.icon, 12), h("span", {}, `${step.verb} ${step.detail}`.trim())) : null,
     a.note ? h("div", { class: "act-note" }, icon("message", 12), h("span", {}, a.note)) : null);
 }
@@ -4197,7 +4213,7 @@ function renderStart() {
   renderProject();
   projectBtn.addEventListener("click", async () => {
     const path = await pickFolder();
-    if (path) { cwd = path; prefs.set({ cwd }); renderProject(); loadResume(); const pm = projectAt(cwd)?.runtimeMode; if (pm) mode.value = pm; }
+    if (path) { cwd = path; prefs.set({ cwd }); renderProject(); loadResume(); renderMode(); }
     input.focus();
   });
   const engine = h("select", { class: "qsel", "aria-label": "Engine" }, ...engineOptions());
@@ -4205,12 +4221,21 @@ function renderStart() {
   engine.value = provider;
   engine.addEventListener("change", () => { provider = engine.value; prefs.set({ provider }); model.value = prefs.get()["model_" + provider] || ""; });
   const model = h("input", { type: "text", placeholder: "Model (provider default)", value: p["model_" + provider] || "" });
-  const mode = h("select", { class: "qsel", "aria-label": "Permissions in this project" },
-    h("option", { value: "approval-required" }, "Ask before acting"),
-    h("option", { value: "auto-accept-edits" }, "Build automatically"),
-    h("option", { value: "full-access" }, "Full access"));
-  mode.title = "What every agent working in this project may do on its own";
-  mode.value = (cwd && projectAt(cwd)?.runtimeMode) || p.mode || "approval-required";
+  // The project's access, shown (not a per-message choice): changing it is explicit and applies to every agent there.
+  const mode = h("button", { type: "button", class: "qbtn", "data-tip": "What agents may do in this project without asking", "data-tip-pos": "start" });
+  const renderMode = () => {
+    const m = (cwd && projectAt(cwd)?.runtimeMode) || "approval-required";
+    mode.value = m;
+    mode.replaceChildren(icon(MODE_INFO[m].icon, 13), MODE_SHORT[m], icon("chevdown", 12));
+  };
+  mode.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const proj = cwd && projectAt(cwd);
+    if (!proj) { toast("Choose a project first; access is set per project."); return; }
+    popMenu(mode, [{ header: `What agents may do in ${proj.title}` }, ...Object.entries(MODE_INFO).map(([m, info]) => ({ icon: m === mode.value ? "check" : info.icon, label: info.label, desc: info.desc, active: m === mode.value,
+      run: () => dispatch({ type: "project.update", projectId: proj.id, runtimeMode: m }).then(() => { toast(`${proj.title}: ${info.label.toLowerCase()}. Every agent there follows this.`); setTimeout(renderMode, 150); }).catch(fail) }))]);
+  });
+  renderMode();
   const where = h("select", { class: "qsel", "aria-label": "Where to work" },
     h("option", { value: "local" }, "In your folder"),
     h("option", { value: "worktree" }, "In a separate copy"));
@@ -4227,14 +4252,15 @@ function renderStart() {
     if (!cwd) { projectBtn.click(); return; }
     if (!text) { input.focus(); return; }
     go.disabled = true;
-    prefs.set({ mode: mode.value, where: where.value, ["model_" + provider]: model.value.trim() });
+    prefs.set({ where: where.value, ["model_" + provider]: model.value.trim() });
     try {
       if (where.value === "worktree") toast("Making a branch for this…");
-      const { threadId } = await dispatch({ type: "thread.create", cwd, provider, model: model.value.trim() || undefined, runtimeMode: mode.value,
+      // The chat itself asks first; the project's access (shown above) applies on top.
+      const { threadId } = await dispatch({ type: "thread.create", cwd, provider, model: model.value.trim() || undefined,
         title: where.value === "worktree" ? text.slice(0, 60) : undefined, worktree: where.value === "worktree" ? {} : undefined });
       // The choice is the project's: every agent pulled in here follows it.
       const proj = projectAt(cwd);
-      if (proj && (proj.runtimeMode ?? "approval-required") !== mode.value) await dispatch({ type: "project.update", projectId: proj.id, runtimeMode: mode.value }).catch(() => {});
+
       await dispatch({ type: "message.send", threadId, text });
       openThread(threadId);
     } catch (err) { fail(err); go.disabled = false; }

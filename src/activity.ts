@@ -11,6 +11,8 @@ export interface Activity {
   last?: { tool: string; input: unknown; running: boolean };
   /** The agent's latest progress note (report_progress), if any. */
   note?: string;
+  /** What it may do without asking, and why. */
+  access?: { mode: string; team?: boolean; reasons: string[] };
 }
 
 export function runActivity(store: Store, threadId: string, runId: string, note?: string): Activity | undefined {
@@ -23,7 +25,7 @@ export function runActivity(store: Store, threadId: string, runId: string, note?
     steps++;
     last = { tool: item.tool, input: compact(item.input), running: item.status === "running" };
   }
-  return { startedAt: run.startedAt, steps, last, note };
+  return { startedAt: run.startedAt, steps, last, note, access: run.access };
 }
 
 /** Keep only what's needed to describe a step (no file contents). */
@@ -38,4 +40,4 @@ function compact(input: unknown): unknown {
   return out;
 }
 
-export const activitySig = (a: Activity | undefined) => (a ? `${a.steps}|${a.last?.tool}|${a.last?.running}|${a.note ?? ""}` : "");
+export const activitySig = (a: Activity | undefined) => (a ? `${a.steps}|${a.last?.tool}|${a.last?.running}|${a.note ?? ""}|${a.access?.mode ?? ""}` : "");

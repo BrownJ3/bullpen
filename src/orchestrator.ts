@@ -1404,6 +1404,7 @@ export class Orchestrator {
       status: "running",
       startedAt: new Date().toISOString(),
       request: { text, chain, project, team, resumed: resumed || undefined },
+      access: this.#access(thread, project, team),
     };
     const userItem: TurnItem = { id: `user:${run.id}`, threadId, runId: run.id, kind: "user_message", text };
     const title = thread.runCount === 0 && thread.title === "New thread" ? text.slice(0, 60) : thread.title;
@@ -1442,6 +1443,23 @@ export class Orchestrator {
     else this.#runProjects.delete(threadId);
     this.#session(threadId).startTurn({ runId: run.id, text: agentText, workdir: project, team, mode: this.#turnMode(thread, project) });
     return { runId: run.id, ordinal };
+  }
+
+  /** A turn's access in plain words, with what decided it. Mirrors #turnMode and the team rules in the providers. */
+  #access(thread: Thread, workdir?: string, team?: boolean): NonNullable<Run["access"]> {
+    const label = { "approval-required": "Ask first", "auto-accept-edits": "Build automatically", "full-access": "Full access" } as const;
+    const mode = this.#turnMode(thread, workdir);
+    const dir = workdir ?? (thread.agentId ? undefined : workdirOf(thread));
+    const project = dir ? this.#projectFor(dir) : undefined;
+    const agent = thread.agentId ? this.#store.getAgent(thread.agentId) : undefined;
+    const reasons = [
+      project ? `Project ${project.title}: ${label[project.runtimeMode ?? "approval-required"]}` : agent ? "Not working in a project" : "",
+      agent ? `${agent.displayName ?? `@${agent.name}`}'s own setting: ${label[thread.runtimeMode]}` : `This chat: ${label[thread.runtimeMode]}`,
+      "The higher of the two applies.",
+      team && mode !== "full-access" ? "On a team task, edits in its own copy and tests/builds also run without asking." : "",
+      agent ? "Its own notes folder (memory) can always be edited." : "",
+    ].filter(Boolean);
+    return { mode, team: team || undefined, reasons };
   }
 
   /** The project's permission level reaches every agent working there; a thread or agent set higher keeps its own. */

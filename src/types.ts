@@ -86,6 +86,8 @@ export interface Run {
   nativeTurnId?: string;
   /** Rolled back: later turns were undone and the agent no longer remembers them. */
   rewound?: boolean;
+  /** What this turn could do without asking, and what decided it (shown on running work: "why?"). */
+  access?: { mode: RuntimeMode; team?: boolean; reasons: string[] };
   /** What was asked, kept so the turn can be resumed if Bullpen stops mid-turn (the outbox). */
   request?: { text: string; chain: string[]; project?: string; team?: boolean; resumed?: number };
 }
