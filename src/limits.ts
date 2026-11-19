@@ -2,7 +2,11 @@
 
 export const LIMITS = {
   maxTasks: 12, // per round
-  maxParallel: 3, // tasks working at once per goal
+  maxParallel: 4, // tasks working at once per goal
+  /** A goal is "slow" when one task has run this long while others wait. */
+  slowAfterMs: 12 * 60_000,
+  maxHiresPerGoal: 4,
+  maxTeamSize: 12,
   /** Each run of a task gets this long; then it wraps up and submits what it has (nothing is thrown away). */
   taskBudgetMs: Number(process.env.BULLPEN_TASK_BUDGET_MS) || 12 * 60_000,
   /** The wrap-up turn after the budget; past this it's stopped. */

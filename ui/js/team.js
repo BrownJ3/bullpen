@@ -28,7 +28,12 @@ function taskPill(t) {
   return h("span", { class: "pill " + t.status, title: next ? `Waiting on ${next}` : "" }, t.status === "working" ? h("span", { class: "pulse" }) : null,
     label + (t.status === "changes" && t.conflicts?.length ? " (clash)" : "") + (next && next !== "the lead" ? ` · waiting on ${next}` : ""));
 }
-function teamCard(g, redraw) {
+/** " · 2 of 4 at once · ~6 min each": how fast the team is going. */
+function speedText(g) {
+  if (!g.speed) return "";
+  return [g.speed.working ? ` · ${g.speed.working} of ${g.speed.max} at once` : "", g.speed.avgTaskMin ? ` · ~${g.speed.avgTaskMin} min each` : ""].join("");
+}
+function teamCard(g, redraw, opts = {}) {
   const u = teamUi.get(g.goalId) ?? { board: false, open: new Set() };
   teamUi.set(g.goalId, u);
   const rerender = redraw ?? (() => upsertItemEl(state.items.get(`team:${g.goalId}`)));
@@ -39,7 +44,7 @@ function teamCard(g, redraw) {
   const needs = g.tasks.reduce((n, t) => n + t.approvals.length + (t.status === "parked" ? 1 : 0), 0) + (g.status === "stuck" ? 1 : 0);
   const head = h("div", { class: "team-head" },
     badge(g.leadName),
-    h("div", { class: "t-title" }, h("b", {}, g.title), h("span", {}, `${g.leadName} is leading · ${g.tasks.length} task${g.tasks.length === 1 ? "" : "s"} · ${accepted} accepted`)),
+    h("div", { class: "t-title" }, h("b", {}, g.title), h("span", {}, `${g.leadName} is leading · ${g.tasks.length} task${g.tasks.length === 1 ? "" : "s"} · ${accepted} done${speedText(g)}`)),
     h("span", { class: "pill " + (needs && open ? "needs" : g.status) }, open && g.status === "working" ? h("span", { class: "pulse" }) : null,
       (needs && open ? `Needs you (${needs})` : GOAL_LABEL[g.status]) + (open ? ` · ${since(g.startedAt)}` : "")),
     h("span", { class: "seg-mini" },
@@ -57,7 +62,7 @@ function teamCard(g, redraw) {
         g.lead.threadId ? h("button", { class: "link", onclick: () => openThread(g.lead.threadId) }, "Watch") : null)
     : null;
   const progress = h("div", { class: "team-progress" }, h("i", { style: `width:${Math.round((accepted / counted) * 100)}%` }));
-  const body = u.board ? teamBoard(g, u, rerender) : teamList(g, u, rerender);
+  const body = u.board ? teamBoard(g, u, rerender) : teamList(g, u, rerender, opts);
   const log = state.order.map((id) => state.items.get(id)).filter((i) => i?.kind === "note" && i.team && i.runId === `team:${g.goalId}`);
   const logBox = log.length ? h("details", { class: "team-log", open: u.log || undefined, ontoggle: (ev) => { u.log = ev.currentTarget.open; } },
     h("summary", {}, `What happened (${log.length})`),
@@ -97,7 +102,7 @@ function taskDetail(t) {
       t.runThreadId ? h("button", { class: "btn", onclick: () => openThread(t.runThreadId) }, `Watch ${t.agentName}`) : null,
       ["parked", "paused"].includes(t.status) ? h("button", { class: "btn primary", onclick: () => dispatch({ type: "task.retry", taskId: t.id }).catch(fail) }, "Retry") : null));
 }
-function teamList(g, u, rerender) {
+function teamList(g, u, rerender, opts = {}) {
   return h("div", { class: "trows" }, ...g.tasks.map((t) => {
     const isOpen = u.open.has(t.id);
     return h("div", { class: "trow2" },
@@ -111,7 +116,7 @@ function teamList(g, u, rerender) {
         activityLine(t.activity, { label: t.wrapping ? "Out of time, wrapping up" : "Working", compact: true }),
         t.budgetMs ? h("div", { class: "budget", title: `Time budget: ${Math.round(t.budgetMs / 60000)} minutes, then it submits what it has` },
           h("i", { "data-budget": `${t.activity.startedAt}|${t.budgetMs}` })) : null) : null,
-      ...approvalBox(t),
+      ...(opts.approvalsAbove ? [] : approvalBox(t)), // in the Team panel they're in the "needs you" list above
       isOpen ? taskDetail(t) : null);
   }), g.tasks.length ? null : h("div", { class: "files-note" }, "The lead is planning…"));
 }

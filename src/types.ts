@@ -263,6 +263,8 @@ export interface Goal {
   /** One short report per finished round. */
   roundReports?: string[];
   roundStartedAt?: string;
+  /** Specialists the lead hired for this goal. */
+  hires?: number;
   /** When a paused goal will try again. */
   resumeAt?: string;
   createdAt: string;
@@ -351,6 +353,8 @@ export interface GoalCard {
   /** What the lead itself is doing (planning, reviewing), live. */
   lead?: { busy: boolean; activity?: Activity; threadId?: string };
   rounds?: { round: number; max: number; criteria?: string; reports: string[] };
+  /** How fast the team is going: tasks running now (of the most at once), finished, average minutes per task. */
+  speed?: { working: number; max: number; done: number; avgTaskMin?: number };
 }
 
 // ---------- Artifacts (pages, reports and diagrams: made by agents here, or pulled in from claude.ai) ----------

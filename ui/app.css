@@ -260,6 +260,8 @@ code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
 .browser-bar .addr:focus { outline: none; border-color: var(--accent); }
 .browser-bar select { border: 1px solid var(--line); background: var(--bg); color: var(--muted); border-radius: 7px; font-size: 12px; padding: 3px 4px; }
 .browser-bar .icon-btn:disabled { opacity: 0.35; cursor: default; }
+.live-view:has(.live-who) { flex-direction: column; align-items: stretch; }
+.live-who { position: sticky; top: 0; z-index: 1; width: 100%; padding: 5px 10px; font-size: 12px; color: var(--muted); background: var(--panel); border-bottom: 1px solid var(--line); }
 .live-view { flex: 1; min-height: 0; overflow: auto; background: var(--bg); outline: none; display: flex; align-items: flex-start; justify-content: center; }
 .live-view:focus-visible { box-shadow: inset 0 0 0 2px var(--primary); }
 .live-img { width: 100%; height: auto; display: block; cursor: default; user-select: none; background: #fff; }
@@ -1080,3 +1082,21 @@ button.hrow:hover { background: var(--hover); }
   .menu { max-width: calc(100vw - 16px); }
   .toasts { left: 12px; right: 12px; }
 }
+
+/* ---------- team panel (right side, like files and browser) ---------- */
+.teampanel { flex: none; width: var(--team-w, 400px); display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--bg); min-height: 0; }
+.teampanel[hidden] { display: none; }
+.tp-bar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.tp-body { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.tp-body .team { border-radius: 12px; }
+.tp-body .trow2 .who { width: auto; max-width: 120px; }
+.tp-body .trow2-live { padding-left: 14px; }
+.tp-older { font-size: 12px; }
+.dock-counts { padding: 0 12px 6px; font-size: 12px; }
+.team-line { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.team-line b { color: var(--text); font-weight: 600; }
+.team-line > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.team-strip { display: flex; align-items: center; gap: 10px; width: 100%; margin-bottom: 8px; padding: 7px 12px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); font-size: 12.5px; text-align: left; }
+.team-strip.needs { border-color: var(--accent); }
+.team-strip .go { color: var(--primary); font-weight: 600; }
+@media (max-width: 760px) { .teampanel { position: fixed; z-index: 40; inset: 0; width: auto !important; border-left: 0; } }

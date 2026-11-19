@@ -82,6 +82,20 @@ function threadRoot(threadId: string): string {
   return workdirOf(thread);
 }
 
+/**
+ * The browser tab a chat's panel shows: the chat's own, or, while its team or an @mentioned agent works, the tab
+ * that agent has open (so you see what they're testing).
+ */
+function browserTabFor(threadId: string): string {
+  if (orchestrator.browser.has(threadId)) return threadId;
+  const thread = store.getThread(threadId);
+  const candidates = [
+    ...(thread?.team?.runs ?? []),
+    ...store.listTurnItems(threadId, 80).flatMap((i) => (i.kind === "agent_reply" && i.status === "running" && i.runThreadId ? [i.runThreadId] : [])),
+  ];
+  return candidates.find((id) => orchestrator.browser.has(id)) ?? threadId;
+}
+
 /** Vendored browser files for the terminal (node_modules is served only for these exact paths). */
 const VENDOR: Record<string, { file: URL; type: string }> = {
   "/vendor/xterm.js": { file: new URL("../node_modules/@xterm/xterm/lib/xterm.js", import.meta.url), type: "text/javascript" },
@@ -350,12 +364,17 @@ wss.on("connection", (socket: WebSocket) => {
       }
       case "browser.frame": {
         const p = req.params as { threadId: string };
-        return (await orchestrator.browser.frame(p.threadId).catch(() => undefined)) ?? null;
+        const tab = browserTabFor(p.threadId);
+        const frame = await orchestrator.browser.frame(tab).catch(() => undefined);
+        if (!frame) return null;
+        const owner = tab === p.threadId ? undefined : store.getThread(tab);
+        const agent = owner?.agentId ? store.getAgent(owner.agentId) : undefined;
+        return { ...frame, agent: agent ? (agent.displayName ?? `@${agent.name}`) : undefined };
       }
       case "browser.input": {
         const p = req.params as { threadId: string; event: Parameters<typeof orchestrator.browser.input>[1] };
         threadRoot(p.threadId);
-        await orchestrator.browser.input(p.threadId, p.event).catch(() => {});
+        await orchestrator.browser.input(browserTabFor(p.threadId), p.event).catch(() => {});
         return { ok: true };
       }
       case "browser.close":

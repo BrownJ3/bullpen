@@ -42,6 +42,8 @@ export interface TeamHost {
   transcript(threadId: string): string;
   /** Should tasks in this folder get their own worktree? (git repo, and the project hasn't turned it off) */
   isolation(goalDir: string): Promise<{ setup?: string } | undefined>;
+  /** Hire a specialist from the ready-made templates (or return the one already on the team). */
+  recruit(role: string): { agent: Agent; hired: boolean } | { error: string };
   /** Suggest a lasting lesson for an agent (the person approves it). */
   proposeLesson(agentId: string | undefined, text: string, source: { kind: "review"; threadId?: string; note?: string }): void;
 }
@@ -66,6 +68,7 @@ export class Team {
   readonly #timers = new Map<string, NodeJS.Timeout>(); // taskId -> timeout
   readonly #timedOut = new Set<string>(); // taskId
   readonly #wrapping = new Set<string>(); // taskId: out of time, finishing up
+  readonly #slowNudgedAt = new Map<string, number>(); // goalId -> last "progress is slow" wake-up
   #sweep: NodeJS.Timeout | undefined;
 
   constructor(store: Store, host: TeamHost) {
@@ -323,6 +326,54 @@ export class Team {
           this.#nudges.delete(goal.id);
           this.#publish(goal.id);
           return { text: `Round ${round + 1} started. Delegate its tasks now.` };
+        },
+      },
+      {
+        name: "estimate",
+        description:
+          "Before a big plan (or when progress is slow): ask a planner to size the work: rough effort, how to split it into parallel tasks, how many builders to run at once, and what to hire. " +
+          "Returns its advice; it's quick and changes nothing.",
+        params: { question: { description: "What to size, e.g. 'the next pass: sharing, leaderboards, bot opponents'." } },
+        run: async (a) => {
+          const goal = goalOf();
+          if (!goal) return none;
+          const hire = this.#host.recruit("planner");
+          if ("error" in hire) return { isError: true, text: hire.error };
+          if (hire.hired) this.#event(goal, `The lead brought in @${hire.agent.name} to size the work.`, hire.agent.id);
+          const team = this.#store.listAgents().filter((x) => x.id !== goal.leadAgentId).map((x) => `@${x.name}${x.description ? ` (${x.description.slice(0, 60)})` : ""}`).join("; ");
+          const res = await this.#host.consult(
+            hire.agent,
+            [
+              `The lead of a team goal asks you to size work. Goal: "${goal.title}". Project: ${goal.project} (you can read it).`,
+              `Question: ${a.question ?? "the next step"}`,
+              `Current tasks:\n${statusTable(this.#store, goal.id, false)}`,
+              `Team: ${team || "(only the lead)"}. Up to ${LIMITS.maxParallel} tasks run at once; each task gets about ${LIMITS.taskBudgetMs / 60_000} minutes.`,
+              "Speed matters most. Answer in under 200 words: (1) effort in task-sized pieces of about 10 minutes, (2) which pieces can run in parallel and which truly depend on others, " +
+                "(3) how many builders to run at once and which specialists to hire (by role, e.g. frontend, tester), (4) the biggest risk to speed.",
+            ].join("\n\n"),
+            [goal.leadAgentId],
+            goal.project,
+            {},
+          );
+          return res.ok ? { text: res.text } : { isError: true, text: `The planner couldn't answer: ${res.text}` };
+        },
+      },
+      {
+        name: "hire",
+        description:
+          "Add a specialist to the team when there's more parallel work than builders, or a skill is missing (e.g. 'frontend', 'tester', 'devops', 'designer'). " +
+          `They join right away and you can delegate to them. At most ${LIMITS.maxHiresPerGoal} hires per goal and ${LIMITS.maxTeamSize} agents in all.`,
+        params: { role: { description: "The role, e.g. frontend, tester, devops, designer, security." }, why: { description: "One line for the person: why the team needs them." } },
+        run: async (a) => {
+          const goal = goalOf();
+          if (!goal) return none;
+          if ((goal.hires ?? 0) >= LIMITS.maxHiresPerGoal) return { isError: true, text: `This goal already hired ${LIMITS.maxHiresPerGoal}; make do with the team, or ask the person.` };
+          const res = this.#host.recruit(a.role ?? "");
+          if ("error" in res) return { isError: true, text: res.error };
+          if (!res.hired) return { text: `@${res.agent.name} is already on the team; delegate to them.` };
+          this.#saveGoal({ ...this.#store.getGoal(goal.id)!, hires: (goal.hires ?? 0) + 1 });
+          this.#event(goal, `The lead hired @${res.agent.name}${a.why?.trim() ? `: ${a.why.trim()}` : "."}`, res.agent.id);
+          return { text: `Hired @${res.agent.name} (${res.agent.description}). Delegate to them now.` };
         },
       },
       {
@@ -852,6 +903,22 @@ export class Team {
         continue;
       }
       if (goal.status !== "working") continue;
+      // Moving slowly: one task (or none) running while work waits. Wake the lead, at most every 15 minutes.
+      const working = tasks.filter((x) => x.status === "working");
+      const waiting = tasks.filter((x) => x.status === "queued" || x.status === "waiting");
+      const longest = Math.max(0, ...working.map((x) => t - Date.parse(x.startedAt ?? goal.updatedAt)));
+      const slow = (working.length <= 1 && waiting.length >= 1 && longest > LIMITS.slowAfterMs) || working.some((x) => x.partial);
+      if (slow && !this.#leadBusy.has(goal.id) && t - (this.#slowNudgedAt.get(goal.id) ?? 0) > 15 * 60_000) {
+        this.#slowNudgedAt.set(goal.id, t);
+        this.#event(goal, "Progress is slow, so the lead was asked to split the work and add help.");
+        this.#wake(goal.id, {
+          text:
+            `Progress is slow: ${working.length} task${working.length === 1 ? "" : "s"} running (the longest for ${Math.round(longest / 60_000)} min) while ${waiting.length} wait${waiting.length === 1 ? "s" : ""}.\n` +
+            `${statusTable(this.#store, goal.id, false)}\n` +
+            "Speed matters: split the remaining work into smaller parallel tasks on separate files, drop dependencies that aren't real, and hire builders if there aren't enough (estimate can help you size it). Cancel or re-scope anything stuck.",
+        });
+        continue;
+      }
       const moving =
         this.#leadBusy.has(goal.id) ||
         this.#wakes.get(goal.id)?.length ||
@@ -941,6 +1008,11 @@ export class Team {
       lead: (() => {
         const lr = this.#leadRuns.get(goal.id);
         return { busy: this.#leadBusy.has(goal.id), threadId: lr?.threadId, activity: lr ? runActivity(this.#store, lr.threadId, lr.runId) : undefined };
+      })(),
+      speed: (() => {
+        const done = tasks.filter((x) => x.status === "accepted" && x.startedAt && x.endedAt);
+        const avg = done.length ? done.reduce((n, x) => n + (Date.parse(x.endedAt!) - Date.parse(x.startedAt!)), 0) / done.length : undefined;
+        return { working: tasks.filter((x) => x.status === "working").length, max: LIMITS.maxParallel, done: done.length, avgTaskMin: avg ? Math.round(avg / 60_000) : undefined };
       })(),
       rounds: goal.criteria ? { round: goal.round ?? 1, max: goal.maxRounds ?? LIMITS.defaultRounds, criteria: goal.criteria, reports: goal.roundReports ?? [] } : undefined,
     };

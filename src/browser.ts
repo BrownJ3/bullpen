@@ -28,13 +28,14 @@ export class BrowserHub {
   async #launch(): Promise<Browser> {
     const { chromium } = await import("playwright-core");
     try {
-      return await chromium.launch({ channel: "chrome", headless: true });
+      // Muted: it's hidden, so sound from a page (a game an agent is testing) would just play out of nowhere.
+      return await chromium.launch({ channel: "chrome", headless: true, args: ["--mute-audio"] });
     } catch {
       // No Google Chrome: try Microsoft Edge, then Playwright's own Chromium if it was downloaded.
       try {
-        return await chromium.launch({ channel: "msedge", headless: true });
+        return await chromium.launch({ channel: "msedge", headless: true, args: ["--mute-audio"] });
       } catch {
-        return await chromium.launch({ headless: true });
+        return await chromium.launch({ headless: true, args: ["--mute-audio"] });
       }
     }
   }

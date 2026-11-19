@@ -34,7 +34,8 @@ function renderMain() {
           h("div", { class: "hint", id: "hint" })),
         h("div", { class: "drawer", id: "drawer", hidden: true })),
       h("aside", { class: "files", id: "files", hidden: true }),
-      h("aside", { class: "browser", id: "browser", hidden: true })));
+      h("aside", { class: "browser", id: "browser", hidden: true }),
+      h("aside", { class: "teampanel", id: "teampanel", hidden: true })));
   setupComposer();
   renderTopbar();
   syncPanels();
@@ -92,10 +93,11 @@ function renderTopbar() {
     actions.push(ibtn("bulb", proposed ? `Lessons · ${proposed} to review` : `Lessons${approved ? ` (${approved})` : ""}`, () => openLessons(agent), { badge: proposed || null }));
   }
   // Files, Terminal and Browser: one button, one menu (each still has its shortcut).
-  const openPanels = ["files", "terminal", "browser"].filter((k) => ui[k]);
-  const panels = ibtn("panels", openPanels.length ? `Panels: ${openPanels.join(", ")}` : "Files, terminal, browser", (ev) => {
+  const openPanels = ["team", "files", "terminal", "browser"].filter((k) => ui[k]);
+  const panels = ibtn("panels", openPanels.length ? `Panels: ${openPanels.join(", ")}` : "Team, files, terminal, browser", (ev) => {
     ev.stopPropagation();
     popMenu(ev.currentTarget, [
+      { icon: ui.team ? "check" : "users", label: "Team", desc: "Who's doing what, what needs you, how fast", kbd: "⌘⇧M", active: ui.team, run: () => togglePanel("team") },
       { icon: ui.files ? "check" : "files", label: "Files", kbd: "⌘⇧E", active: ui.files, run: () => togglePanel("files") },
       { icon: ui.terminal ? "check" : "terminal", label: "Terminal", kbd: "⌃`", active: ui.terminal, run: () => togglePanel("terminal") },
       { icon: ui.browser ? "check" : "globe", label: "Browser", kbd: "⌘⇧B", active: ui.browser, run: () => togglePanel("browser") },
@@ -229,6 +231,8 @@ function toolLabel(tool, input = {}) {
     case "TodoWrite": return said("list", "Updated the plan", "");
     case "Task": case "Agent": return said("users", "Sub-agent:", inp.description ?? inp.prompt, `start a sub-agent: ${short(inp.description ?? "", 60)}`);
     case "report_progress": return said("message", "Noted:", inp.note);
+    case "estimate": return said("chart", "Sized the work:", inp.question);
+    case "hire": return said("userplus", "Hired", inp.role);
     case "list_threads": return said("list", "Looked at chats", inp.project ?? "");
     case "read_thread": return said("message", "Read chat", inp.thread);
     case "start_thread": return said("compose", "Started a chat:", inp.title ?? inp.prompt);
@@ -361,27 +365,62 @@ function upsertItemEl(item) {
   const old = col.querySelector(`[data-id="${CSS.escape(item.id)}"]`);
   if (old && el) old.replaceWith(el); else if (old) old.remove(); else if (el) col.append(el);
   renderLive(); // keep the live status line last and current
-  if (item.kind === "note" && item.team) {
-    // A team update: refresh its card's log.
-    const card = state.items.get(item.runId);
-    if (card) { const old = col.querySelector(`[data-id="${CSS.escape(card.id)}"]`); const nu = itemEl(card); if (old && nu) old.replaceWith(nu); }
-  }
+  if (item.kind === "note" && item.team) renderTeamPanel(); // a team update: refresh the panel's log
   if (item.kind === "team_goal") renderDock();
   if (stick) toBottom();
 }
 
 /** While a team works on a goal from this chat: who's doing what right now, always in view above the message box. */
+/** The team's goals in this chat (newest last). */
+const chatGoals = () => state.order.map((id) => state.items.get(id)).filter((i) => i?.kind === "team_goal");
+const goalOpen = (g) => ["planning", "working", "paused", "stuck"].includes(g.status);
+/**
+ * Team status lives in the Team panel on the right; the chat only gets a slim line above the message box while a
+ * team works (click it to open the panel). The panel opens by itself the first time a team starts here.
+ */
 function renderDock() {
-  const dock = $("team-dock"); if (!dock) return;
-  const goals = state.order.map((id) => state.items.get(id)).filter((i) => i?.kind === "team_goal" && ["planning", "working", "paused", "stuck"].includes(i.status));
-  if (!goals.length) { dock.replaceChildren(); return; }
-  const g = goals.at(-1);
+  const strip = $("team-dock"); if (!strip) return;
+  const goals = chatGoals();
+  const g = goals.filter(goalOpen).at(-1);
+  if (g && !ui.team && !state.teamShown?.has(g.goalId)) { (state.teamShown ??= new Set()).add(g.goalId); ui.team = true; saveUi(); renderTopbar(); syncPanels(); }
+  if (ui.team) renderTeamPanel();
+  if (!g || ui.team) { strip.replaceChildren(); return; }
+  const needs = g.tasks.reduce((n, t) => n + t.approvals.length + (t.status === "parked" ? 1 : 0), 0) + (g.status === "stuck" ? 1 : 0);
+  const working = g.tasks.filter((t) => t.status === "working").length;
+  const done = g.tasks.filter((t) => t.status === "accepted").length;
+  strip.replaceChildren(h("button", { class: "team-strip" + (needs ? " needs" : ""), onclick: () => togglePanel("team") },
+    h("span", { class: "act-spin" }), h("b", {}, "Team working"),
+    h("span", { class: "faint" }, [working && `${working} at once`, `${done}/${g.tasks.length} done`].filter(Boolean).join(" · ")),
+    needs ? h("span", { class: "dock-needs" }, `Needs you (${needs})`) : null,
+    h("span", { class: "spacer" }), h("span", { class: "go" }, "Show team →")));
+}
+/** The Team panel: live status (what needs you, who's doing what) and the team card (list or board, log). */
+function renderTeamPanel() {
+  const panel = $("teampanel"); if (!panel || panel.hidden) return;
+  const goals = chatGoals();
+  const g = goals.filter(goalOpen).at(-1) ?? goals.at(-1);
+  const head = h("div", { class: "tp-bar" }, icon("users", 15), h("b", {}, "Team"), h("span", { class: "spacer" }),
+    h("button", { class: "icon-btn", title: "Hide team panel (⌘⇧M)", onclick: () => togglePanel("team") }, icon("x", 15)));
+  if (!g) {
+    panel.replaceChildren(head, h("div", { class: "launcher" }, h("div", { class: "note" },
+      "No team in this chat yet. @mention a lead (e.g. @lead) with a goal and the team's progress shows up here: who's doing what, what needs you, and how fast it's going.")));
+    return;
+  }
+  const scroller = panel.querySelector(".tp-body");
+  const top = scroller?.scrollTop ?? 0;
+  const body = h("div", { class: "tp-body" }, goalOpen(g) ? teamLive(g) : null, teamCard(g, () => renderTeamPanel(), { approvalsAbove: goalOpen(g) }),
+    goals.length > 1 ? h("div", { class: "faint tp-older" }, `${goals.length - 1} earlier team goal${goals.length > 2 ? "s" : ""} in this chat (see Teams).`) : null);
+  panel.replaceChildren(head, body);
+  body.scrollTop = top;
+}
+/** The live part of the Team panel: what needs you (with buttons), the lead, and each working task. */
+function teamLive(g) {
   const working = g.tasks.filter((t) => t.status === "working");
   const done = g.tasks.filter((t) => t.status === "accepted").length;
   const waiting = g.tasks.filter((t) => ["queued", "waiting"].includes(t.status)).length;
   const review = g.tasks.filter((t) => t.status === "submitted").length;
   const needs = g.tasks.reduce((n, t) => n + t.approvals.length + (t.status === "parked" ? 1 : 0), 0) + (g.status === "stuck" ? 1 : 0);
-  const counts = [working.length && `${working.length} working`, review && `${review} in review`, waiting && `${waiting} waiting`, `${done}/${g.tasks.length} done`].filter(Boolean).join(" · ");
+  const counts = [working.length && `${working.length} of ${g.speed?.max ?? 4} at once`, review && `${review} being checked`, waiting && `${waiting} waiting`, `${done}/${g.tasks.length} done`, g.speed?.avgTaskMin ? `~${g.speed.avgTaskMin} min each` : ""].filter(Boolean).join(" · ");
   const rows = [];
   if (g.lead?.busy) rows.push(h("div", { class: "dock-row" }, badge(g.leadName),
     g.lead.activity ? activityLine(g.lead.activity, { label: g.tasks.length ? "Reviewing and planning" : "Planning", compact: true }) : h("span", { class: "act-what" }, "Planning…")));
@@ -407,11 +446,11 @@ function renderDock() {
     h("div", { class: "dock-acts" }, h("button", { class: "btn sm primary", onclick: tellLead }, "Tell the lead what to do"))));
   if (g.status === "paused") rows.unshift(h("div", { class: "dock-row" }, icon("clock", 14), h("span", {}, g.note ?? "Paused; it resumes on its own.")));
   if (!rows.length) rows.push(h("div", { class: "dock-row faint" }, review ? "Waiting on the lead to check the finished work…" : "Between steps…"));
-  dock.replaceChildren(h("div", { class: "dock" + (needs ? " needs" : "") },
-    h("button", { class: "dock-head", title: "Show the team card", onclick: () => document.querySelector(`[data-id="team:${g.goalId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" }) },
-      icon("users", 14), h("b", {}, g.title), g.rounds ? h("span", { class: "faint" }, `Pass ${g.rounds.round} of ${g.rounds.max}`) : null,
-      h("span", { class: "spacer" }), needs ? h("span", { class: "dock-needs" }, `Needs you (${needs})`) : null, h("span", { class: "faint" }, counts)),
-    ...rows));
+  return h("div", { class: "dock" + (needs ? " needs" : "") },
+    h("div", { class: "dock-head" }, icon("users", 14), h("b", {}, g.title), g.rounds ? h("span", { class: "faint" }, `Pass ${g.rounds.round} of ${g.rounds.max}`) : null,
+      h("span", { class: "spacer" }), needs ? h("span", { class: "dock-needs" }, `Needs you (${needs})`) : null),
+    h("div", { class: "dock-counts faint" }, counts),
+    ...rows);
 }
 
 /** The status line under a running turn: elapsed, steps, what it's doing now, its latest note. */
@@ -521,8 +560,15 @@ function itemElInner(item) {
               h("button", { class: "btn sm", onclick: () => answer("acceptForSession") }, "Always allow"), h("button", { class: "btn sm primary", onclick: () => answer("accept") }, "Allow")));
         }) : []));
     }
-    case "team_goal":
-      return h("div", base, teamCard(item));
+    case "team_goal": {
+      // The card lives in the Team panel; the chat just marks where the team started (and how it's doing).
+      const open = goalOpen(item);
+      const done = item.tasks.filter((t) => t.status === "accepted").length;
+      return h("div", { ...base, class: "team-line" },
+        icon("users", 14), h("span", {}, h("b", {}, open ? "Team working: " : `Team ${GOAL_LABEL[item.status].toLowerCase()}: `), item.title),
+        h("span", { class: "faint" }, `${done}/${item.tasks.length} tasks done`),
+        h("button", { class: "link", onclick: () => { if (!ui.team) togglePanel("team"); } }, "Show team"));
+    }
     case "checkpoint":
       return h("div", { ...base, class: "checkpoint" },
         `After message ${item.ordinal} · ${item.filesChanged} file${item.filesChanged === 1 ? "" : "s"} changed`,
@@ -538,7 +584,7 @@ function itemElInner(item) {
 const ui = (() => {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem("bp-panels") || "{}"); } catch {}
-  return { live: !!saved.live, files: !!saved.files, terminal: !!saved.terminal, browser: !!saved.browser, drawerH: saved.drawerH || 280, filesW: saved.filesW || 340, browserW: saved.browserW || 560, device: saved.device || "full" };
+  return { team: !!saved.team, live: !!saved.live, files: !!saved.files, terminal: !!saved.terminal, browser: !!saved.browser, drawerH: saved.drawerH || 280, filesW: saved.filesW || 340, browserW: saved.browserW || 560, device: saved.device || "full" };
 })();
 const saveUi = () => { try { localStorage.setItem("bp-panels", JSON.stringify(ui)); } catch {} };
 function togglePanel(which) { ui[which] = !ui[which]; saveUi(); renderTopbar(); syncPanels(); }
@@ -556,11 +602,15 @@ function syncPanels() {
     browser.style.setProperty("--browser-w", Math.min(ui.browserW, Math.max(320, Math.round(innerWidth * 0.5))) + "px");
     if (ui.browser) renderBrowser();
   }
+  const tp = $("teampanel");
+  if (tp) { tp.hidden = !ui.team; if (ui.team) renderTeamPanel(); }
+  renderDock();
 }
 document.addEventListener("keydown", (ev) => {
   if (!state.threadId) return;
   if (ev.ctrlKey && ev.key === "`") { ev.preventDefault(); togglePanel("terminal"); }
   if ((ev.metaKey || ev.ctrlKey) && ev.shiftKey && (ev.key === "e" || ev.key === "E")) { ev.preventDefault(); togglePanel("files"); }
+  if ((ev.metaKey || ev.ctrlKey) && ev.shiftKey && (ev.key === "m" || ev.key === "M")) { ev.preventDefault(); togglePanel("team"); }
   if ((ev.metaKey || ev.ctrlKey) && ev.shiftKey && (ev.key === "b" || ev.key === "B")) { ev.preventDefault(); togglePanel("browser"); }
 });
 /** Drag a grip to resize the drawer (height) or the files panel (width). */
@@ -822,6 +872,10 @@ function renderLiveBrowser(panel, g) {
         if (!img.isConnected) view.replaceChildren(img);
         live.url = f.url;
         if (document.activeElement !== addr) addr.value = f.url;
+        // While an agent works, this shows the page it has open.
+        let tag = view.querySelector(".live-who");
+        if (f.agent) { if (!tag) view.prepend((tag = h("div", { class: "live-who" }))); tag.textContent = `Watching ${f.agent}'s browser (sound muted)`; }
+        else tag?.remove();
       }
     } catch {}
     live.busy = false;
@@ -876,9 +930,19 @@ function renderBrowser() {
 function renderLauncher() {
   const box = h("div", { class: "launcher" }, h("div", { class: "note" }, "Looking for this project's sites…"));
   const id = state.threadId;
+  // An agent on this chat has a page open: offer to watch it.
+  call("browser.frame", { threadId: id }).then((f) => {
+    if (!f || id !== state.threadId) return;
+    box.prepend(h("button", { class: "row", onclick: () => { ui.live = true; saveUi(); renderBrowser(); } },
+      h("span", { class: "row-main" }, h("div", { class: "row-title" }, f.agent ? `See what ${f.agent} is testing` : "Open the live browser"), h("div", { class: "row-sub" }, f.url)),
+      h("span", { class: "go" }, "Watch →")));
+  }).catch(() => {});
   call("preview.info", { threadId: id }).then((info) => {
     if (id !== state.threadId || bx.urls[id]) return;
     const mine = info.servers.filter((x) => x.inProject), others = info.servers.filter((x) => !x.inProject);
+    // The project's own site, straight away: its running dev server, or its static page.
+    // (Once per chat, so the home button can still show the list.)
+    if (!bx.waiting && !(bx.autoOpened ??= new Set()).has(id) && (mine.length || info.staticUrl)) { bx.autoOpened.add(id); browserGo(mine[0]?.url ?? info.staticUrl); return; }
     const kids = [];
     if (bx.waiting?.threadId === id) {
       kids.push(h("div", { class: "waiting" }, h("span", { class: "pulse" }), `Starting “${bx.waiting.label}” in the terminal… this page opens it when it's up.`));
@@ -900,9 +964,10 @@ function renderLauncher() {
         h("span", { class: "row-main" }, h("div", { class: "row-title mono" }, entry), h("div", { class: "row-sub" }, "Served by Bullpen from the project folder")), h("span", { class: "go" }, "Open →")));
     }
     if (others.length) {
-      kids.push(h("h4", {}, "Other servers on this Mac"));
-      for (const x of others) kids.push(h("button", { class: "row", onclick: () => browserGo(x.url) },
-        h("span", { class: "row-main" }, h("div", { class: "row-title" }, `localhost:${x.port}`), h("div", { class: "row-sub" }, x.command)), h("span", { class: "go" }, "Open →")));
+      // Other projects' servers aren't this chat's business; tucked away in case you need one.
+      const list = h("div", { hidden: true }, ...others.map((x) => h("button", { class: "row", onclick: () => browserGo(x.url) },
+        h("span", { class: "row-main" }, h("div", { class: "row-title" }, `localhost:${x.port}`), h("div", { class: "row-sub" }, x.command)), h("span", { class: "go" }, "Open →"))));
+      kids.push(h("button", { class: "link", style: "margin-top:10px", onclick: (ev) => { list.hidden = !list.hidden; ev.currentTarget.textContent = list.hidden ? `Other servers on this Mac (${others.length})` : "Hide other servers"; } }, `Other servers on this Mac (${others.length})`), list);
     }
     if (!mine.length && !info.scripts.length && !info.staticUrl) kids.unshift(h("div", { class: "note" }, "Nothing to preview found in this project. Type an address above, or ask the agent to start the app."));
     kids.push(h("div", { class: "note" }, "This quick preview suits local sites. For public sites (many refuse to be shown inside another page), switch to the live browser ", icon("monitor", 12), "."));

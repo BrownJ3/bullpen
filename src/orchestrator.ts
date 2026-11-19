@@ -12,7 +12,8 @@ import { join } from "node:path";
 import { HOME } from "./home.ts";
 import { Jobs } from "./jobs.ts";
 import { Team, type ConsultOutcome } from "./team.ts";
-import { isLimitError } from "./limits.ts";
+import { isLimitError, LIMITS } from "./limits.ts";
+import { AGENT_TEMPLATES } from "./agent-templates.ts";
 import * as checkpoints from "./checkpoints.ts";
 import * as worktrees from "./worktrees.ts";
 import { BrowserHub } from "./browser.ts";
@@ -116,6 +117,7 @@ export class Orchestrator {
         return { setup: project?.worktreeSetup };
       },
       proposeLesson: (agentId, text, source) => this.#proposeLesson(agentId, text, source),
+      recruit: (role) => this.#recruit(role),
     });
     this.#team.start();
     this.#jobs = new Jobs(store, {
@@ -697,6 +699,20 @@ export class Orchestrator {
       else this.#closeSession(t.id);
     }
     return { ok: true };
+  }
+
+  /** The lead hires: an agent on the team for that role, or a new one from the ready-made templates. */
+  #recruit(role: string): { agent: Agent; hired: boolean } | { error: string } {
+    const q = role.trim().toLowerCase().replace(/^@/, "");
+    if (!q) return { error: "Say which role, e.g. frontend, tester, devops." };
+    const t = AGENT_TEMPLATES.find((x) => x.id === q || x.handle === q || x.name.toLowerCase() === q)
+      ?? AGENT_TEMPLATES.find((x) => x.name.toLowerCase().includes(q) || x.id.includes(q) || x.description.toLowerCase().includes(q));
+    if (!t) return { error: `No ready-made specialist for "${role}". Options: ${AGENT_TEMPLATES.map((x) => x.handle).join(", ")}.` };
+    const existing = this.#store.listAgents().find((a) => a.templateId === t.id);
+    if (existing) return { agent: existing, hired: false };
+    if (this.#store.listAgents().length >= LIMITS.maxTeamSize) return { error: `The team already has ${LIMITS.maxTeamSize} agents; work with them or ask the person.` };
+    const { agentId } = this.#createAgent({ type: "agent.create", name: t.name, handle: t.handle, templateId: t.id, description: t.description, instructions: t.instructions });
+    return { agent: this.#requireAgent(agentId), hired: true };
   }
 
   /** Approved lessons for an agent (and the ones for everyone). */

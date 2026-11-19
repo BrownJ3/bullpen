@@ -17,10 +17,12 @@ export function planPrompt(store: Store, goal: Goal, thread: Thread, context: st
     context ? `Recent conversation in that thread:\n\n${context}` : "",
     `The person asked:\n\n${goal.request}`,
     [
-      "How team goals work:",
+      "How team goals work (speed is a core value: the person wants results quickly, so plan for parallel work and keep the team busy):",
       "- Speed matters more than ceremony: every handoff costs a turn. If it's small or just a question, answer or do it yourself and don't create tasks.",
       `- Size tasks to about 10 minutes of work each (a task's run has a ${LIMITS.taskBudgetMs / 60_000}-minute budget; at the budget it wraps up and submits what's done plus what's left). A request with five parts is several tasks, not one.`,
-      "- Prefer parallel tasks on separate files over one long chain: a single big task that everything else depends on makes the whole team wait.",
+      "- Work in parallel. A single builder working through tasks one after another is the main thing that makes teams slow. Split each pass into 2-4 tasks on separate files and spread them across your builders; the same teammate can take several tasks at once (each runs in its own copy).",
+      "- For anything bigger than a couple of tasks, call estimate first to size it and decide how many builders to run at once; hire specialists when there's more parallel work than builders (or a missing skill).",
+      "- Only add depends_on when a task truly needs another's result. Don't make the next build wait for a review: review pass N while pass N+1 is being built, and fold review findings into the pass after.",
       "- In briefs, give file paths relative to the project root: each teammate works in its own copy of the project, at a different path.",
       "- Open-ended goals ('keep improving until…', 'make it great'): first call set_goal_criteria with checkable criteria and a round limit, then run it in rounds: delegate a round, review, and next_round until the criteria are met.",
       "- Hand out each piece with the delegate tool: one owner per task, a self-contained brief (teammates can't see this conversation), the exact deliverable, the files or folders it may change, and depends_on for tasks that need another's result.",
@@ -31,6 +33,7 @@ export function planPrompt(store: Store, goal: Goal, thread: Thread, context: st
       "- Don't push, deploy, delete data or spend money; that's for the person to do.",
     ].join("\n"),
     `Your team:\n${roster || "(nobody yet; do it yourself, and suggest which specialists to recruit)"}`,
+    builders(store, goal) < 2 ? "Note: you have only one builder; still split work into parallel tasks for it, and suggest recruiting a second builder (e.g. a frontend engineer) in your message to the person." : "",
     "Now: plan and delegate. Then end your turn with a short message to the person (it's posted in the thread). Start it with either " +
       "\"I'll run this as a team (N tasks):\" followed by who is doing what, or, if you answered or did it yourself, \"Answering directly:\".",
   ]
@@ -43,7 +46,8 @@ export function updatePrompt(store: Store, goal: Goal, texts: string[]): string 
     `Team goal "${goal.title}" (project ${goal.project}): update.`,
     ...texts,
     `Current tasks:\n${statusTable(store, goal.id, false)}`,
-    "Act now (review_task, delegate, cancel_task or finish_goal). Your turn should end with the goal moving forward.",
+    `Your team now: ${roster(store, goal)}`,
+    "Act now (review_task, delegate, cancel_task or finish_goal). Keep several tasks running in parallel when there's more to do; your turn should end with the goal moving forward.",
   ].join("\n\n---\n\n");
 }
 
@@ -120,4 +124,14 @@ export function statusTable(store: Store, goalId: string, withResults: boolean):
       return `${t.ref} @${who} — ${t.title} — ${t.status}${t.round ? " (sent back once)" : ""}${deps}${extra}`;
     })
     .join("\n");
+}
+
+/** One line naming everyone the lead can delegate to (new recruits show up mid-goal). */
+function roster(store: Store, goal: Goal): string {
+  return store.listAgents().filter((a) => a.id !== goal.leadAgentId && !a.canLead).map((a) => `@${a.name}`).join(", ") || "(nobody)";
+}
+
+/** How many teammates can build (not review-only roles). */
+function builders(store: Store, goal: Goal): number {
+  return store.listAgents().filter((a) => a.id !== goal.leadAgentId && !/review|qa|security|a11y|product|ux|critic|docs|research|copy|market|seo|finance|privacy|analyst/i.test(`${a.templateId ?? ""} ${a.name}`)).length;
 }
