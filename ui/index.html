@@ -342,6 +342,26 @@ code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
 .seg-mini { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .seg-mini button { border: 0; background: transparent; padding: 3px 9px; font-size: 12px; color: var(--muted); }
 .seg-mini button.on { background: var(--code); color: var(--text); font-weight: 600; }
+.act-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12.5px; color: var(--muted); }
+.act-line.compact { font-size: 12px; }
+.act-spin { width: 10px; height: 10px; border-radius: 50%; border: 1.6px solid color-mix(in srgb, var(--primary) 30%, transparent); border-top-color: var(--primary); animation: spin 0.9s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.act-what { color: var(--text); font-weight: 550; white-space: nowrap; }
+.act-now { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
+.act-now span { overflow: hidden; text-overflow: ellipsis; }
+.act-note { flex-basis: 100%; display: flex; align-items: center; gap: 6px; color: var(--text); font-style: italic; }
+.thread-live { position: sticky; bottom: 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(4px); padding: 8px 0 6px; border-top: 1px solid var(--line); margin-top: 6px; }
+.trow2-live { padding: 0 14px 8px 46px; display: flex; flex-direction: column; gap: 5px; }
+.budget { height: 3px; border-radius: 3px; background: var(--line); overflow: hidden; max-width: 260px; }
+.budget i { display: block; height: 100%; background: var(--primary); transition: width 1s linear; }
+.budget i.late { background: var(--accent); }
+.lead-live { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--primary) 5%, transparent); }
+.lead-live .act-line { flex: 1; min-width: 0; }
+.team-rounds { padding: 8px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.team-rounds summary { cursor: pointer; color: var(--muted); }
+.team-rounds summary b { color: var(--text); }
+.team-rounds .lbl { font-size: 11.5px; color: var(--faint); margin-top: 8px; }
+.note.progress { color: var(--text); font-style: italic; }
 .team-note { padding: 8px 14px; font-size: 13px; color: var(--warn); background: var(--warn-soft); border-bottom: 1px solid var(--line); }
 .team-progress { height: 3px; background: var(--line); }
 .team-progress i { display: block; height: 100%; background: var(--accent); transition: width 0.4s; }
@@ -2257,12 +2277,13 @@ function apply({ sequence, event: e }) {
   state.seq = sequence;
   if (e.type === "thread.upserted") {
     const hadHistory = Boolean(state.thread?.importedFrom?.history);
-    state.thread = e.thread; renderTopbar();
+    state.thread = e.thread; renderTopbar(); renderLive();
     if (!hadHistory && e.thread.importedFrom?.history) renderTranscript(); // the past conversation just arrived
   }
   else if (e.type === "run.upserted") {
     const was = state.runs.get(e.run.id);
     state.runs.set(e.run.id, e.run);
+    renderLive();
     if (Boolean(was?.rewound) !== Boolean(e.run.rewound)) renderTranscript();
     else if (e.run.status !== "running") renderRunMeta(e.run);
   }
@@ -2303,6 +2324,7 @@ function renderTranscript() {
   }
   for (const id of state.order) { const el = itemEl(state.items.get(id)); if (el) col.append(el); }
   for (const run of state.runs.values()) if (run.status !== "running") renderRunMeta(run, false);
+  renderLive();
   toBottom();
 }
 
@@ -2313,9 +2335,34 @@ function upsertItemEl(item) {
   const el = itemEl(item);
   const old = col.querySelector(`[data-id="${CSS.escape(item.id)}"]`);
   if (old && el) old.replaceWith(el); else if (old) old.remove(); else if (el) col.append(el);
+  renderLive(); // keep the live status line last and current
   if (stick) toBottom();
 }
 
+/** The status line under a running turn: elapsed, steps, what it's doing now, its latest note. */
+function renderLive() {
+  const col = $("column"); if (!col) return;
+  const t = state.thread;
+  let el = $("live-status");
+  const runId = t?.status === "running" ? t.activeRunId : null;
+  const run = runId ? state.runs.get(runId) : null;
+  if (!run) { el?.remove(); return; }
+  let steps = 0, last = null, note = null;
+  for (const id of state.order) {
+    const it = state.items.get(id);
+    if (!it || it.runId !== runId) continue;
+    if (it.kind === "tool_call" && !it.parentId) { steps++; last = { tool: it.tool, input: it.input }; }
+    if (it.kind === "note" && it.progress) note = it.text;
+  }
+  const waiting = state.approvals.get(t.id)?.size;
+  const line = activityLine({ startedAt: run.startedAt, steps, last, note }, { label: waiting ? "Waiting for your OK" : "Working" });
+  line.id = "live-status";
+  line.classList.add("thread-live");
+  const stick = nearBottom();
+  el?.remove();
+  col.append(line); // always last, under the newest step
+  if (stick) toBottom();
+}
 function renderRunMeta(run, scroll = true) {
   const col = $("column"); if (!col) return;
   const id = `meta:${run.id}`;
@@ -2340,6 +2387,7 @@ function itemElInner(item) {
   const base = { "data-id": item.id, "data-run": item.runId };
   switch (item.kind) {
     case "note":
+      if (item.progress) return h("div", { ...base, class: "note progress" }, icon("message", 13), h("span", {}, item.text));
       return h("div", { ...base, class: "note" }, icon(item.action ? "external" : "branch", 13), h("span", {}, richText(item.text)),
         item.action?.kind === "open_artifact"
           ? h("button", { class: "btn sm", onclick: () => openArtifact(item.action.artifactId) }, icon("layers", 13), "Open")
@@ -2355,6 +2403,8 @@ function itemElInner(item) {
     case "reasoning":
       return h("details", { ...base, class: "reasoning" }, h("summary", {}, item.streaming ? "Thinking…" : "Thought"), h("div", {}, item.text));
     case "tool_call": {
+      // Its note is shown on its own (and in the live status line).
+      if (/(^|__)report_progress$/.test(item.tool)) return null;
       const t = toolLabel(item.tool, item.input);
       return h("details", { ...base, class: "tool" + (item.parentId ? " sub" : "") },
         h("summary", {}, icon(t.icon, 14), h("span", { class: "tool-name" }, t.verb), h("span", { class: "tool-sum" }, t.detail),
@@ -2384,7 +2434,8 @@ function itemElInner(item) {
         h("div", { class: "reply-head" }, badge(agent ? agentLabel(agent) : item.agentName), agent ? agentLabel(agent) : "@" + item.agentName,
           h("span", { class: "muted" }, item.status === "running" ? "working on it…" : item.status === "failed" ? "couldn't answer" : item.delivered ? "shared with this thread's agent" : ""),
           item.status === "running" && agent ? h("button", { class: "link", onclick: () => openThread(agent.homeThreadId) }, "watch") : null),
-        item.status === "running" ? h("div", { class: "pulse" }) : h("div", { class: "reply-body" }, richText(item.text)));
+        item.status === "running" ? (item.activity ? activityLine(item.activity, { compact: true }) : h("div", { class: "act-line compact" }, h("span", { class: "act-spin" }), h("span", { class: "act-what" }, "Starting…")))
+          : h("div", { class: "reply-body" }, richText(item.text)));
     }
     case "team_goal":
       return h("div", base, teamCard(item));
@@ -2838,13 +2889,22 @@ function teamCard(g, redraw) {
       h("button", { class: u.board ? "on" : "", onclick: () => { u.board = true; rerender(); } }, "Board")),
     open ? h("button", { class: "btn danger", onclick: () => { if (confirm("Stop this team? Running tasks are interrupted; finished work stays.")) dispatch({ type: "goal.cancel", goalId: g.goalId }).catch(fail); } }, "Stop") : null);
   const note = g.note && open ? h("div", { class: "team-note" }, g.note) : null;
+  const rounds = g.rounds ? h("details", { class: "team-rounds" },
+    h("summary", {}, h("b", {}, `Round ${g.rounds.round} of ${g.rounds.max}`), h("span", {}, " · keeps improving until the criteria are met"), g.rounds.reports.length ? h("span", { class: "faint" }, ` · ${g.rounds.reports.length} round report${g.rounds.reports.length === 1 ? "" : "s"}`) : null),
+    h("div", { class: "lbl" }, "Done means"), h("div", { class: "sum" }, richText(g.rounds.criteria ?? "")),
+    ...g.rounds.reports.map((r, i) => h("div", {}, h("div", { class: "lbl" }, `Round ${i + 1}`), h("div", { class: "sum" }, richText(r))))) : null;
+  const leadLine = open && g.lead?.busy && g.lead.activity
+    ? h("div", { class: "lead-live" }, badge(g.leadName),
+        activityLine(g.lead.activity, { label: g.tasks.length ? `${g.leadName} is reviewing` : `${g.leadName} is planning`, compact: true }),
+        g.lead.threadId ? h("button", { class: "link", onclick: () => openThread(g.lead.threadId) }, "Watch") : null)
+    : null;
   const progress = h("div", { class: "team-progress" }, h("i", { style: `width:${Math.round((accepted / counted) * 100)}%` }));
   const body = u.board ? teamBoard(g, u, rerender) : teamList(g, u, rerender);
   const foot = h("div", { class: "team-foot" },
     "Agents work in this project in parallel; edits and safe commands run without asking, anything else waits for you here.",
     h("span", { class: "spacer" }),
     lead ? h("button", { class: "link", onclick: () => openThread(lead.homeThreadId) }, "Watch the lead") : null);
-  return h("div", { class: "team" }, head, note, progress, body, open ? foot : null);
+  return h("div", { class: "team" }, head, note, rounds, progress, leadLine, body, open ? foot : null);
 }
 function approvalBox(t) {
   return t.approvals.map((a) => {
@@ -2876,9 +2936,13 @@ function teamList(g, u, rerender) {
       h("button", { class: "trow2-main", onclick: () => { isOpen ? u.open.delete(t.id) : u.open.add(t.id); rerender(); } },
         h("span", { class: "ref" }, t.ref),
         h("span", { class: "who" }, badge(t.agentName), h("span", {}, t.agentName)),
-        h("span", { class: "what" }, t.title, t.round ? h("small", {}, "sent back once") : null, t.autoAccept ? h("small", { title: "Accepted on submission, without a review turn" }, "no review") : null),
+        h("span", { class: "what" }, t.title, t.partial ? h("small", { title: "Submitted at its time budget: see what's left in the submission" }, "partial") : null, t.round ? h("small", {}, "sent back once") : null, t.autoAccept ? h("small", { title: "Accepted on submission, without a review turn" }, "no review") : null),
         taskPill(t),
         h("span", { class: "el", "data-since": t.status === "working" ? t.startedAt : "" }, elapsed(t))),
+      t.status === "working" && t.activity ? h("div", { class: "trow2-live" },
+        activityLine(t.activity, { label: t.wrapping ? "Out of time, wrapping up" : "Working", compact: true }),
+        t.budgetMs ? h("div", { class: "budget", title: `Time budget: ${Math.round(t.budgetMs / 60000)} minutes, then it submits what it has` },
+          h("i", { "data-budget": `${t.activity.startedAt}|${t.budgetMs}` })) : null) : null,
       ...approvalBox(t),
       isOpen ? taskDetail(t) : null);
   }), g.tasks.length ? null : h("div", { class: "files-note" }, "The lead is planning…"));
@@ -2899,13 +2963,35 @@ function teamBoard(g, u, rerender) {
         h("div", { class: "badge" }, taskPill(t)))));
   }));
 }
-// Keep "working for 3m" timers fresh without re-rendering.
+// Keep every live timer fresh without re-rendering: "3m 12s", budget bars.
+const clock = (iso) => {
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s` : `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
+};
 setInterval(() => {
   for (const el of document.querySelectorAll(".trow2 .el[data-since]")) {
     const iso = el.getAttribute("data-since");
     if (iso) el.textContent = since(iso);
   }
-}, 15000);
+  for (const el of document.querySelectorAll("[data-clock]")) el.textContent = clock(el.getAttribute("data-clock"));
+  for (const el of document.querySelectorAll("[data-budget]")) {
+    const [start, ms] = el.getAttribute("data-budget").split("|");
+    const used = (Date.now() - new Date(start).getTime()) / Number(ms);
+    el.style.width = `${Math.min(100, Math.round(used * 100))}%`;
+    el.classList.toggle("late", used > 0.8);
+  }
+}, 1000);
+/** "Working · 2m 14s · 18 steps · Editing src/app.ts" plus the latest progress note: live while an agent works. */
+function activityLine(a, opts = {}) {
+  if (!a) return null;
+  const step = a.last ? toolLabel(a.last.tool, a.last.input) : null;
+  return h("div", { class: "act-line" + (opts.compact ? " compact" : "") },
+    h("span", { class: "act-spin" }),
+    h("span", { class: "act-what" }, opts.label ?? "Working", " · ", h("span", { "data-clock": a.startedAt }, clock(a.startedAt)),
+      a.steps ? ` · ${a.steps} step${a.steps === 1 ? "" : "s"}` : ""),
+    step ? h("span", { class: "act-now" }, icon(step.icon, 12), h("span", {}, `${step.verb} ${step.detail}`.trim())) : null,
+    a.note ? h("div", { class: "act-note" }, icon("message", 12), h("span", {}, a.note)) : null);
+}
 
 // ---------- artifacts: pages agents made here, and your claude.ai artifacts ----------
 const artFilter = { source: "all", q: "" };
@@ -4080,7 +4166,7 @@ function paletteItems() {
   const homes = new Set([...state.agents.values()].map((a) => a.homeThreadId));
   for (const a of [...state.agents.values()].sort((x, y) => agentLabel(x).localeCompare(agentLabel(y))))
     add("Agents", { el: badge(agentLabel(a)), title: agentLabel(a), sub: "@" + a.name + (a.description ? " · " + a.description : ""), run: () => openThread(a.homeThreadId) });
-  const threads = [...state.threads.values()].filter((t) => !homes.has(t.id) && !t.jobId).sort((a, b) => activity(b).localeCompare(activity(a)));
+  const threads = [...state.threads.values()].filter((t) => !homes.has(t.id) && !t.jobId && !t.cloneOf).sort((a, b) => activity(b).localeCompare(activity(a)));
   for (const t of threads.slice(0, 60))
     add("Threads", { icon: "message", title: t.title, sub: `${folderName(t.cwd)} · ${ago(activity(t))}`, recent: true, run: () => openThread(t.id) });
   for (const j of state.jobs.values())

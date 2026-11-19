@@ -4,6 +4,8 @@
 //   - clients read projections (Thread, Run, TurnItem) + live DomainEvents
 
 import type { ThreadWorktree, TaskWorkspace } from "./worktrees.ts";
+import type { Activity } from "./activity.ts";
+export type { Activity };
 export type { ThreadWorktree, TaskWorkspace };
 
 /** Where a thread's agent actually works: its worktree, or the project folder. */
@@ -37,6 +39,8 @@ export interface Thread {
   team?: { active: number; needsYou: number };
   /** Works on its own branch in its own folder (a git worktree); cwd stays the project it belongs to. */
   worktree?: ThreadWorktree;
+  /** A spare copy of a named agent, used when the agent itself is busy (same instructions and memory). Hidden. */
+  cloneOf?: string;
   /** Started by an agent with start_thread. */
   startedBy?: { threadId: string; title: string };
   /** A rollback to apply to the engine's conversation the next time it opens. */
@@ -127,8 +131,10 @@ export type TurnItem = TurnItemBase &
         delivered: boolean;
         /** While running: what to ask again if Bullpen restarts before the answer comes. */
         retry?: { prompt: string; project?: string; chain: string[] };
+        /** While running: what the agent is doing (live progress). */
+        activity?: Activity;
       }
-    | { kind: "note"; text: string; action?: { kind: "open_pr"; title: string; body: string } | { kind: "open_artifact"; artifactId: string } }
+    | { kind: "note"; text: string; progress?: boolean; action?: { kind: "open_pr"; title: string; body: string } | { kind: "open_artifact"; artifactId: string } }
     | { kind: "error"; message: string }
     | ({ kind: "team_goal" } & GoalCard)
   );
@@ -246,6 +252,13 @@ export interface Goal {
   leadTurns: number;
   report?: string;
   note?: string;
+  /** Open-ended goals ("keep improving until…"): what "done" means, and improvement rounds. */
+  criteria?: string;
+  round?: number;
+  maxRounds?: number;
+  /** One short report per finished round. */
+  roundReports?: string[];
+  roundStartedAt?: string;
   /** When a paused goal will try again. */
   resumeAt?: string;
   createdAt: string;
@@ -279,6 +292,12 @@ export interface TeamTask {
   workspace?: TaskWorkspace;
   /** Files that conflicted the last time it was merged in. */
   conflicts?: string[];
+  /** Notes the agent posted while working (report_progress), newest last. */
+  progress?: Array<{ at: string; text: string }>;
+  /** Submitted at its time budget: done as far as it got, with what's left listed. */
+  partial?: boolean;
+  /** Its last run was cut short by a restart; the next run continues it. */
+  resumed?: boolean;
   /** The agent's home thread + run doing the work right now. */
   runThreadId?: string;
   runId?: string;
@@ -317,7 +336,17 @@ export interface GoalCard {
     endedAt?: string;
     runThreadId?: string;
     approvals: Array<{ requestId: string; threadId: string; tool: string; input: unknown }>;
+    /** Live, while working. */
+    activity?: Activity;
+    /** Time budget per run, so the card can show how much is left. */
+    budgetMs?: number;
+    /** Out of time: finishing up and submitting what it has. */
+    wrapping?: boolean;
+    partial?: boolean;
   }>;
+  /** What the lead itself is doing (planning, reviewing), live. */
+  lead?: { busy: boolean; activity?: Activity; threadId?: string };
+  rounds?: { round: number; max: number; criteria?: string; reports: string[] };
 }
 
 // ---------- Artifacts (pages, reports and diagrams: made by agents here, or pulled in from claude.ai) ----------

@@ -17,6 +17,7 @@ import * as worktrees from "./worktrees.ts";
 import { BrowserHub } from "./browser.ts";
 import { claudeSessions, codexSessions, findSession, sessionHistory, type PastSession } from "./sessions.ts";
 import { Artifacts } from "./artifacts.ts";
+import { activitySig, runActivity } from "./activity.ts";
 import { workdirOf } from "./types.ts";
 import { expandHome } from "./projects.ts";
 import type { Store } from "./store.ts";
@@ -64,6 +65,8 @@ function toHandle(text: string): string {
   return h.length >= 2 ? h : "agent";
 }
 const MENTION = /(?:^|[^\w@])@([a-z][a-z0-9-]{1,31})(?![\w-])/g;
+/** Spare copies an agent may have running at once, so a busy agent doesn't block other requests. */
+const MAX_CLONES = 3;
 /** How many agents deep a chain of ask_agent calls may go. */
 const MAX_CONSULT_DEPTH = 3;
 /** How much of the calling thread an @mentioned agent gets to see. */
@@ -132,6 +135,28 @@ export class Orchestrator {
     this.#jobs.start();
     this.artifacts = new Artifacts(store);
     this.artifacts.start();
+    // Live progress on @mention replies that are still being worked on.
+    this.#ticker = setInterval(() => this.#tickMentions(), 3000);
+    this.#ticker.unref();
+  }
+
+  #ticker: NodeJS.Timeout;
+  /** @mention replies in progress: where their agent's run is. */
+  readonly #mentionRuns = new Map<string, { threadId: string; runThreadId: string; runId: string; sig: string }>();
+
+  #tickMentions() {
+    for (const [itemId, w] of this.#mentionRuns) {
+      const item = this.#store.getTurnItem(itemId);
+      if (!item || item.kind !== "agent_reply" || item.status !== "running") {
+        this.#mentionRuns.delete(itemId);
+        continue;
+      }
+      const activity = runActivity(this.#store, w.runThreadId, w.runId);
+      const sig = activitySig(activity);
+      if (sig === w.sig) continue;
+      w.sig = sig;
+      this.#store.commit(w.threadId, [{ type: "turn-item.upserted", item: { ...item, activity } }]);
+    }
   }
 
   async dispatch(command: Command): Promise<unknown> {
@@ -431,6 +456,10 @@ export class Orchestrator {
           { type: "agent.deleted", agentId: agent.id },
           { type: "thread.upserted", thread: { ...home, agentId: undefined } },
         ]);
+        for (const c of this.#store.listThreads().filter((x) => x.cloneOf === agent.id)) {
+          this.#closeSession(c.id);
+          this.#store.commit(c.id, [{ type: "thread.upserted", thread: { ...c, agentId: undefined } }]);
+        }
         return { ok: true };
       }
     }
@@ -464,6 +493,7 @@ export class Orchestrator {
   }
 
   shutdown() {
+    clearInterval(this.#ticker);
     void this.browser.shutdown();
     this.artifacts.stop();
     this.#jobs.stop();
@@ -674,9 +704,12 @@ export class Orchestrator {
       { type: "agent.upserted", agent: next },
       { type: "thread.upserted", thread: { ...home, title: displayName ?? `@${name}`, model: next.model, runtimeMode: next.runtimeMode } },
     ]);
-    // Reopen the session with the new settings; the conversation resumes from the native session.
-    if (home.status === "running") this.#staleSessions.add(home.id);
-    else this.#closeSession(home.id);
+    // Reopen the session with the new settings; the conversation resumes from the native session. Copies too.
+    for (const t of [home, ...this.#store.listThreads().filter((x) => x.cloneOf === agent.id)]) {
+      if (t.cloneOf) this.#store.commit(t.id, [{ type: "thread.upserted", thread: { ...t, model: next.model, runtimeMode: next.runtimeMode } }]);
+      if (t.status === "running") this.#staleSessions.add(t.id);
+      else this.#closeSession(t.id);
+    }
     return { ok: true };
   }
 
@@ -794,10 +827,13 @@ export class Orchestrator {
   #runMention(item: Extract<TurnItem, { kind: "agent_reply" }>) {
     const agent = this.#store.getAgent(item.agentId);
     if (!agent || !item.retry) return;
-    void this.#consult(agent, item.retry.prompt, item.retry.chain, item.retry.project).then(({ ok, text: answer }) => {
+    void this.#consult(agent, item.retry.prompt, item.retry.chain, item.retry.project, {
+      onRun: (runThreadId, runId) => this.#mentionRuns.set(item.id, { threadId: item.threadId, runThreadId, runId, sig: "" }),
+    }).then(({ ok, text: answer }) => {
+      this.#mentionRuns.delete(item.id);
       const latest = this.#store.getTurnItem(item.id) ?? item;
       this.#store.commit(item.threadId, [
-        { type: "turn-item.upserted", item: { ...(latest as typeof item), status: ok ? "completed" : "failed", text: answer, retry: undefined } },
+        { type: "turn-item.upserted", item: { ...(latest as typeof item), status: ok ? "completed" : "failed", text: answer, retry: undefined, activity: undefined } },
       ]);
     });
   }
@@ -823,7 +859,7 @@ export class Orchestrator {
     prompt: string,
     chain: string[],
     project?: string,
-    opts: { team?: boolean; onRun?: (homeThreadId: string, runId: string) => void } = {},
+    opts: { team?: boolean; onRun?: (homeThreadId: string, runId: string) => void; thread?: string } = {},
   ): Promise<ConsultResult> {
     if (chain.includes(agent.id)) {
       return Promise.resolve({
@@ -834,16 +870,20 @@ export class Orchestrator {
     if (chain.length >= MAX_CONSULT_DEPTH) {
       return Promise.resolve({ ok: false, text: `Too many nested agent consultations (limit ${MAX_CONSULT_DEPTH}).` });
     }
-    return this.#serial(`consult:${agent.id}`, async (): Promise<ConsultResult> => {
-      const home = agent.homeThreadId;
+    return (async (): Promise<ConsultResult> => {
+      let home = agent.homeThreadId;
       for (;;) {
+        // The agent itself if it's free; otherwise a spare copy (same instructions and memory), so requests run in
+        // parallel instead of queuing behind whatever it's doing. With every copy busy, wait for the agent.
+        // A wrap-up or a resumed task goes back to the thread that did the work (it remembers it).
+        home = opts.thread && this.#store.getThread(opts.thread) ? opts.thread : this.#freeThreadFor(agent);
         await this.#waitFor(home, () => this.#store.getThread(home)?.status !== "running");
         let runId: string;
         try {
           ({ runId } = await this.#serial(home, () => this.#sendMessage(home, prompt, [...chain, agent.id], project, opts.team)));
           opts.onRun?.(home, runId);
         } catch (err) {
-          if (err instanceof CommandError && err.message.startsWith("A run is already active")) continue; // you were chatting with it
+          if (err instanceof CommandError && err.message.startsWith("A run is already active")) continue; // taken meanwhile: pick again
           return { ok: false, text: `@${agent.name} could not start: ${(err as Error).message}` };
         }
         await this.#waitFor(home, () => this.#store.getThread(home)?.activeRunId !== runId);
@@ -863,8 +903,34 @@ export class Orchestrator {
           limited: run?.status === "failed" && isLimitError(failure),
         };
       }
-    });
+    })();
   }
+
+  /** Where a request to this agent can start now: the agent, an idle copy, a new copy, or (all busy) the agent. */
+  #freeThreadFor(agent: Agent): string {
+    const idle = (id: string) => this.#store.getThread(id)?.status === "idle" && !this.#claimed.has(id);
+    const pick = (id: string) => {
+      // Held until its run starts, so two requests at once don't pick the same thread.
+      this.#claimed.add(id);
+      setTimeout(() => this.#claimed.delete(id), 3000);
+      return id;
+    };
+    if (idle(agent.homeThreadId)) return pick(agent.homeThreadId);
+    const clones = this.#store.listThreads().filter((t) => t.cloneOf === agent.id);
+    const free = clones.find((t) => idle(t.id));
+    if (free) return pick(free.id);
+    if (clones.length < MAX_CLONES) {
+      const { threadId } = this.#createThread(
+        { type: "thread.create", cwd: agent.cwd, provider: agent.provider, model: agent.model, runtimeMode: agent.runtimeMode, title: `${agent.displayName ?? `@${agent.name}`} (copy ${clones.length + 1})` },
+        false,
+      );
+      const t = this.#requireThread(threadId);
+      this.#store.commit(threadId, [{ type: "thread.upserted", thread: { ...t, agentId: agent.id, cloneOf: agent.id } }]);
+      return pick(threadId);
+    }
+    return agent.homeThreadId;
+  }
+  readonly #claimed = new Set<string>();
 
   /** Resolve once `done()` holds, re-checking after every event on the thread. */
   #waitFor(threadId: string, done: () => boolean): Promise<void> {
@@ -892,6 +958,22 @@ export class Orchestrator {
     const leadTools = self && this.#store.getAgent(self)?.canLead ? this.#team.tools(threadId) : [];
     return [
       ...leadTools,
+      {
+        name: "report_progress",
+        description:
+          "Tell the person (and your lead, on a team task) where you are, in one short sentence, e.g. 'Scoring done; now the results screen'. Use it after each meaningful step of longer work; it shows live in the chat.",
+        params: { note: { description: "One short sentence." } },
+        run: async ({ note }) => {
+          const text = (note ?? "").trim().slice(0, 300);
+          if (!text) return { isError: true, text: "Pass a note." };
+          if (!this.#team.progress(threadId, text)) {
+            const t = this.#store.getThread(threadId);
+            const id = randomUUID();
+            this.#store.commit(threadId, [{ type: "turn-item.upserted", item: { id: `progress:${id}`, threadId, runId: t?.activeRunId ?? `note:${id}`, kind: "note", text, progress: true } }]);
+          }
+          return { text: "Noted. Keep going." };
+        },
+      },
       ...this.#threadTools(threadId),
       ...this.#artifactTools(threadId),
       ...this.#browserTools(threadId),
@@ -1260,7 +1342,7 @@ export class Orchestrator {
     return [
       `You are ${agent.displayName ? `${agent.displayName} (@${agent.name})` : `@${agent.name}`}, a named long-running agent in Bullpen.${agent.description ? ` Role: ${agent.description}` : ""}`,
       "People talk to you directly, and other threads and agents consult you; each message says who is asking. " +
-        "Your final message in a turn is returned to whoever asked, so make it a complete answer.",
+        "Your final message in a turn is returned to whoever asked, so make it a complete answer, and don't end a turn while something you started is still running (wait for it).",
       `You aren't tied to one project. When a request names a project folder, work in that folder using absolute ` +
         `paths (your shell starts in your own folder, ${agent.cwd}). Without one, just answer.`,
       `Your memory is ${join(agent.cwd, "MEMORY.md")}. Read it with your file-reading tool when a conversation starts. When you learn something ` +
@@ -1284,7 +1366,21 @@ export class Orchestrator {
 
   // ---------- turns ----------
 
+  /** Waiting to restart (an update): nothing new starts, running turns finish. */
+  draining = false;
+
+  /** Turns running right now. */
+  busy(): { running: number; threads: string[] } {
+    const running = this.#store.listThreads().filter((t) => t.status === "running");
+    return { running: running.length, threads: running.map((t) => t.title).slice(0, 8) };
+  }
+
   async #sendMessage(threadId: string, text: string, chain: string[], project?: string, team?: boolean, lessonHint?: boolean, resumed = 0) {
+    if (this.draining) {
+      // Agents' own work (team tasks, @mentions) waits; it's picked back up after the restart.
+      if (chain.length || team) await new Promise(() => {});
+      throw new CommandError("Bullpen is restarting for an update in a moment; send this again once it's back.");
+    }
     const thread = this.#requireThread(threadId);
     if (thread.status === "running") throw new CommandError("A run is already active; interrupt it first.");
     if (!text.trim()) throw new CommandError("Empty message.");

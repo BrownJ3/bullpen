@@ -17,6 +17,8 @@ import { chmodSync, closeSync, copyFileSync, utimesSync, existsSync, mkdirSync, 
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 import { HOME, ensureHome, loadOrCreateToken } from "./home.ts";
 import { DEFAULT_PORT } from "./protocol.ts";
 import { compareVersions, currentVersion, latestRelease } from "./version.ts";
@@ -106,6 +108,60 @@ async function start(): Promise<boolean> {
   return ok;
 }
 
+/** Ask the running server something (busy / drain). Undefined if it isn't running or doesn't know the method. */
+async function ask(method: string, params?: unknown): Promise<any> {
+  if (!(await running())) return undefined;
+  const { WebSocket } = await import("ws");
+  return new Promise((resolve) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${PORT}`, { headers: { authorization: `Bearer ${loadOrCreateToken()}` } });
+    const done = (v: unknown) => {
+      ws.close();
+      resolve(v);
+    };
+    ws.on("open", () => ws.send(JSON.stringify({ id: 1, method, params })));
+    ws.on("message", (raw) => {
+      const msg = JSON.parse(String(raw));
+      if (msg.id === 1) done(msg.error ? undefined : msg.result);
+    });
+    ws.on("error", () => done(undefined));
+    setTimeout(() => done(undefined), 5000);
+  });
+}
+
+/**
+ * Before a restart: stop new turns from starting and wait for running ones to finish (up to 30 minutes), so agents
+ * aren't cut off mid-step. `--now` skips the wait. Team tasks and @mentions waiting to start are picked up afterwards.
+ */
+async function drain(): Promise<void> {
+  if (process.argv.includes("--now")) return;
+  let state = await ask("drain", { on: true });
+  if (!state && (await running())) state = runningFromDb(); // an older server without "drain": still wait for it
+  if (!state?.running) return;
+  say(`Waiting for ${state.running} running turn${state.running === 1 ? "" : "s"} to finish (${state.threads.join(", ")}). Nothing new starts meanwhile; Ctrl-C to cancel, --now to restart anyway.`);
+  const deadline = Date.now() + 30 * 60_000;
+  const cancel = () => void ask("drain", { on: false }).finally(() => process.exit(130));
+  process.once("SIGINT", cancel);
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 3000));
+    state = (await ask("busy")) ?? runningFromDb();
+    if (!state?.running) break;
+  }
+  process.removeListener("SIGINT", cancel);
+}
+
+/** Turns running, straight from the database (read-only), for servers too old to answer "busy". */
+function runningFromDb(): { running: number; threads: string[] } | undefined {
+  try {
+    const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
+    const db = new DatabaseSync(join(HOME, "state.sqlite"), { readOnly: true });
+    const rows = db.prepare("SELECT json_extract(payload_json, '$.title') AS title FROM threads WHERE json_extract(payload_json, '$.status') = 'running'").all() as Array<{ title: string }>;
+    db.close();
+    return { running: rows.length, threads: rows.map((r) => r.title).slice(0, 8) };
+  } catch {
+    return undefined;
+  }
+}
+
 async function stop(): Promise<boolean> {
   if (serviceInstalled()) launchctl("bootout", `gui/${UID}/${LABEL}`); // unload so it stays stopped until `start`
   const pid = pidFromFile() ?? pidOnPort();
@@ -190,7 +246,8 @@ async function update(): Promise<boolean> {
     const npm = join(dirname(NODE), "npm");
     execFileSync(existsSync(npm) ? npm : "npm", ["ci", "--omit=dev", "--no-audit", "--no-fund", "--loglevel=error"], { cwd: ROOT, stdio: "inherit" });
   }
-  // The new version's own install step (service file, app) and a restart onto the new code.
+  // Let running agents finish their step, then the new version's own install step and a restart onto the new code.
+  await drain();
   execFileSync(NODE, [join(ROOT, "src", "cli.ts"), "_after-update"], { stdio: "inherit" });
   say(`Updated to ${currentVersion().describe}.`);
   return true;
@@ -326,6 +383,7 @@ switch (cmd) {
     else (say("It didn't stop in time; check `bullpen status`."), process.exit(1));
     break;
   case "restart":
+    await drain();
     await stop();
     if (await start()) say("Restarted.");
     else process.exit(1);

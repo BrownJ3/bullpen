@@ -12,14 +12,21 @@ import { existsSync, statSync } from "node:fs";
 import type { Store } from "./store.ts";
 import { shellWrites } from "./team-policy.ts";
 import * as worktrees from "./worktrees.ts";
+import { activitySig, runActivity } from "./activity.ts";
 import { workdirOf, type Agent, type Goal, type GoalCard, type HarnessTool, type TeamTask, type Thread, type TurnItem } from "./types.ts";
 
 export const LIMITS = {
-  maxTasks: 12, // per goal
+  maxTasks: 12, // per round
   maxParallel: 3, // tasks working at once per goal
-  taskTimeoutMs: 20 * 60_000,
+  /** Each run of a task gets this long; then it wraps up and submits what it has (nothing is thrown away). */
+  taskBudgetMs: Number(process.env.BULLPEN_TASK_BUDGET_MS) || 12 * 60_000,
+  /** The wrap-up turn after the budget; past this it's stopped. */
+  wrapUpMs: Number(process.env.BULLPEN_WRAPUP_MS) || 4 * 60_000,
+  /** Improvement rounds for open-ended goals ("keep improving until…"). */
+  defaultRounds: 5,
+  maxRounds: 10,
   maxAttempts: 2, // one automatic retry, then park
-  maxLeadTurns: 30, // per goal
+  maxLeadTurns: 30, // per goal (more for goals with several rounds)
   maxNudges: 3, // "you still need to review / finish" re-wakes in a row
   sweepMs: 30_000,
   /** Hold a review wake-up this long while other tasks are about to submit, so one lead turn reviews them all. */
@@ -44,7 +51,7 @@ export interface TeamHost {
     prompt: string,
     chain: string[],
     project: string,
-    opts: { team?: boolean; onRun?: (homeThreadId: string, runId: string) => void },
+    opts: { team?: boolean; onRun?: (homeThreadId: string, runId: string) => void; thread?: string },
   ): Promise<ConsultOutcome>;
   interrupt(homeThreadId: string, runId: string): Promise<void>;
   transcript(threadId: string): string;
@@ -75,6 +82,7 @@ export class Team {
   readonly #runGoal = new Map<string, string>();
   readonly #timers = new Map<string, NodeJS.Timeout>(); // taskId -> timeout
   readonly #timedOut = new Set<string>(); // taskId
+  readonly #wrapping = new Set<string>(); // taskId: out of time, finishing up
   #sweep: NodeJS.Timeout | undefined;
 
   constructor(store: Store, host: TeamHost) {
@@ -91,7 +99,8 @@ export class Team {
         continue;
       }
       for (const t of tasks) {
-        if (t.status === "working") this.#saveTask({ ...t, status: "queued", runId: undefined });
+        // Picked up where it was: same agent thread (it remembers), same folder, a "continue" prompt.
+        if (t.status === "working") this.#saveTask({ ...t, status: "queued", runId: undefined, resumed: true, attempts: Math.max(0, t.attempts - 1) });
       }
       if (goal.status === "planning") this.#saveGoal({ ...goal, status: "working" });
       if (tasks.some((t) => t.status === "submitted")) this.#wake(goal.id, { text: "Bullpen restarted. Results are waiting for your review." });
@@ -99,10 +108,34 @@ export class Team {
       this.#publish(goal.id);
     }
     this.#sweep = setInterval(() => this.#sweepAll(), LIMITS.sweepMs);
+    // Live progress: refresh team cards while anyone on them is working.
+    this.#ticker = setInterval(() => this.#tick(), 4000);
+    this.#ticker.unref();
+  }
+
+  #ticker: NodeJS.Timeout | undefined;
+  readonly #cardSigs = new Map<string, string>();
+  /** The lead's current run per goal, for its live activity. */
+  readonly #leadRuns = new Map<string, { threadId: string; runId: string }>();
+
+  #tick() {
+    for (const goal of this.#store.openGoals()) {
+      const tasks = this.#store.listTasks(goal.id).filter((t) => t.status === "working" && t.runThreadId && t.runId);
+      const lead = this.#leadRuns.get(goal.id);
+      if (!tasks.length && !lead) continue;
+      const sig = [
+        ...tasks.map((t) => `${t.id}:${activitySig(runActivity(this.#store, t.runThreadId!, t.runId!))}:${this.#wrapping.has(t.id)}`),
+        lead ? `lead:${activitySig(runActivity(this.#store, lead.threadId, lead.runId))}` : "",
+      ].join(";");
+      if (this.#cardSigs.get(goal.id) === sig) continue;
+      this.#cardSigs.set(goal.id, sig);
+      this.#publish(goal.id);
+    }
   }
 
   stop() {
     if (this.#sweep) clearInterval(this.#sweep);
+    if (this.#ticker) clearInterval(this.#ticker);
     for (const t of this.#timers.values()) clearTimeout(t);
   }
 
@@ -198,6 +231,22 @@ export class Team {
     }
   }
 
+  /**
+   * report_progress, for whoever is working on a task in this thread: a one-line note shown live on the team card.
+   * Outside a team task it's posted in the thread instead (the caller does that).
+   */
+  progress(threadId: string, text: string): boolean {
+    for (const goal of this.#store.openGoals()) {
+      const task = this.#store.listTasks(goal.id).find((t) => t.status === "working" && t.runThreadId === threadId);
+      if (!task) continue;
+      const progress = [...(task.progress ?? []), { at: now(), text: clip(text.trim(), 300) }].slice(-8);
+      this.#saveTask({ ...task, progress });
+      this.#publish(goal.id);
+      return true;
+    }
+    return false;
+  }
+
   // ---------------------------------------------------------------- lead tools
 
   tools(leadHomeThreadId: string): HarnessTool[] {
@@ -248,6 +297,49 @@ export class Team {
         run: async (a) => {
           const goal = goalOf();
           return goal ? await this.#review(goal, a) : none;
+        },
+      },
+      {
+        name: "set_goal_criteria",
+        description:
+          "For open-ended goals ('keep improving until…', 'make it great'): say what done looks like, as a few checkable criteria, and how many improvement rounds to allow. " +
+          "After each round you check against them: finish_goal when they're met, otherwise next_round. Call it while planning.",
+        params: {
+          criteria: { description: "Checkable criteria, one per line, e.g. '- a new player gets the core loop within 10 seconds'." },
+          rounds: { description: `Maximum rounds (default ${LIMITS.defaultRounds}, at most ${LIMITS.maxRounds}).`, optional: true },
+        },
+        run: async (a) => {
+          const goal = goalOf();
+          if (!goal) return none;
+          if (!a.criteria?.trim()) return { isError: true, text: "Pass the criteria." };
+          const maxRounds = Math.min(LIMITS.maxRounds, Math.max(1, Number(a.rounds) || LIMITS.defaultRounds));
+          this.#saveGoal({ ...goal, criteria: a.criteria.trim(), round: goal.round ?? 1, maxRounds, roundStartedAt: goal.roundStartedAt ?? now() });
+          this.#publish(goal.id);
+          return { text: `Criteria set; round ${goal.round ?? 1} of up to ${maxRounds}. Now delegate this round's tasks.` };
+        },
+      },
+      {
+        name: "next_round",
+        description:
+          "End this improvement round and start the next: post a short report for the person (what changed, how it measures against the criteria, what the next round will do), then delegate the next round's tasks in the same turn.",
+        params: { report: { description: "Short round report for the person." } },
+        run: async (a) => {
+          const goal = goalOf();
+          if (!goal) return none;
+          if (!goal.criteria) return { isError: true, text: "This goal has no criteria; use set_goal_criteria first, or finish_goal." };
+          const open = this.#store.listTasks(goal.id).filter((t) => isActiveTask(t) || t.status === "parked");
+          if (open.length) return { isError: true, text: `Not yet: ${open.map((t) => `${t.ref} is ${t.status}`).join(", ")}.` };
+          const round = goal.round ?? 1;
+          if (round >= (goal.maxRounds ?? LIMITS.defaultRounds)) {
+            return { isError: true, text: `That was the last round (${round}). Call finish_goal with the final report.` };
+          }
+          if (!a.report?.trim()) return { isError: true, text: "Pass the report." };
+          const reports = [...(goal.roundReports ?? []), a.report.trim()];
+          this.#saveGoal({ ...goal, round: round + 1, roundReports: reports, roundStartedAt: now() });
+          this.#postReply(goal, `round:${goal.id}:${round}`, `**Round ${round} done.** ${a.report.trim()}`);
+          this.#nudges.delete(goal.id);
+          this.#publish(goal.id);
+          return { text: `Round ${round + 1} started. Delegate its tasks now.` };
         },
       },
       {
@@ -305,7 +397,8 @@ export class Team {
 
   #delegate(goal: Goal, a: Record<string, string>) {
     const tasks = this.#store.listTasks(goal.id);
-    if (tasks.length >= LIMITS.maxTasks) return { isError: true, text: `This goal already has ${LIMITS.maxTasks} tasks (the limit). Finish or cancel some first.` };
+    const thisRound = tasks.filter((t) => !goal.roundStartedAt || t.createdAt >= goal.roundStartedAt);
+    if (thisRound.length >= LIMITS.maxTasks) return { isError: true, text: `This round already has ${LIMITS.maxTasks} tasks (the limit). Finish or cancel some first.` };
     const handle = (a.agent ?? "").replace(/^@/, "").trim().toLowerCase();
     const agent = this.#store.getAgentByName(handle);
     if (!agent) {
@@ -440,7 +533,7 @@ export class Team {
           this.#publish(goalId);
           break;
         }
-        if (goal.leadTurns >= LIMITS.maxLeadTurns) {
+        if (goal.leadTurns >= LIMITS.maxLeadTurns + 15 * ((goal.round ?? 1) - 1)) {
           this.#saveGoal({ ...goal, status: "stuck", note: `The lead used its ${LIMITS.maxLeadTurns} turns. Mention it to continue, or stop the team.` });
           this.#publish(goalId);
           break;
@@ -459,10 +552,17 @@ export class Team {
           // goal, and that turn's cleanup must not detach this one.
           res = await this.#host.consult(lead, prompt, [], goal.project, {
             team: true,
-            onRun: (home) => this.#runGoal.set(home, goalId),
+            onRun: (home, runId) => {
+              this.#runGoal.set(home, goalId);
+              this.#leadRuns.set(goalId, { threadId: home, runId });
+              this.#publish(goalId);
+            },
           });
         } finally {
-          if (this.#runGoal.get(lead.homeThreadId) === goalId) this.#runGoal.delete(lead.homeThreadId);
+          const lr = this.#leadRuns.get(goalId);
+          this.#leadRuns.delete(goalId);
+          if (lr && this.#runGoal.get(lr.threadId) === goalId) this.#runGoal.delete(lr.threadId);
+          this.#publish(goalId);
         }
 
         goal = this.#store.getGoal(goalId)!;
@@ -498,7 +598,13 @@ export class Team {
     const nudges = this.#nudges.get(goal.id) ?? 0;
     let nudge: string | undefined;
     if (unreviewed.length) nudge = `You still need to review ${unreviewed.map((t) => t.ref).join(", ")} with review_task.`;
-    else if (allSettled) nudge = "Every task is accepted or cancelled. Check the whole (tests/build if any) and call finish_goal with the report.";
+    else if (allSettled && goal.criteria) {
+      const round = goal.round ?? 1;
+      const last = round >= (goal.maxRounds ?? LIMITS.defaultRounds);
+      nudge = last
+        ? `Round ${round} (the last) is done. Check the whole against the criteria and call finish_goal with the final report.`
+        : `Round ${round} is done. Check the result against the criteria:\n${goal.criteria}\nIf they're met, finish_goal. If not, call next_round with a short report and delegate the next round's tasks in the same turn.`;
+    } else if (allSettled) nudge = "Every task is accepted or cancelled. Check the whole (tests/build if any) and call finish_goal with the report.";
     if (nudge) {
       if (nudges >= LIMITS.maxNudges) {
         this.#saveGoal({ ...this.#store.getGoal(goal.id)!, status: "stuck", note: "The lead stopped without reviewing or finishing. Mention it to continue." });
@@ -569,25 +675,48 @@ export class Team {
     }
     const where = task.workspace?.path ?? goal.project;
 
-    const prompt = resolving ? this.#conflictPrompt(goal, task) : rework ? this.#reworkPrompt(goal, task) : this.#taskPrompt(goal, task);
-    const res = await this.#host.consult(agent, prompt, [goal.leadAgentId], where, {
-      team: true,
-      onRun: (homeThreadId, runId) => {
-        const t = this.#store.getTask(taskId);
-        if (t) this.#saveTask({ ...t, runThreadId: homeThreadId, runId });
-        this.#publish(goal.id);
-        this.#timers.set(
-          taskId,
-          setTimeout(() => {
-            this.#timedOut.add(taskId);
-            void this.#host.interrupt(homeThreadId, runId);
-          }, LIMITS.taskTimeoutMs),
-        );
-      },
-    });
+    const resumed = Boolean(task.resumed) && Boolean(task.runThreadId);
+    let prompt = resolving ? this.#conflictPrompt(goal, task) : rework ? this.#reworkPrompt(goal, task) : this.#taskPrompt(goal, task);
+    if (resumed) {
+      prompt =
+        "Bullpen restarted while you were working on this task. Your changes so far are still in your folder and you remember the work: " +
+        `check where you got to and continue from there (don't redo finished steps). The task, for reference:\n\n${prompt}`;
+    }
+    if (task.resumed) this.#saveTask((task = { ...task, resumed: false }));
+    // One run, at most the time budget; then a short wrap-up turn in the same conversation, so nothing is lost.
+    const run = (text: string, budgetMs: number, thread?: string) =>
+      this.#host.consult(agent, text, [goal.leadAgentId], where, {
+        team: true,
+        thread,
+        onRun: (homeThreadId, runId) => {
+          const t = this.#store.getTask(taskId);
+          if (t) this.#saveTask({ ...t, runThreadId: homeThreadId, runId });
+          this.#publish(goal.id);
+          clearTimeout(this.#timers.get(taskId));
+          this.#timers.set(
+            taskId,
+            setTimeout(() => {
+              this.#timedOut.add(taskId);
+              void this.#host.interrupt(homeThreadId, runId);
+            }, budgetMs),
+          );
+        },
+      });
+    let res = await run(prompt, LIMITS.taskBudgetMs, resumed ? task.runThreadId : undefined);
     clearTimeout(this.#timers.get(taskId));
+    let timedOut = this.#timedOut.delete(taskId);
+    let partial = false;
+    const after = this.#store.getTask(taskId);
+    if (timedOut && after?.status === "working" && after.runThreadId && isOpen(this.#store.getGoal(goal.id))) {
+      this.#wrapping.add(taskId);
+      this.#publish(goal.id);
+      res = await run(this.#wrapUpPrompt(goal, after), LIMITS.wrapUpMs, after.runThreadId);
+      clearTimeout(this.#timers.get(taskId));
+      timedOut = this.#timedOut.delete(taskId);
+      this.#wrapping.delete(taskId);
+      partial = res.ok;
+    }
     this.#timers.delete(taskId);
-    const timedOut = this.#timedOut.delete(taskId);
 
     task = this.#store.getTask(taskId)!;
     const g = this.#store.getGoal(goal.id)!;
@@ -607,11 +736,12 @@ export class Team {
         touched = changes?.files ?? [];
         patch = changes?.patch ?? "";
       } else if (res.homeThreadId && res.runId) touched = this.#filesTouched(res.homeThreadId, res.runId, goal.project);
-      const result = resolving ? `${task.result ?? ""}\n\n(Resolved merge conflicts: ${res.text})` : res.text;
+      const result = resolving ? `${task.result ?? ""}\n\n(Resolved merge conflicts: ${res.text})` : partial ? `(Submitted at its time budget.)\n${res.text}` : res.text;
+      if (partial) task = { ...task, partial: true };
       if ((task.autoAccept && !rework) || resolving) {
         // Fast lane: no review turn (routine work, or work the lead already accepted that only needed its merge
         // conflicts resolved). Dependents start now; the lead sees the result when it next wakes.
-        const landed = await this.#accept(goal, { ...task, result, filesTouched: touched }, { result, runId: undefined });
+        const landed = await this.#accept(goal, { ...task, result, filesTouched: touched }, { result, runId: undefined, partial: task.partial });
         if (landed.ok) {
           this.#queueInfo(
             goal.id,
@@ -623,7 +753,13 @@ export class Team {
         }
       } else {
         this.#saveTask({ ...task, status: "submitted", result, filesTouched: touched, runId: undefined, conflicts: undefined });
-        const verb = resolving ? "resubmitted after resolving merge conflicts" : rework ? "resubmitted after your notes" : "submitted";
+        const verb = partial
+          ? `submitted at its ${LIMITS.taskBudgetMs / 60_000}-minute budget (done as far as it got; what's left is listed: delegate follow-up tasks for it if needed)`
+          : resolving
+            ? "resubmitted after resolving merge conflicts"
+            : rework
+              ? "resubmitted after your notes"
+              : "submitted";
         this.#wakeForReview(goal.id, {
           text:
             `${task.ref} (@${agent.name}: ${task.title}) was ${verb}:\n\n${clip(res.text, 4000)}` +
@@ -640,7 +776,7 @@ export class Team {
       this.#saveTask({ ...task, status: "paused", error: "Usage limit reached", resumeAt, runId: undefined });
       this.#pauseGoal(g, res.text);
     } else {
-      const error = timedOut ? `Took longer than ${LIMITS.taskTimeoutMs / 60_000} minutes and was stopped.` : clip(res.text, 600) || "Failed.";
+      const error = timedOut ? `Didn't finish wrapping up within ${(LIMITS.taskBudgetMs + LIMITS.wrapUpMs) / 60_000} minutes and was stopped.` : clip(res.text, 600) || "Failed.";
       if (task.attempts < LIMITS.maxAttempts) {
         // Retry once automatically (AgentOffice: retry-then-park).
         this.#saveTask({ ...task, status: rework ? "changes" : "queued", error: `Retrying: ${error}`, runId: undefined });
@@ -672,8 +808,13 @@ export class Team {
   /** Auto-accepted work may have finished the last open task: then the lead needs to wrap up. */
   #maybeWakeForFinish(goalId: string) {
     const tasks = this.#store.listTasks(goalId);
+    const goal = this.#store.getGoal(goalId);
     if (tasks.length && tasks.every((t) => ["accepted", "cancelled"].includes(t.status))) {
-      this.#wake(goalId, { text: "Every task is accepted. Check the whole (tests/build if any) and call finish_goal with the report." });
+      this.#wake(goalId, {
+        text: goal?.criteria
+          ? `Every task in round ${goal.round ?? 1} is accepted. Check against the criteria: finish_goal if met (or if this was the last round), otherwise next_round and delegate.`
+          : "Every task is accepted. Check the whole (tests/build if any) and call finish_goal with the report.",
+      });
     }
   }
 
@@ -763,7 +904,9 @@ export class Team {
       [
         "How team goals work:",
         "- Speed matters more than ceremony: every handoff costs a turn. If it's small or just a question, answer or do it yourself and don't create tasks.",
-        "- Use the fewest tasks that get it done well: give each specialist a complete, self-contained piece (a whole feature slice, not fragments), and don't add steps for their own sake.",
+        `- Size tasks to about 10 minutes of work each (a task's run has a ${LIMITS.taskBudgetMs / 60_000}-minute budget; at the budget it wraps up and submits what's done plus what's left). A request with five parts is several tasks, not one.`,
+        "- Prefer parallel tasks on separate files over one long chain: a single big task that everything else depends on makes the whole team wait.",
+        "- Open-ended goals ('keep improving until…', 'make it great'): first call set_goal_criteria with checkable criteria and a round limit, then run it in rounds: delegate a round, review, and next_round until the criteria are met.",
         "- Hand out each piece with the delegate tool: one owner per task, a self-contained brief (teammates can't see this conversation), the exact deliverable, the files or folders it may change, and depends_on for tasks that need another's result.",
         `- Tasks without dependencies run in parallel (up to ${LIMITS.maxParallel} at once), so give parallel tasks separate files. Add a reviewer task (code review, QA, security) only when the change is risky enough to need one.`,
         "- For routine, low-risk tasks pass review: 'skip' so they're accepted on submission and anything depending on them starts at once. Review only what's risky or central.",
@@ -810,11 +953,25 @@ export class Team {
         "- Change files with your file-editing tools and read them with your file-reading tools, not shell redirection or cat. Edits inside the project and tests/builds/git status run without approval; other shell commands wait for the person.",
         "- Don't commit, push, deploy or delete data.",
         "- Run the relevant tests, build or type check if the project has them.",
+        `- You have about ${LIMITS.taskBudgetMs / 60_000} minutes. Do the deliverable first; submit as soon as it's done rather than polishing beyond the brief.`,
+        "- Call report_progress with one short sentence after each meaningful step (it shows live to the person and the lead).",
+        "- Your final message is your submission, so don't end your turn while anything you started is still running: run commands in the foreground and wait for them (background only for servers you keep running, and check their output before you finish).",
+        "- Don't wait around: no sleep, no repeated screenshots. To test something timed (rounds, animations), shorten the timer for the test with a setting or env variable; check visually once per change.",
         `- Finish with your submission: what you did, the files you changed, how to verify it, and anything left open. That message goes to @${lead?.name ?? "the lead"} for review.`,
       ].join("\n"),
     ]
       .filter(Boolean)
       .join("\n\n---\n\n");
+  }
+
+  #wrapUpPrompt(goal: Goal, task: TeamTask): string {
+    return [
+      `Time's up for ${task.ref} ("${task.title}"): you've used the ${LIMITS.taskBudgetMs / 60_000}-minute budget.`,
+      "Stop starting new work. In this one short turn: make sure what you changed is in a working state (revert half-finished edits if needed), then submit:",
+      "- what's done (files changed, how to verify)",
+      "- what's left, as a short list the lead can turn into follow-up tasks",
+      `Your submission goes to @${this.#store.getAgent(goal.leadAgentId)?.name ?? "the lead"}.`,
+    ].join("\n");
   }
 
   #conflictPrompt(goal: Goal, task: TeamTask): string {
@@ -913,8 +1070,18 @@ export class Team {
           endedAt: t.endedAt,
           runThreadId: t.runThreadId ?? owner?.homeThreadId,
           approvals,
+          activity:
+            t.status === "working" && t.runThreadId && t.runId ? runActivity(this.#store, t.runThreadId, t.runId, t.progress?.at(-1)?.text) : undefined,
+          budgetMs: LIMITS.taskBudgetMs,
+          wrapping: this.#wrapping.has(t.id) || undefined,
+          partial: t.partial,
         };
       }),
+      lead: (() => {
+        const lr = this.#leadRuns.get(goal.id);
+        return { busy: this.#leadBusy.has(goal.id), threadId: lr?.threadId, activity: lr ? runActivity(this.#store, lr.threadId, lr.runId) : undefined };
+      })(),
+      rounds: goal.criteria ? { round: goal.round ?? 1, max: goal.maxRounds ?? LIMITS.defaultRounds, criteria: goal.criteria, reports: goal.roundReports ?? [] } : undefined,
     };
   }
 

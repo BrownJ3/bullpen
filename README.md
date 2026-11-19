@@ -124,6 +124,18 @@ the team **pauses** and resumes when the limit resets. After a server restart, i
 `scripts/jobs-smoke.ts` tests jobs (manual, on commit, scheduled), the briefing, and a lesson learned from a correction and followed in a fresh conversation. `scripts/team-smoke.ts` runs three scenarios end to end: a parallel team with a dependent check, a one-round
 send-back, and stopping a team mid-way.
 
+## How agents keep moving
+
+- **Live progress:** while an agent works, the chat shows a status line that keeps updating (time so far, steps, what it's doing now, its latest note). @mention replies and the team card show the same for each agent, the lead included, with a time-budget bar per task.
+- **report_progress:** agents post a one-line note after each meaningful step; it shows live.
+- **Time budget, then wrap-up:** each run of a team task gets 12 minutes. Then the agent is told time's up and, in the same conversation, submits what's done plus what's left (marked "partial"), so nothing is thrown away. The lead turns what's left into follow-up tasks.
+- **Smaller, parallel tasks:** the lead sizes tasks to about 10 minutes and prefers parallel tasks on separate files over one big task everything waits on. Agents are told not to wait around (no sleeping, no repeated screenshots) and not to end a turn while something they started is still running.
+- **Spare copies:** when an agent is busy, another request to it runs on a spare copy (same instructions and memory, up to 3) instead of queuing.
+- **Improvement rounds:** for open-ended goals ("keep improving until…") the lead sets checkable criteria and a round limit (5 by default), then works in rounds, posting a short report after each, until the criteria are met.
+- **Safe restarts:** `bullpen restart` and `bullpen update` stop new turns from starting and wait (up to 30 minutes) for running ones to finish; `--now` skips the wait. Work interrupted anyway picks up where it was.
+
+Test: `node scripts/loops-smoke.ts` (starts its own server with a 30-second budget).
+
 ## Projects
 
 The sidebar groups threads under **projects**, the folders you work in (modeled on T3 Code's folder mode).

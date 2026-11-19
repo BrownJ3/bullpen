@@ -47,6 +47,8 @@ export type Request =
   | { id: number; method: "listEngines"; params?: undefined }
   | { id: number; method: "projectSuggestions"; params?: undefined }
   | { id: number; method: "version"; params?: undefined }
+  | { id: number; method: "busy"; params?: undefined }
+  | { id: number; method: "drain"; params?: { on?: boolean } }
   | { id: number; method: "artifact.content"; params: { artifactId: string; version?: number } }
   | { id: number; method: "update.run"; params?: undefined }
   | { id: number; method: "jobRuns"; params: { jobId: string } }

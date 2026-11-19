@@ -362,6 +362,11 @@ wss.on("connection", (socket: WebSocket) => {
           throw new CommandError((err as Error).message);
         }
       }
+      case "busy":
+        return { ...orchestrator.busy(), draining: orchestrator.draining };
+      case "drain":
+        orchestrator.draining = (req.params as { on?: boolean } | undefined)?.on !== false;
+        return { ...orchestrator.busy(), draining: orchestrator.draining };
       case "version":
         return updateInfo();
       case "update.run": {
