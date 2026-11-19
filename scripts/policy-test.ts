@@ -25,8 +25,22 @@ const allowed = [
   `kill "$(cat server.pid)"; sleep 1; (curl -s -m 2 http://localhost:3456/ && echo "STILL UP") || echo "free"; lsof -nP -iTCP:3456 -sTCP:LISTEN`,
   `S=${A}/scratch; cat $S/server.log; PID=$(cat ${A}/pid.txt); kill $PID`,
   `S=${A}; (PORT=3456 node server.js > $S/server.log 2>&1 & echo $! > $S/pid.txt); sleep 1; curl -s localhost:3456`,
+  // Reading and reshaping text
+  `cd ${W} && git ls-files && wc -c $(git ls-files) && head -c 3000 index.html; ls design 2>/dev/null`,
+  `grep -E '^\\*\\*Title' content/copy.md | sed -E 's/^x//' | awk '{print length($0)}'`,
+  "sed -n '1,40p' src/app.ts",
+  "awk -F, '$3 > 10 {print $1}' data.csv",
 ];
 const blocked = [
+  "sed -i '' 's/a/b/' file.txt",
+  "sed -i.bak 's/a/b/' file.txt",
+  "sed 's/a/b/w /etc/hosts' f",
+  "sed 's/x/date/e' f",
+  "awk 'BEGIN{system(\"rm -rf x\")}'",
+  "awk '{print > \"/tmp/out\"}' f",
+  "awk '{ \"date\" | getline d }' f",
+  "wc -c $(rm -rf build)",
+  "cat $(curl -s https://example.com/x)",
   "curl -s https://example.com",
   "curl -s http://localhost:3000 https://evil.example",
   "curl -T secret.txt http://localhost:3000",

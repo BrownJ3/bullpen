@@ -121,7 +121,7 @@ function renderTopbar() {
     { icon: "copy", label: "Copy project path", run: () => navigator.clipboard?.writeText(t.cwd).then(() => toast("Path copied.")) },
   ];
   // Server events arrive constantly; only redraw when something shown changed, so clicks never land mid-redraw.
-  const sig = JSON.stringify([t.id, t.title, t.status, t.runtimeMode, t.model, t.cwd, t.worktree?.branch, t.worktree?.prUrl, agent && [agent.name, agent.displayName, agent.description],
+  const sig = JSON.stringify([t.id, t.title, t.status, t.runtimeMode, t.model, t.provider, Boolean(t.nativeSessionId), t.cwd, t.worktree?.branch, t.worktree?.prUrl, agent && [agent.name, agent.displayName, agent.description],
     job && [job.name, job.enabled, job.lastStatus, job.nextRunAt], proj && [proj.title, proj.runtimeMode], waiting, ui.files, ui.terminal, ui.browser,
     nav.i, nav.top, sideHidden, agent ? [...state.lessons.values()].filter((l) => l.agentId === agent.id).map((l) => l.status).join() : ""]);
   if (bar.dataset.sig !== sig) { bar.dataset.sig = sig; bar.replaceChildren(...[
@@ -137,8 +137,9 @@ function renderTopbar() {
     // Like T3: what the agent runs on and what it may do sit under the message box, not in the title bar.
     const tools = $("composer-tools");
     if (tools) tools.replaceChildren(...[
-      h("span", { class: "cbtn static", "data-tip": agent ? `${agentLabel(agent)} runs on ${engine}${t.model ? ` (${t.model})` : ""}. Change it in the agent's settings.` : `This chat runs on ${engine}${t.model ? ` (${t.model})` : " with its default model"}.`, "data-tip-pos": "up" },
-        icon("bot", 14), h("span", { class: "tx" }, t.model || engine)),
+      h("button", { type: "button", class: "cbtn", "aria-haspopup": "menu", "data-tip": agent ? `${agentLabel(agent)} runs on ${engine}${t.model ? ` (${t.model})` : ""}` : `Model and engine for this chat`, "data-tip-pos": "up",
+        onclick: (ev) => { ev.stopPropagation(); modelMenu(ev.currentTarget, t, agent); } },
+        icon("bot", 14), h("span", { class: "tx" }, modelLabel(t)), icon("chevdown", 12)),
       branchBtn ? h("span", { class: "cbar-sep" }) : null,
       branchBtn,
     ].filter(Boolean));
@@ -404,10 +405,46 @@ function renderDock() {
     needs ? h("span", { class: "dock-needs" }, `Needs you (${needs})`) : null,
     h("span", { class: "spacer" }), h("span", { class: "go" }, "Show team →")));
 }
+// ---- model picker (under the message box) ----
+/** Short names people know; any other model id can be typed in. Claude Code accepts these aliases. */
+const MODEL_CHOICES = {
+  claude: [["opus", "Opus", "Most capable, for hard problems"], ["sonnet", "Sonnet", "Fast and capable, a good default"], ["haiku", "Haiku", "Fastest, for quick small tasks"]],
+};
+function modelLabel(t) {
+  const m = t.model;
+  if (!m) return engineName(t.provider);
+  const known = MODEL_CHOICES[t.provider]?.find(([id]) => id === m);
+  return `${engineName(t.provider)} · ${known ? known[1] : m}`;
+}
+function modelMenu(anchor, t, agent) {
+  const set = (patch, note) => dispatch({ type: "thread.setModel", threadId: t.id, ...patch })
+    .then(() => toast(note ?? (t.status === "running" ? "Switches after this turn." : "Done. The next message uses it.")))
+    .catch(fail);
+  const choices = MODEL_CHOICES[t.provider] ?? [];
+  const items = [{ header: agent ? `Model for ${agentLabel(agent)} (everywhere it works)` : "Model" },
+    { icon: !t.model ? "check" : "bot", label: `${engineName(t.provider)} default`, desc: "Whatever the engine picks", active: !t.model, run: () => set({ model: "" }) },
+    ...choices.map(([id, label, desc]) => ({ icon: t.model === id ? "check" : "bot", label, desc, active: t.model === id, run: () => set({ model: id }) })),
+    { icon: t.model && !choices.some(([id]) => id === t.model) ? "check" : "edit", label: t.model && !choices.some(([id]) => id === t.model) ? `Other: ${t.model}` : "Other model…",
+      desc: "Type a model id", run: () => { const m = prompt(`Model id for ${engineName(t.provider)} (blank for the default):`, t.model ?? ""); if (m !== null) set({ model: m }); } }];
+  // The engine holds the conversation, so it can only change before the chat starts.
+  if (!agent && ENGINES.length > 1) {
+    items.push("-", { header: "Engine" });
+    for (const e of ENGINES) {
+      const on = e.id === t.provider;
+      items.push(t.nativeSessionId && !on
+        ? { icon: "lock", label: e.name, desc: "Start a new chat to use it; this one has begun", disabled: true }
+        : { icon: on ? "check" : "bot", label: e.name, active: on, run: () => on || set({ provider: e.id }, `This chat now uses ${e.name}.`) });
+    }
+  }
+  popMenu(anchor, items);
+}
+
 /** Wide enough for the four-column board by default (about 40% of the window); drag the left edge to change it. */
 function teamWidth() {
-  const max = Math.max(360, innerWidth - 520);
-  return Math.min(max, Math.max(360, ui.teamW || Math.round(innerWidth * 0.42)));
+  // Always leave the conversation room to read and type (sidebar + at least 460px of chat).
+  const side = document.querySelector(".sidebar")?.getBoundingClientRect().width ?? 0;
+  const max = Math.max(320, innerWidth - side - 460);
+  return Math.min(max, Math.max(320, ui.teamW || Math.round(innerWidth * 0.42)));
 }
 addEventListener("resize", () => { const tp = $("teampanel"); if (tp && !tp.hidden) tp.style.setProperty("--team-w", teamWidth() + "px"); });
 /** The Team panel: live status (what needs you, who's doing what) and the team card (list or board, log). */
@@ -433,7 +470,7 @@ function teamGrip(panel) {
   const g = h("div", { class: "files-grip", title: "Drag to resize" });
   let startW = 0;
   g.addEventListener("pointerdown", () => { startW = teamWidth(); });
-  grip(g, "x", (dx) => { ui.teamW = Math.max(360, Math.min(innerWidth - 520, startW - dx)); panel.style.setProperty("--team-w", ui.teamW + "px"); });
+  grip(g, "x", (dx) => { ui.teamW = Math.max(320, startW - dx); panel.style.setProperty("--team-w", teamWidth() + "px"); });
   return g;
 }
 /** The live part of the Team panel: what needs you (with buttons), the lead, and each working task. */

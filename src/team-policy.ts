@@ -167,11 +167,33 @@ function segments(command: string, allowBackground = false): string[] | null {
   return out.map((s) => s.trim()).filter(Boolean);
 }
 
+/**
+ * sed and awk read and reshape text, which agents do constantly, but both can also write files or run commands.
+ * Allowed only without those parts: no in-place sed, no sed w/e commands, no awk system(), getline, pipes or output files.
+ */
+function textTool(p: string): boolean {
+  const sed = p.match(/^g?sed\s+(.*)$/s);
+  if (sed) {
+    const args = sed[1];
+    if (/(^|\s)(-[a-zA-Z]*i|--in-place)/.test(args)) return false;
+    if (/\/[gpIiM0-9]*[we](\s|['";}]|$)/.test(args) || /(^|[;{}\s'"])[wWe]\s/.test(args)) return false;
+    return true;
+  }
+  const awk = p.match(/^[gm]?awk\s+(.*)$/s);
+  if (awk) return !/system\s*\(|getline|\|\s*["'$\w]|>>|>\s*["']|printf?\b[^;}]*>\s*[a-zA-Z_]|close\s*\(|fflush/.test(awk[1]);
+  return false;
+}
+
+/** "$(git ls-files)": a substitution whose inner command is itself safe is just its output; anything else stays and is refused. */
+function dropSafeSubstitutions(command: string, check: (inner: string) => boolean): string {
+  return command.replace(/\$\(([^()`]*)\)/g, (m, inner: string) => (check(inner.trim()) ? "SUBST" : m));
+}
+
 export function isSafeCommand(command: unknown, local?: LocalContext): boolean {
   if (typeof command !== "string") return false;
   if (local && localCommand(command, local)) return true;
   // Harmless redirections of output to nowhere.
-  const c = command.replace(/\s*[12]?>\s*\/dev\/null/g, "").replace(/\s*2>&1/g, "").trim();
+  const c = dropSafeSubstitutions(command, (inner) => isSafeCommand(inner)).replace(/\s*[12]?>\s*\/dev\/null/g, "").replace(/\s*2>&1/g, "").trim();
   if (!c || DANGEROUS.test(c)) return false;
   const parts = segments(c);
   if (!parts?.length) return false;
@@ -182,7 +204,7 @@ export function isSafeCommand(command: unknown, local?: LocalContext): boolean {
     // Reading a file in ("wc -c < a.txt") is fine; writing out, heredocs and process substitution are not.
     const bare = p.replace(/(^|\s)<\s*("[^"]*"|'[^']*'|[^\s<>()'"]+)/g, "$1").replace(/"[^"]*"|'[^']*'/g, "");
     if (/[<>]/.test(bare)) return false;
-    return SAFE.some((re) => re.test(p));
+    return SAFE.some((re) => re.test(p)) || textTool(p);
   });
 }
 
@@ -195,6 +217,7 @@ function localCommand(command: string, ctx: LocalContext): boolean {
   // A subshell around the whole thing, or around a background start: "(PORT=1 node s.js & echo $! > pid)".
   c = c.replace(/(^|[\s;&|])\(\s*([^()]*?)\s*\)/g, "$1$2");
   c = c.replace(/\s*\d?>&\d/g, ""); // "2>&1": not a background "&"
+  c = dropSafeSubstitutions(c, (inner) => isSafeCommand(inner));
   if (/`|\$\(/.test(c)) return false;
   if (/\b(rm|mv|cp|chmod|chown|sudo|wget|ssh|scp|rsync|pkill|killall|dd|mkfs|truncate|xargs|eval|exec|source|open)\b/.test(c)) return false;
   if (/\bgit\b[^&;|]*\b(push|reset|checkout|clean|rebase|commit|merge|tag|restore|switch|rm|mv)\b|\b(npm|pnpm|yarn|bun)\s+(i|install|add|remove|uninstall|publish|link|exec|dlx|create)\b/.test(c)) return false;

@@ -170,6 +170,28 @@ export class Orchestrator {
         }
         return created;
       }
+      case "thread.setModel": {
+        const thread = this.#requireThread(command.threadId);
+        const model = command.model === undefined ? thread.model : command.model.trim() || undefined;
+        // An agent's chat follows the agent: change the agent, and every copy of it follows.
+        if (thread.agentId && !thread.cloneOf) {
+          if (command.provider && command.provider !== thread.provider) throw new CommandError("An agent's engine is set when it's created. Make a new agent to use another engine.");
+          return this.#updateAgent({ type: "agent.update", agentId: thread.agentId, model: model ?? "" });
+        }
+        let provider = thread.provider;
+        if (command.provider && command.provider !== thread.provider) {
+          if (!this.#adapters.has(command.provider)) throw new CommandError(`Unknown engine "${command.provider}".`);
+          // The conversation lives inside the engine, so it can only switch before there is one.
+          if (thread.nativeSessionId) throw new CommandError("This chat has already started with " + thread.provider + ". Start a new chat to use another engine.");
+          provider = command.provider;
+        }
+        const switched = provider !== thread.provider;
+        this.#store.commit(thread.id, [{ type: "thread.upserted", thread: { ...thread, provider, model: switched && command.model === undefined ? undefined : model } }]);
+        // The model is fixed when a session opens: reopen it (the conversation resumes) once it's idle.
+        if (thread.status === "running") this.#staleSessions.add(thread.id);
+        else this.#closeSession(thread.id);
+        return { ok: true };
+      }
       case "worktree.create":
         return this.#serial(command.threadId, async () => {
           const thread = this.#requireThread(command.threadId);

@@ -456,6 +456,8 @@ export type Command =
       worktreeSetup?: string | null;
       isolateTasks?: boolean;
     }
+  /** Change a chat's model (applies from its next turn), or its engine before the chat has started. Empty model = the engine's default. */
+  | { type: "thread.setModel"; threadId: string; model?: string; provider?: string }
   /** Move a thread onto its own branch and folder (only before its first turn, or when it has no changes). */
   | { type: "worktree.create"; threadId: string; base?: string; branch?: string }
   /** Merge the thread's branch into its base. */
