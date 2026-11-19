@@ -916,7 +916,8 @@ export class Team {
         "- Don't push, deploy, delete data or spend money; that's for the person to do.",
       ].join("\n"),
       `Your team:\n${roster || "(nobody yet; do it yourself, and suggest which specialists to recruit)"}`,
-      "Now: plan and delegate. Then end your turn with a short message to the person saying who is doing what (it's posted in the thread).",
+      "Now: plan and delegate. Then end your turn with a short message to the person (it's posted in the thread). Start it with either " +
+        "\"I'll run this as a team (N tasks):\" followed by who is doing what, or, if you answered or did it yourself, \"Answering directly:\".",
     ]
       .filter(Boolean)
       .join("\n\n---\n\n");
@@ -1112,9 +1113,11 @@ export class Team {
         if (t.status === "working" && t.runThreadId && t.runId) needsYou += this.#store.pendingApprovalsFor(t.runThreadId, t.runId).length;
       }
     }
+    // The agent threads doing this team's work, so their approvals aren't counted twice (here and on their own).
+    const runs = goals.filter(isOpen).flatMap((g) => this.#store.listTasks(g.id).filter((t) => t.status === "working" && t.runThreadId).map((t) => t.runThreadId!));
     const fresh = this.#store.getThread(goal.threadId)!;
-    if (fresh.team?.active !== active || fresh.team?.needsYou !== needsYou) {
-      this.#store.commit(goal.threadId, [{ type: "thread.upserted", thread: { ...fresh, team: { active, needsYou } } }]);
+    if (fresh.team?.active !== active || fresh.team?.needsYou !== needsYou || (fresh.team?.runs ?? []).join() !== runs.join()) {
+      this.#store.commit(goal.threadId, [{ type: "thread.upserted", thread: { ...fresh, team: { active, needsYou, runs } } }]);
     }
   }
 

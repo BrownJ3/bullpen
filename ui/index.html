@@ -375,6 +375,14 @@ code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
 .dock-task { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .dock-t { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dock-t .mono { color: var(--faint); font-size: 11px; }
+.dock-row.needs { background: color-mix(in srgb, var(--accent) 7%, transparent); align-items: center; }
+.dock-acts { display: flex; gap: 6px; flex: none; }
+.dock-code { font: 11px var(--mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.team-log { padding: 6px 14px 10px; border-top: 1px solid var(--line); font-size: 12.5px; }
+.team-log summary { cursor: pointer; color: var(--muted); }
+.team-log-list { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; max-height: 280px; overflow: auto; }
+.team-ev { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.team-ev.progress { color: var(--text); font-style: italic; }
 .team-note { padding: 8px 14px; font-size: 13px; color: var(--warn); background: var(--warn-soft); border-bottom: 1px solid var(--line); }
 .team-progress { height: 3px; background: var(--line); }
 .team-progress i { display: block; height: 100%; background: var(--accent); transition: width 0.4s; }
@@ -1665,6 +1673,8 @@ async function loadSidebar() {
       else if (e.type === "turn-item.upserted" && e.item.kind === "approval_request") {
         const wasPending = state.approvals.get(e.item.threadId)?.has(e.item.requestId);
         trackApproval(e.item);
+        // A reply card in the open chat may be waiting on this approval: redraw it.
+        for (const it of state.items.values()) if (it.kind === "agent_reply" && it.status === "running" && (it.runThreadId ?? state.agents.get(it.agentId)?.homeThreadId) === e.item.threadId) upsertItemEl(it);
         if (e.item.status === "pending" && !wasPending && e.item.threadId !== state.threadId) {
           const t = state.threads.get(e.item.threadId);
           toast(`${t?.title ?? "A thread"} needs approval for ${e.item.tool}`, { onclick: () => openThread(e.item.threadId) });
@@ -1754,11 +1764,9 @@ function renderJobs() {
       status ? h("span", { class: "dot " + status, title: status }) : null);
   }) : [h("div", { class: "side-empty" }, "No jobs yet. Give an agent something to do on its own.")]));
 }
+/** The one count of things waiting on you: the same list Home shows (approvals, teams, jobs, lessons). */
 function inboxCount() {
-  const lessons = [...state.lessons.values()].filter((l) => l.status === "proposed").length;
-  const jobs = [...state.jobs.values()].filter((j) => j.lastStatus === "needs-you" || j.lastStatus === "failed").length;
-  const teams = [...state.threads.values()].filter((t) => t.team?.needsYou).length;
-  return lessons + jobs + teams;
+  return homeData().needs.length;
 }
 
 // ---------- projects in the sidebar (T3 "folder" mode) ----------
@@ -2072,9 +2080,9 @@ function renderTopbar() {
       onclick: (ev) => { ev.stopPropagation(); permMenu(ev.currentTarget, proj, pmode); } },
     icon(MODE_INFO[pmode].icon, 14), MODE_INFO[pmode].label, icon("chevdown", 12)) : null;
   const branchBtn = proj ? h("button", { type: "button", class: "btn sm perm" + (t.worktree ? " on" : ""), "aria-haspopup": "menu",
-      "data-tip": t.worktree ? `On its own branch, ${t.worktree.branch}` : "Working in your project folder. Click to move onto its own branch.", "data-tip-pos": "end",
+      "data-tip": t.worktree ? `Working in a separate copy on branch ${t.worktree.branch}; your folder isn't touched until you merge` : "Working in your project folder. Click to work in a separate copy instead.", "data-tip-pos": "end",
       onclick: (ev) => { ev.stopPropagation(); branchMenu(ev.currentTarget, t); } },
-    icon("branch", 14), t.worktree ? shortBranch(t.worktree.branch) : "Local", icon("chevdown", 12)) : null;
+    icon("branch", 14), t.worktree ? shortBranch(t.worktree.branch) : "Your folder", icon("chevdown", 12)) : null;
   const waiting = state.approvals.get(t.id)?.size ?? 0;
   const status = waiting ? h("span", { class: "live needs" }, h("span", { class: "pulse" }), waiting === 1 ? "Needs your OK" : `${waiting} need your OK`)
     : t.status === "running" ? h("span", { class: "live" }, h("span", { class: "pulse" }), "Working") : null;
@@ -2138,8 +2146,8 @@ const shortBranch = (b) => { const x = b.replace(/^bullpen\//, ""); return x.len
 async function branchMenu(anchor, t) {
   if (!t.worktree) {
     popMenu(anchor, [
-      { icon: "branch", label: "Move onto a new branch", run: async () => {
-        try { toast("Making a worktree…"); await dispatch({ type: "worktree.create", threadId: t.id }); toast("This thread now works on its own branch."); } catch (err) { fail(err); }
+      { icon: "branch", label: "Work in a separate copy (new branch)", run: async () => {
+        try { toast("Making a worktree…"); await dispatch({ type: "worktree.create", threadId: t.id }); toast("This chat now works in a separate copy, on its own branch."); } catch (err) { fail(err); }
       } },
       "-",
       { icon: "files", label: "Working in your project folder", disabled: true },
@@ -2352,6 +2360,11 @@ function upsertItemEl(item) {
   const old = col.querySelector(`[data-id="${CSS.escape(item.id)}"]`);
   if (old && el) old.replaceWith(el); else if (old) old.remove(); else if (el) col.append(el);
   renderLive(); // keep the live status line last and current
+  if (item.kind === "note" && item.team) {
+    // A team update: refresh its card's log.
+    const card = state.items.get(item.runId);
+    if (card) { const old = col.querySelector(`[data-id="${CSS.escape(card.id)}"]`); const nu = itemEl(card); if (old && nu) old.replaceWith(nu); }
+  }
   if (item.kind === "team_goal") renderDock();
   if (stick) toBottom();
 }
@@ -2374,10 +2387,28 @@ function renderDock() {
   for (const t of working) rows.push(h("div", { class: "dock-row" }, badge(t.agentName),
     h("div", { class: "dock-task" }, h("div", { class: "dock-t" }, h("span", { class: "mono" }, t.ref), " ", t.title),
       t.activity ? activityLine(t.activity, { label: t.wrapping ? "Out of time, wrapping up" : "Working", compact: true }) : null)));
-  if (!rows.length) rows.push(h("div", { class: "dock-row faint" }, g.status === "paused" ? g.note ?? "Paused." : g.status === "stuck" ? g.note ?? "Stuck." : review ? "Waiting for the lead's review…" : "Between steps…"));
+  // What needs you, each with the thing to do about it.
+  const tellLead = () => { const inp = $("input"); if (inp) { inp.value = `@${state.agents.get(g.leadAgentId)?.name ?? "lead"} `; inp.focus(); inp.dispatchEvent(new Event("input")); } };
+  for (const t of g.tasks) {
+    for (const a of t.approvals) {
+      const answer = (decision) => dispatch({ type: "runtime-request.respond", threadId: a.threadId, requestId: a.requestId, decision }).catch(fail);
+      const l = toolLabel(a.tool, a.input);
+      rows.unshift(h("div", { class: "dock-row needs" }, badge(t.agentName),
+        h("div", { class: "dock-task" }, h("div", { class: "dock-t" }, h("b", {}, `${t.agentName} wants to ${l.ask}`)), h("code", { class: "dock-code" }, l.code.slice(0, 160))),
+        h("div", { class: "dock-acts" }, h("button", { class: "btn sm", onclick: () => answer("decline") }, "Deny"), h("button", { class: "btn sm primary", onclick: () => answer("accept") }, "Allow"))));
+    }
+    if (t.status === "parked") rows.unshift(h("div", { class: "dock-row needs" }, badge(t.agentName),
+      h("div", { class: "dock-task" }, h("div", { class: "dock-t" }, h("b", {}, `${t.ref} is stuck`), ` · ${t.title}`), t.error ? h("div", { class: "faint" }, t.error.slice(0, 200)) : null),
+      h("div", { class: "dock-acts" }, h("button", { class: "btn sm", onclick: tellLead }, "Tell the lead"), h("button", { class: "btn sm primary", onclick: () => dispatch({ type: "task.retry", taskId: t.id }).catch(fail) }, "Retry"))));
+  }
+  if (g.status === "stuck") rows.unshift(h("div", { class: "dock-row needs" }, icon("users", 14),
+    h("div", { class: "dock-task" }, h("div", { class: "dock-t" }, h("b", {}, "The team is stuck")), h("div", { class: "faint" }, g.note ?? "")),
+    h("div", { class: "dock-acts" }, h("button", { class: "btn sm primary", onclick: tellLead }, "Tell the lead what to do"))));
+  if (g.status === "paused") rows.unshift(h("div", { class: "dock-row" }, icon("clock", 14), h("span", {}, g.note ?? "Paused; it resumes on its own.")));
+  if (!rows.length) rows.push(h("div", { class: "dock-row faint" }, review ? "Waiting on the lead to check the finished work…" : "Between steps…"));
   dock.replaceChildren(h("div", { class: "dock" + (needs ? " needs" : "") },
     h("button", { class: "dock-head", title: "Show the team card", onclick: () => document.querySelector(`[data-id="team:${g.goalId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" }) },
-      icon("users", 14), h("b", {}, g.title), g.rounds ? h("span", { class: "faint" }, `Round ${g.rounds.round}/${g.rounds.max}`) : null,
+      icon("users", 14), h("b", {}, g.title), g.rounds ? h("span", { class: "faint" }, `Pass ${g.rounds.round} of ${g.rounds.max}`) : null,
       h("span", { class: "spacer" }), needs ? h("span", { class: "dock-needs" }, `Needs you (${needs})`) : null, h("span", { class: "faint" }, counts)),
     ...rows));
 }
@@ -2430,10 +2461,7 @@ function itemElInner(item) {
   const base = { "data-id": item.id, "data-run": item.runId };
   switch (item.kind) {
     case "note":
-      if (item.team) {
-        const a = item.agentId ? state.agents.get(item.agentId) : null;
-        return h("div", { ...base, class: "note team-ev" + (item.progress ? " progress" : "") }, a ? agentTile(a, 16) : icon("users", 13), h("span", {}, item.text));
-      }
+      if (item.team) return null; // shown in its team card's log (and live in the panel above the message box)
       if (item.progress) return h("div", { ...base, class: "note progress" }, icon("message", 13), h("span", {}, item.text));
       return h("div", { ...base, class: "note" }, icon(item.action ? "external" : "branch", 13), h("span", {}, richText(item.text)),
         item.action?.kind === "open_artifact"
@@ -2480,16 +2508,24 @@ function itemElInner(item) {
       return h("div", { ...base, class: "reply" + (item.status === "failed" ? " failed" : "") },
         h("div", { class: "reply-head" }, badge(agent ? agentLabel(agent) : item.agentName), agent ? agentLabel(agent) : "@" + item.agentName,
           h("span", { class: "muted" }, item.status === "running" ? "working on it…" : item.status === "failed" ? "couldn't answer" : item.delivered ? "shared with this thread's agent" : ""),
-          item.status === "running" && agent ? h("button", { class: "link", onclick: () => openThread(agent.homeThreadId) }, "watch") : null),
+          item.status === "running" && agent ? h("button", { class: "link", onclick: () => openThread(item.runThreadId ?? agent.homeThreadId) }, "watch") : null),
         item.status === "running" ? (item.activity ? activityLine(item.activity, { compact: true }) : h("div", { class: "act-line compact" }, h("span", { class: "act-spin" }), h("span", { class: "act-what" }, "Starting…")))
-          : h("div", { class: "reply-body" }, richText(item.text)));
+          : h("div", { class: "reply-body" }, richText(item.text)),
+        // Its approvals, right here (the work may be running in another thread you're not looking at).
+        ...(item.status === "running" ? [...(state.approvals.get(item.runThreadId ?? agent?.homeThreadId)?.values() ?? [])].map((a) => {
+          const answer = (decision) => dispatch({ type: "runtime-request.respond", threadId: a.threadId, requestId: a.requestId, decision }).catch(fail);
+          const l = toolLabel(a.tool, a.input);
+          return h("div", { class: "needs" }, h("div", { class: "needs-t" }, `Needs your OK to ${l.ask}`), h("pre", { class: "mono" }, l.code),
+            h("div", { class: "approval-actions" }, h("button", { class: "btn sm", onclick: () => answer("decline") }, "Deny"),
+              h("button", { class: "btn sm", onclick: () => answer("acceptForSession") }, "Always allow"), h("button", { class: "btn sm primary", onclick: () => answer("accept") }, "Allow")));
+        }) : []));
     }
     case "team_goal":
       return h("div", base, teamCard(item));
     case "checkpoint":
       return h("div", { ...base, class: "checkpoint" },
-        `Checkpoint ${item.ordinal} · ${item.filesChanged} file${item.filesChanged === 1 ? "" : "s"} changed`,
-        item.filesChanged ? h("button", { class: "link", onclick: () => showDiff(item.ordinal - 1, item.ordinal) }, "View diff") : null,
+        `After message ${item.ordinal} · ${item.filesChanged} file${item.filesChanged === 1 ? "" : "s"} changed`,
+        item.filesChanged ? h("button", { class: "link", onclick: () => showDiff(item.ordinal - 1, item.ordinal) }, "View changes") : null,
         item.filesChanged && !state.runs.get(item.runId)?.rewound ? h("button", { class: "link", onclick: () => rollback(item.ordinal - 1) }, "Undo this turn") : null);
     case "error":
       return h("div", { ...base, class: "error-item" }, item.message);
@@ -2902,8 +2938,16 @@ async function startDevServer(sc) {
 
 // ---------- team card ----------
 const teamUi = new Map(); // goalId -> { board: bool, open: Set(taskId) }
-const GOAL_LABEL = { planning: "Planning", working: "Working", paused: "Paused", stuck: "Needs you", done: "Done", cancelled: "Stopped", failed: "Failed" };
-const TASK_LABEL = { queued: "Queued", waiting: "Waiting", working: "Working", submitted: "In review", changes: "Reworking", accepted: "Accepted", parked: "Parked", paused: "Paused", cancelled: "Cancelled" };
+const GOAL_LABEL = { planning: "Planning", working: "Working", paused: "Paused", stuck: "Stuck", done: "Done", cancelled: "Stopped", failed: "Failed" };
+const TASK_LABEL = { queued: "Up next", waiting: "Waiting", working: "Working", submitted: "Being checked", changes: "Fixing after review", accepted: "Done", parked: "Stuck", paused: "Paused", cancelled: "Cancelled" };
+/** Who has to act for a task to move: shown next to its status. */
+function taskNext(t) {
+  if (t.approvals.length) return "your OK";
+  if (t.status === "parked") return "your call";
+  if (t.status === "submitted") return "the lead";
+  if (t.status === "paused") return "resumes on its own";
+  return "";
+}
 function since(iso) {
   if (!iso) return "";
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -2915,7 +2959,9 @@ function elapsed(task) {
 }
 function taskPill(t) {
   const label = t.status === "waiting" && t.dependsOn.length ? `After ${t.dependsOn.join(", ")}` : TASK_LABEL[t.status];
-  return h("span", { class: "pill " + t.status }, t.status === "working" ? h("span", { class: "pulse" }) : null, label + (t.approvals.length ? " · needs you" : ""));
+  const next = taskNext(t);
+  return h("span", { class: "pill " + t.status, title: next ? `Waiting on ${next}` : "" }, t.status === "working" ? h("span", { class: "pulse" }) : null,
+    label + (t.status === "changes" && t.conflicts?.length ? " (clash)" : "") + (next && next !== "the lead" ? ` · waiting on ${next}` : ""));
 }
 function teamCard(g, redraw) {
   const u = teamUi.get(g.goalId) ?? { board: false, open: new Set() };
@@ -2937,9 +2983,9 @@ function teamCard(g, redraw) {
     open ? h("button", { class: "btn danger", onclick: () => { if (confirm("Stop this team? Running tasks are interrupted; finished work stays.")) dispatch({ type: "goal.cancel", goalId: g.goalId }).catch(fail); } }, "Stop") : null);
   const note = g.note && open ? h("div", { class: "team-note" }, g.note) : null;
   const rounds = g.rounds ? h("details", { class: "team-rounds" },
-    h("summary", {}, h("b", {}, `Round ${g.rounds.round} of ${g.rounds.max}`), h("span", {}, " · keeps improving until the criteria are met"), g.rounds.reports.length ? h("span", { class: "faint" }, ` · ${g.rounds.reports.length} round report${g.rounds.reports.length === 1 ? "" : "s"}`) : null),
+    h("summary", {}, h("b", {}, `Pass ${g.rounds.round} of ${g.rounds.max}`), h("span", {}, " · keeps improving until done"), g.rounds.reports.length ? h("span", { class: "faint" }, ` · ${g.rounds.reports.length} pass report${g.rounds.reports.length === 1 ? "" : "s"}`) : null),
     h("div", { class: "lbl" }, "Done means"), h("div", { class: "sum" }, richText(g.rounds.criteria ?? "")),
-    ...g.rounds.reports.map((r, i) => h("div", {}, h("div", { class: "lbl" }, `Round ${i + 1}`), h("div", { class: "sum" }, richText(r))))) : null;
+    ...g.rounds.reports.map((r, i) => h("div", {}, h("div", { class: "lbl" }, `Pass ${i + 1}`), h("div", { class: "sum" }, richText(r))))) : null;
   const leadLine = open && g.lead?.busy && g.lead.activity
     ? h("div", { class: "lead-live" }, badge(g.leadName),
         activityLine(g.lead.activity, { label: g.tasks.length ? `${g.leadName} is reviewing` : `${g.leadName} is planning`, compact: true }),
@@ -2947,11 +2993,21 @@ function teamCard(g, redraw) {
     : null;
   const progress = h("div", { class: "team-progress" }, h("i", { style: `width:${Math.round((accepted / counted) * 100)}%` }));
   const body = u.board ? teamBoard(g, u, rerender) : teamList(g, u, rerender);
+  const log = state.order.map((id) => state.items.get(id)).filter((i) => i?.kind === "note" && i.team && i.runId === `team:${g.goalId}`);
+  const logBox = log.length ? h("details", { class: "team-log", open: u.log || undefined, ontoggle: (ev) => { u.log = ev.currentTarget.open; } },
+    h("summary", {}, `What happened (${log.length})`),
+    h("div", { class: "team-log-list" }, ...log.slice(-60).map((i) => {
+      const a = i.agentId ? state.agents.get(i.agentId) : null;
+      return h("div", { class: "team-ev" + (i.progress ? " progress" : "") }, a ? agentTile(a, 16) : icon("users", 13), h("span", {}, i.text));
+    }))) : null;
+  const access = state.thread ? projectAt(state.thread.cwd)?.runtimeMode : undefined;
   const foot = h("div", { class: "team-foot" },
-    "Agents work in this project in parallel; edits and safe commands run without asking, anything else waits for you here.",
+    access === "full-access"
+      ? "Agents work in parallel, each in its own copy, and run anything without asking (this project has full access)."
+      : "Agents work in parallel, each in its own copy; edits and tests run without asking, anything else waits for you here.",
     h("span", { class: "spacer" }),
-    lead ? h("button", { class: "link", onclick: () => openThread(lead.homeThreadId) }, "Watch the lead") : null);
-  return h("div", { class: "team" }, head, note, rounds, progress, leadLine, body, open ? foot : null);
+    lead ? h("button", { class: "link", onclick: () => openThread(g.lead?.threadId ?? lead.homeThreadId) }, "Watch the lead") : null);
+  return h("div", { class: "team" }, head, note, rounds, progress, leadLine, body, logBox, open ? foot : null);
 }
 function approvalBox(t) {
   return t.approvals.map((a) => {
@@ -2983,7 +3039,7 @@ function teamList(g, u, rerender) {
       h("button", { class: "trow2-main", onclick: () => { isOpen ? u.open.delete(t.id) : u.open.add(t.id); rerender(); } },
         h("span", { class: "ref" }, t.ref),
         h("span", { class: "who" }, badge(t.agentName), h("span", {}, t.agentName)),
-        h("span", { class: "what" }, t.title, t.partial ? h("small", { title: "Submitted at its time budget: see what's left in the submission" }, "partial") : null, t.round ? h("small", {}, "sent back once") : null, t.autoAccept ? h("small", { title: "Accepted on submission, without a review turn" }, "no review") : null),
+        h("span", { class: "what" }, t.title, t.partial ? h("small", { title: "Submitted at its time budget: see what's left in the submission" }, "ran out of time") : null, t.round ? h("small", {}, "fixed after review") : null, t.autoAccept ? h("small", { title: "Accepted when submitted, without a review by the lead" }, "not checked") : null),
         taskPill(t),
         h("span", { class: "el", "data-since": t.status === "working" ? t.startedAt : "" }, elapsed(t))),
       t.status === "working" && t.activity ? h("div", { class: "trow2-live" },
@@ -4063,9 +4119,12 @@ function newThread(projectPath, fromHistory = false) {
 function homeData() {
   const homes = new Map([...state.agents.values()].map((a) => [a.homeThreadId, a]));
   const needs = [], running = [];
+  // Approvals inside a team's tasks are counted once, as "a team needs you".
+  const teamRuns = new Set([...state.threads.values()].flatMap((t) => t.team?.runs ?? []));
   for (const t of state.threads.values()) {
-    const n = state.approvals.get(t.id)?.size ?? 0;
-    const a = homes.get(t.id);
+    const n = teamRuns.has(t.id) ? 0 : state.approvals.get(t.id)?.size ?? 0;
+    // An agent's spare copy counts as the agent.
+    const a = homes.get(t.id) ?? (t.cloneOf ? state.agents.get(t.cloneOf) : undefined);
     if (n) needs.push({ title: `${a ? agentLabel(a) : t.title} needs your OK${n > 1 ? ` (${n})` : ""}`, sub: a ? "Waiting on a command or edit" : folderName(t.cwd), open: () => openThread(t.id) });
     if (t.team?.needsYou) needs.push({ title: "A team needs you", sub: t.title, open: () => openThread(t.id) });
     if (t.team?.active) running.push({ icon: "users", title: t.title, sub: `Team · ${folderName(t.cwd)}`, open: () => openThread(t.id) });
@@ -4160,7 +4219,7 @@ function renderStart() {
   mode.value = (cwd && projectAt(cwd)?.runtimeMode) || p.mode || "approval-required";
   const where = h("select", { class: "qsel", "aria-label": "Where to work" },
     h("option", { value: "local" }, "In the project folder"),
-    h("option", { value: "worktree" }, "On a new branch"));
+    h("option", { value: "worktree" }, "In a separate copy (new branch)"));
   where.title = "On a new branch: the work happens in its own git worktree, and your checkout isn't touched until you merge";
   where.value = p.where || "local";
   const more = h("div", { class: "more" }, model);

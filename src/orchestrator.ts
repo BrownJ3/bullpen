@@ -494,6 +494,12 @@ export class Orchestrator {
 
   shutdown() {
     clearInterval(this.#ticker);
+    // Requests waiting for your OK are cancelled by closing their sessions: say so in their chats.
+    const waiting = new Map<string, number>();
+    for (const item of this.#store.pendingApprovals()) waiting.set(item.threadId, (waiting.get(item.threadId) ?? 0) + 1);
+    for (const [threadId, n] of waiting) {
+      this.#note(threadId, `Bullpen restarted, so ${n === 1 ? "a request waiting for your OK was" : `${n} requests waiting for your OK were`} cancelled. The agent asks again when it picks the work back up.`);
+    }
     void this.browser.shutdown();
     this.artifacts.stop();
     this.#jobs.stop();
@@ -828,7 +834,12 @@ export class Orchestrator {
     const agent = this.#store.getAgent(item.agentId);
     if (!agent || !item.retry) return;
     void this.#consult(agent, item.retry.prompt, item.retry.chain, item.retry.project, {
-      onRun: (runThreadId, runId) => this.#mentionRuns.set(item.id, { threadId: item.threadId, runThreadId, runId, sig: "" }),
+      onRun: (runThreadId, runId) => {
+        this.#mentionRuns.set(item.id, { threadId: item.threadId, runThreadId, runId, sig: "" });
+        // Where the work is actually running (the agent, or a spare copy of it): "Watch" opens this.
+        const latest = this.#store.getTurnItem(item.id);
+        if (latest?.kind === "agent_reply") this.#store.commit(item.threadId, [{ type: "turn-item.upserted", item: { ...latest, runThreadId } }]);
+      },
     }).then(({ ok, text: answer }) => {
       this.#mentionRuns.delete(item.id);
       const latest = this.#store.getTurnItem(item.id) ?? item;
@@ -1621,9 +1632,14 @@ export class Orchestrator {
     for (const thread of this.#store.listThreads()) {
       if (!thread.agentId && !this.#store.getProjectByPath(thread.cwd)) this.#ensureProject(thread.cwd);
     }
-    // Prompts and @mention replies that were in flight died with the old process.
+    // Prompts and @mention replies that were in flight died with the old process. Say so, so they don't just vanish.
+    const cancelled = new Map<string, number>();
     for (const item of this.#store.pendingApprovals()) {
       this.#store.commit(item.threadId, [{ type: "turn-item.upserted", item: { ...item, status: "resolved", decision: "cancel" } as TurnItem }]);
+      cancelled.set(item.threadId, (cancelled.get(item.threadId) ?? 0) + 1);
+    }
+    for (const [threadId, n] of cancelled) {
+      this.#note(threadId, `Bullpen restarted, so ${n === 1 ? "a request waiting for your OK was" : `${n} requests waiting for your OK were`} cancelled. The agent asks again when it picks the work back up.`);
     }
     for (const item of this.#store.runningReplies()) {
       if (item.kind === "agent_reply" && item.retry) {

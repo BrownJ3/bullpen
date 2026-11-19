@@ -36,7 +36,7 @@ export interface Thread {
   /** Set on a standing job's thread (its runs and results live there). */
   jobId?: string;
   /** A team is working on a goal started in this thread (for sidebar status). */
-  team?: { active: number; needsYou: number };
+  team?: { active: number; needsYou: number; runs?: string[] };
   /** Works on its own branch in its own folder (a git worktree); cwd stays the project it belongs to. */
   worktree?: ThreadWorktree;
   /** A spare copy of a named agent, used when the agent itself is busy (same instructions and memory). Hidden. */
@@ -133,6 +133,8 @@ export type TurnItem = TurnItemBase &
         retry?: { prompt: string; project?: string; chain: string[] };
         /** While running: what the agent is doing (live progress). */
         activity?: Activity;
+        /** The thread doing the work (the agent's own, or a spare copy). */
+        runThreadId?: string;
       }
     | { kind: "note"; text: string; progress?: boolean; team?: boolean; agentId?: string; action?: { kind: "open_pr"; title: string; body: string } | { kind: "open_artifact"; artifactId: string } }
     | { kind: "error"; message: string }
