@@ -9,7 +9,6 @@ import type { Agent, Artifact, Command, Job, Lesson, Project, Run, StoredEvent, 
 export type Request =
   | { id: number; method: "dispatch"; params: Command }
   | { id: number; method: "listThreads"; params?: undefined }
-  | { id: number; method: "listAgents"; params?: undefined }
   /** Ready-made agents to add with one click. */
   | { id: number; method: "listAgentTemplates"; params?: undefined }
   /** Folders to start work in: recently used ones first, then project folders found under ~. */
@@ -51,7 +50,6 @@ export type Request =
   | { id: number; method: "drain"; params?: { on?: boolean } }
   | { id: number; method: "artifact.content"; params: { artifactId: string; version?: number } }
   | { id: number; method: "update.run"; params?: undefined }
-  | { id: number; method: "jobRuns"; params: { jobId: string } }
   | { id: number; method: "createFolder"; params: { parent: string; name: string; git: boolean } }
   /** Threads, agents and pending approvals, then live thread/agent/approval events across all threads. */
   | { id: number; method: "subscribeSidebar"; params?: undefined }

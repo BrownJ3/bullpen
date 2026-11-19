@@ -18,6 +18,7 @@ import { z } from "zod";
 import { join, resolve, sep } from "node:path";
 import { EDIT_TOOLS, isSafeCommand } from "../team-policy.ts";
 import { mainCheckoutOf } from "../worktrees.ts";
+import { clipOutput } from "../util.ts";
 import type {
   AdapterEvent,
   Decision,
@@ -91,9 +92,7 @@ class InputQueue implements AsyncIterable<SDKUserMessage> {
   }
 }
 
-function truncate(text: string): string {
-  return text.length > MAX_TOOL_OUTPUT ? `${text.slice(0, MAX_TOOL_OUTPUT)}\n…[truncated]` : text;
-}
+const truncate = (text: string) => clipOutput(text, MAX_TOOL_OUTPUT);
 
 function toolResultText(content: unknown): string {
   if (typeof content === "string") return content;

@@ -9,8 +9,10 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
+import { JsonRpc } from "./jsonrpc.ts";
 import { registerMcp } from "../mcp.ts";
 import { isSafeCommand } from "../team-policy.ts";
+import { clipOutput } from "../util.ts";
 import type { AdapterEvent, Decision, OpenSessionInput, ProviderAdapter, ProviderSession, RuntimeMode, TurnItem } from "../types.ts";
 
 const STREAM_FLUSH_MS = 50;
@@ -38,20 +40,18 @@ const text = (content: unknown): string => {
   if (c.type === "terminal") return `[terminal ${c.terminalId}]`;
   return "";
 };
-const clip = (s: string) => (s.length > MAX_TOOL_OUTPUT ? `${s.slice(0, MAX_TOOL_OUTPUT)}\n…[truncated]` : s);
+const clip = (s: string) => clipOutput(s, MAX_TOOL_OUTPUT);
 
 class AcpSession implements ProviderSession {
-  readonly #engine: AcpEngine;
   readonly #emit: (e: AdapterEvent) => void;
   readonly #threadId: string;
   readonly #cwd: string;
   readonly #mode: RuntimeMode;
   readonly #ownFolder?: string;
   readonly #proc: ChildProcessWithoutNullStreams;
+  readonly #rpc: JsonRpc;
   readonly #ready: Promise<string>;
   readonly #mcp?: { url: string; revoke: () => void };
-  #nextId = 1;
-  readonly #calls = new Map<number, { resolve: (v: Json) => void; reject: (e: Error) => void }>();
   #closed = false;
   #sessionId: string | undefined;
   #loading = false; // session/load replays history as updates: ignore those
@@ -69,7 +69,6 @@ class AcpSession implements ProviderSession {
   #flush: NodeJS.Timeout | undefined;
 
   constructor(engine: AcpEngine, input: OpenSessionInput) {
-    this.#engine = engine;
     this.#emit = input.emit;
     this.#threadId = input.threadId;
     this.#cwd = input.cwd;
@@ -79,7 +78,7 @@ class AcpSession implements ProviderSession {
     this.#ownFolder = input.ownFolder;
     this.#mcp = registerMcp(input.tools ?? []);
     this.#proc = spawn(engine.command, engine.args, { cwd: input.cwd, env: { ...process.env, ...engine.env }, stdio: ["pipe", "pipe", "pipe"] });
-    createInterface({ input: this.#proc.stdout }).on("line", (l) => this.#onLine(l));
+    this.#rpc = new JsonRpc(this.#proc, { request: (id, method, params) => void this.#onRequest(id, method, params), notification: (method, params) => this.#onNotification(method, params) }, { jsonrpcField: true });
     createInterface({ input: this.#proc.stderr }).on("line", (l) => {
       if (process.env.BULLPEN_DEBUG) console.error(`[${engine.id}] ${l}`);
     });
@@ -90,7 +89,7 @@ class AcpSession implements ProviderSession {
   }
 
   async #handshake(input: OpenSessionInput): Promise<string> {
-    const init = await this.#request("initialize", {
+    const init = await this.#rpc.request("initialize", {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: false },
       clientInfo: { name: "bullpen", title: "Bullpen", version: "0.1.0" },
@@ -100,7 +99,7 @@ class AcpSession implements ProviderSession {
     if (input.resumeNativeSessionId && caps.loadSession) {
       try {
         this.#loading = true;
-        await this.#request("session/load", { sessionId: input.resumeNativeSessionId, cwd: input.cwd, mcpServers });
+        await this.#rpc.request("session/load", { sessionId: input.resumeNativeSessionId, cwd: input.cwd, mcpServers });
         this.#loading = false;
         this.#sessionId = input.resumeNativeSessionId;
         this.#emit({ type: "native_session.updated", nativeSessionId: this.#sessionId });
@@ -109,7 +108,7 @@ class AcpSession implements ProviderSession {
         this.#loading = false; // gone: start fresh
       }
     }
-    const res = await this.#request("session/new", { cwd: input.cwd, mcpServers });
+    const res = await this.#rpc.request("session/new", { cwd: input.cwd, mcpServers });
     this.#sessionId = String(res.sessionId);
     this.#emit({ type: "native_session.updated", nativeSessionId: this.#sessionId });
     // An agent prompt (a named agent's instructions) has nowhere else to go in ACP: send it with the first turn.
@@ -131,7 +130,7 @@ class AcpSession implements ProviderSession {
     void (async () => {
       try {
         const sessionId = await this.#ready;
-        const res = await this.#request("session/prompt", { sessionId, prompt: [{ type: "text", text: body }] });
+        const res = await this.#rpc.request("session/prompt", { sessionId, prompt: [{ type: "text", text: body }] });
         this.#flushNow();
         const id = this.#runId;
         if (!id) return;
@@ -149,7 +148,7 @@ class AcpSession implements ProviderSession {
     if (!this.#runId || !this.#sessionId) return;
     this.#interruptRequested = true;
     for (const id of [...this.#pending.keys()]) this.respondToRuntimeRequest(id, "cancel");
-    this.#notify("session/cancel", { sessionId: this.#sessionId });
+    this.#rpc.notify("session/cancel", { sessionId: this.#sessionId });
   }
 
   respondToRuntimeRequest(requestId: string, decision: Decision): boolean {
@@ -170,42 +169,13 @@ class AcpSession implements ProviderSession {
 
   // ---------- JSON-RPC ----------
 
-  #write(msg: Json) {
-    if (this.#proc.stdin.writable) this.#proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...msg })}\n`);
-  }
-  #notify(method: string, params: Json) {
-    this.#write({ method, params });
-  }
-  #request(method: string, params: Json): Promise<Json> {
-    const id = this.#nextId++;
-    return new Promise((resolve, reject) => {
-      this.#calls.set(id, { resolve, reject });
-      this.#write({ id, method, params });
-    });
-  }
 
-  #onLine(line: string) {
-    let msg: Json;
-    try {
-      msg = JSON.parse(line);
-    } catch {
-      return;
-    }
-    if (msg.method && msg.id !== undefined) return void this.#onRequest(msg.id, msg.method, msg.params ?? {});
-    if (msg.method) return this.#onNotification(msg.method, msg.params ?? {});
-    const call = this.#calls.get(msg.id);
-    if (!call) return;
-    this.#calls.delete(msg.id);
-    if (msg.error) call.reject(new Error(msg.error.message ?? JSON.stringify(msg.error)));
-    else call.resolve(msg.result ?? {});
-  }
 
   #onExit(reason: string) {
     if (this.#closed) return;
     this.#closed = true;
     this.#mcp?.revoke();
-    for (const c of this.#calls.values()) c.reject(new Error(reason));
-    this.#calls.clear();
+    this.#rpc.rejectAll(reason);
     this.#fail(reason);
   }
 
@@ -231,19 +201,19 @@ class AcpSession implements ProviderSession {
             const start = Math.max(0, Number(params.line ?? 1) - 1);
             content = lines.slice(start, params.limit ? start + Number(params.limit) : undefined).join("\n");
           }
-          return this.#write({ id: rpcId, result: { content } });
+          return this.#rpc.write({ id: rpcId, result: { content } });
         }
         case "fs/write_text_file": {
           const path = this.#path(params.path, true);
           mkdirSync(dirname(path), { recursive: true });
           writeFileSync(path, String(params.content ?? ""));
-          return this.#write({ id: rpcId, result: null });
+          return this.#rpc.write({ id: rpcId, result: null });
         }
         default:
-          return this.#write({ id: rpcId, error: { code: -32601, message: `Bullpen doesn't support ${method}` } });
+          return this.#rpc.write({ id: rpcId, error: { code: -32601, message: `Bullpen doesn't support ${method}` } });
       }
     } catch (err) {
-      this.#write({ id: rpcId, error: { code: -32000, message: (err as Error).message } });
+      this.#rpc.write({ id: rpcId, error: { code: -32000, message: (err as Error).message } });
     }
   }
 
@@ -287,11 +257,11 @@ class AcpSession implements ProviderSession {
   }
 
   #answerPermission(rpcId: number | string, options: Json[], decision: Decision) {
-    if (decision === "cancel") return this.#write({ id: rpcId, result: { outcome: { outcome: "cancelled" } } });
+    if (decision === "cancel") return this.#rpc.write({ id: rpcId, result: { outcome: { outcome: "cancelled" } } });
     const want = decision === "accept" ? ["allow_once", "allow_always"] : decision === "acceptForSession" ? ["allow_always", "allow_once"] : ["reject_once", "reject_always"];
     const pick = want.map((k) => options.find((o) => o.kind === k)).find(Boolean) ?? options[0];
-    if (!pick) return this.#write({ id: rpcId, result: { outcome: { outcome: "cancelled" } } });
-    this.#write({ id: rpcId, result: { outcome: { outcome: "selected", optionId: pick.optionId } } });
+    if (!pick) return this.#rpc.write({ id: rpcId, result: { outcome: { outcome: "cancelled" } } });
+    this.#rpc.write({ id: rpcId, result: { outcome: { outcome: "selected", optionId: pick.optionId } } });
   }
 
   // ---------- agent → client notifications ----------

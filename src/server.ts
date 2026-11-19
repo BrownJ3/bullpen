@@ -167,6 +167,15 @@ function handleHttp(req: IncomingMessage, res: import("node:http").ServerRespons
     res.end(readFileSync(file));
     return;
   }
+  // The UI's own stylesheet and scripts (ui/app.css, ui/js/<name>.js).
+  const uiFile = req.method === "GET" ? (req.url ?? "").split("?")[0].match(/^\/(app\.css|js\/[a-z]+\.js)$/)?.[1] : undefined;
+  if (uiFile) {
+    const file = new URL(`../ui/${uiFile}`, import.meta.url);
+    if (!existsSync(file)) return void res.writeHead(404).end();
+    res.writeHead(200, { "content-type": uiFile.endsWith(".css") ? "text/css; charset=utf-8" : "text/javascript; charset=utf-8", "cache-control": "no-cache" });
+    res.end(readFileSync(file));
+    return;
+  }
   const asset = req.method === "GET" ? (STATIC[(req.url ?? "").split("?")[0]] ?? VENDOR[(req.url ?? "").split("?")[0]]) : undefined;
   if (asset) {
     // Revalidate every time so a new icon shows up right away.
@@ -231,8 +240,6 @@ wss.on("connection", (socket: WebSocket) => {
         return orchestrator.dispatch(req.params);
       case "listThreads":
         return store.listThreads();
-      case "listAgents":
-        return store.listAgents();
       case "listAgentTemplates":
         return { departments: DEPARTMENTS, templates: AGENT_TEMPLATES };
       case "listProjects": {
@@ -394,8 +401,6 @@ wss.on("connection", (socket: WebSocket) => {
       }
       case "worktreeStatus":
         return orchestrator.worktreeStatus(String(req.params?.threadId ?? ""));
-      case "jobRuns":
-        return store.jobRunsFor(req.params.jobId, 30);
       case "createFolder":
         try {
           return await createFolder(req.params.parent, req.params.name, req.params.git);

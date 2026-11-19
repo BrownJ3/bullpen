@@ -236,7 +236,11 @@ in testing, a one-line Claude answer cost $0.70–$1.30.
 | `src/checkpoints.ts` | `CheckpointService` + `GitVcsDriver` | Temp-index `write-tree`/`commit-tree` into `refs/bullpen/checkpoints/<thread>/<n>`; diff; restore with an undo ref |
 | `src/server.ts` | `ws.ts` | Token-authed WS on 127.0.0.1; snapshot-or-replay subscriptions; 50 ms live batching; slow-client cutoff |
 | `src/client.ts` | `client-runtime` | Terminal client keeping a local projection; `ui` opens the web UI |
-| `ui/index.html` | `apps/web` | Web UI, no build step: agent/thread sidebar, transcript, approvals, @mention autocomplete, diff and restore |
+| `ui/index.html`, `ui/app.css`, `ui/js/*.js` | `apps/web` | Web UI, no build step: the page, its styles, and plain scripts loaded in order (core, sidebar, chat, team, pages, boot) |
+| `src/tools/*.ts` | `/mcp` toolkits | Harness tools agents get: chats, artifacts, browser (lead tools live in `team.ts`) |
+| `src/team-prompts.ts`, `src/limits.ts` | — | What the team engine says to agents; team limits and usage-limit handling |
+| `src/notes.ts`, `src/util.ts`, `src/activity.ts` | — | Posting notes and replies in a chat; small shared helpers; live run activity |
+| `src/providers/jsonrpc.ts` | — | Newline JSON-RPC over stdio, shared by the Codex and ACP engines |
 | `scripts/agents-smoke.ts` | — | Agents test: create, @mention, `ask_agent`, delivery, self-mention: `node scripts/agents-smoke.ts <dir> [threadProvider] [agentProvider]` |
 | `scripts/smoke.ts` | — | End-to-end test: `node scripts/smoke.ts <repo> [claude\|codex] [model]` (one real turn) |
 

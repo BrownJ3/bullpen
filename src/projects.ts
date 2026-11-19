@@ -2,7 +2,9 @@
 // agents, plus project folders (git repos, package.json, …) found in the usual places under ~.
 
 import { execFile } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { readRange, unescapeJson } from "./util.ts";
+import { codexFiles } from "./sessions.ts";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -114,101 +116,6 @@ export async function createFolder(parent: string, name: string, git: boolean): 
   return project(path);
 }
 
-// ---------- past Claude Code sessions ----------
-
-export interface PastSession {
-  /** Claude Code's session id; resuming it continues that conversation. */
-  id: string;
-  title: string;
-  updatedAt: string;
-  /** Rough size, so a long session reads as such. */
-  sizeKb: number;
-}
-
-/** Claude Code stores a folder's sessions under ~/.claude/projects/<path with every non-alphanumeric as "-">. */
-function claudeProjectDir(path: string): string {
-  return join(HOME, ".claude", "projects", path.replace(/[^a-zA-Z0-9]/g, "-"));
-}
-
-function readSlice(file: string, from: number, length: number): string {
-  const fd = openSync(file, "r");
-  try {
-    const buf = Buffer.alloc(length);
-    const n = readSync(fd, buf, 0, length, from);
-    return buf.subarray(0, n).toString("utf8");
-  } finally {
-    closeSync(fd);
-  }
-}
-
-/** First thing the person typed, skipping command wrappers and system text. */
-function firstPrompt(head: string): string | undefined {
-  for (const line of head.split("\n")) {
-    if (!line.includes('"type":"user"')) continue;
-    try {
-      const rec = JSON.parse(line);
-      if (rec.type !== "user" || rec.isSidechain || rec.isMeta) continue;
-      const content = rec.message?.content;
-      const text =
-        typeof content === "string"
-          ? content
-          : Array.isArray(content)
-            ? content.find((b: { type?: string }) => b?.type === "text")?.text
-            : undefined;
-      if (typeof text === "string" && text.trim() && !text.trimStart().startsWith("<") && !text.startsWith("Caveat:")) {
-        return text.trim();
-      }
-    } catch {
-      // a line cut off at the slice boundary
-    }
-  }
-  return undefined;
-}
-
-/** The latest custom title (from /rename) in the tail of a session file. */
-function customTitle(tail: string): string | undefined {
-  let title: string | undefined;
-  for (const m of tail.matchAll(/"type":"custom-title","customTitle":"((?:[^"\\]|\\.)*)"/g)) {
-    try {
-      title = JSON.parse(`"${m[1]}"`);
-    } catch {}
-  }
-  return title;
-}
-
-/** Recent Claude Code sessions started in `path`, newest first. */
-export function pastClaudeSessions(path: string, limit = 12): PastSession[] {
-  const dir = claudeProjectDir(path);
-  let files: Array<{ id: string; file: string; mtime: number; size: number }>;
-  try {
-    files = readdirSync(dir)
-      .filter((f) => f.endsWith(".jsonl"))
-      .map((f) => {
-        const file = join(dir, f);
-        const st = statSync(file);
-        return { id: f.slice(0, -".jsonl".length), file, mtime: st.mtimeMs, size: st.size };
-      })
-      .sort((a, b) => b.mtime - a.mtime)
-      .slice(0, limit);
-  } catch {
-    return [];
-  }
-  const sessions: PastSession[] = [];
-  for (const f of files) {
-    const head = readSlice(f.file, 0, Math.min(f.size, 256 * 1024));
-    const prompt = firstPrompt(head);
-    if (!prompt) continue; // nothing the person typed: a stub or a resumed-elsewhere shell
-    const tail = f.size > 256 * 1024 ? readSlice(f.file, f.size - 128 * 1024, 128 * 1024) : head;
-    const title = customTitle(tail) ?? customTitle(head) ?? prompt;
-    sessions.push({
-      id: f.id,
-      title: title.replace(/\s+/g, " ").slice(0, 90),
-      updatedAt: new Date(f.mtime).toISOString(),
-      sizeKb: Math.round(f.size / 1024),
-    });
-  }
-  return sessions;
-}
 
 // ---------- import: folders worth adding as projects ----------
 
@@ -246,7 +153,6 @@ function skipForImport(path: string): boolean {
 /** Folders you've used Claude Code in (from its session files), plus project folders in ~/Documents (T3: AgentSessionScanner). */
 export function importCandidates(): ImportCandidate[] {
   const byPath = new Map<string, ImportCandidate>();
-  const docs = join(HOME, "Documents");
   const add = (path: string, sessions: number, lastUsedAt?: string, tool?: "claude" | "codex") => {
     if (skipForImport(path) || !existsSync(path)) return;
     const prev = byPath.get(path);
@@ -277,14 +183,10 @@ export function importCandidates(): ImportCandidate[] {
     }
     if (!files.length) continue;
     // The folder name is lossy (every non-alphanumeric became "-"), so read the real cwd from a session.
-    const cwd = readSlice(files[0].file, 0, 64 * 1024).match(/"cwd":"((?:[^"\\]|\\.)*)"/)?.[1];
+    const cwd = readRange(files[0].file, 0, 64 * 1024).match(/"cwd":"((?:[^"\\]|\\.)*)"/)?.[1];
     if (!cwd) continue;
-    let path: string;
-    try {
-      path = JSON.parse(`"${cwd}"`);
-    } catch {
-      continue;
-    }
+    const path = unescapeJson(cwd);
+    if (!path) continue;
     add(path, files.length, new Date(files[0].mtime).toISOString(), "claude");
   }
   // Codex: each session file starts with a session_meta line holding its folder.
@@ -301,32 +203,13 @@ export function importCandidates(): ImportCandidate[] {
   );
 }
 
-/** Folders from Codex's session files (~/.codex/sessions/YYYY/MM/DD/*.jsonl), newest first, at most 3000 files. */
+/** Folders from Codex's session files (each starts with a session_meta line holding its folder), newest first. */
 function codexSessionFolders(): Array<{ path: string; mtime: number }> {
-  const root = join(process.env.CODEX_HOME ?? join(HOME, ".codex"), "sessions");
-  const files: string[] = [];
-  const walk = (dir: string, depth: number) => {
-    let names: string[];
-    try {
-      names = readdirSync(dir).sort().reverse();
-    } catch {
-      return;
-    }
-    for (const n of names) {
-      if (files.length >= 3000) return;
-      const p = join(dir, n);
-      if (depth < 3) walk(p, depth + 1);
-      else if (n.endsWith(".jsonl")) files.push(p);
-    }
-  };
-  walk(root, 0);
   const out: Array<{ path: string; mtime: number }> = [];
-  for (const f of files) {
-    const cwd = readSlice(f, 0, 16 * 1024).match(/"cwd":"((?:[^"\\]|\\.)*)"/)?.[1];
-    if (!cwd) continue;
-    try {
-      out.push({ path: JSON.parse(`"${cwd}"`), mtime: statSync(f).mtimeMs });
-    } catch {}
+  for (const f of codexFiles()) {
+    const cwd = readRange(f, 0, 16 * 1024).match(/"cwd":"((?:[^"\\]|\\.)*)"/)?.[1];
+    const path = cwd ? unescapeJson(cwd) : undefined;
+    if (path) out.push({ path, mtime: statSync(f).mtimeMs });
   }
   return out;
 }
@@ -365,7 +248,7 @@ export function resolveProjectIcon(dir: string): string | undefined {
     for (const html of ["index.html", "public/index.html", "src/index.html"]) {
       const file = join(dir, html);
       if (!existsSync(file)) continue;
-      const href = readSlice(file, 0, 32 * 1024).match(/<link[^>]+rel=["'][^"']*icon[^"']*["'][^>]*href=["']([^"'?#]+)/i)?.[1];
+      const href = readRange(file, 0, 32 * 1024).match(/<link[^>]+rel=["'][^"']*icon[^"']*["'][^>]*href=["']([^"'?#]+)/i)?.[1];
       if (!href || /^(https?:|data:|\/\/)/.test(href)) continue;
       for (const base of [dir, join(dir, "public"), dirname(file)]) {
         const candidate = resolve(base, href.replace(/^\//, ""));

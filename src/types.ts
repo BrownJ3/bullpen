@@ -428,8 +428,6 @@ export type Command =
       model?: string;
       /** Work on a new branch in its own folder. */
       worktree?: { base?: string; branch?: string };
-      /** Continue this Claude Code session instead of starting a new conversation. */
-      resumeClaudeSession?: { id: string; title: string; updatedAt: string };
     }
   | { type: "project.add"; path: string; title?: string }
   | {
@@ -502,8 +500,7 @@ export type Command =
   | { type: "artifact.import"; content: string; title?: string; url?: string; kind?: "html" | "markdown" }
   /** Pull your claude.ai artifacts in now (also happens on its own every 30 minutes, when turned on). */
   | { type: "artifacts.sync" }
-  /** Copy a claude.ai artifact's page into Bullpen so it can be viewed here and given to agents. */
-  | { type: "artifact.fetch"; artifactId: string }
+
   | { type: "settings.update"; briefingTime?: string; briefingEnabled?: boolean; notifications?: boolean; claudeArtifacts?: boolean }
   | { type: "message.send"; threadId: string; text: string }
   | { type: "run.interrupt"; threadId: string }

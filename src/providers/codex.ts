@@ -11,6 +11,8 @@ import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { JsonRpc } from "./jsonrpc.ts";
+import { clipOutput } from "../util.ts";
 import type {
   AdapterEvent,
   Decision,
@@ -66,9 +68,7 @@ function turnPolicy(mode: RuntimeMode, root: string, team: boolean) {
   return { approvalPolicy: "untrusted", sandboxPolicy: { type: "readOnly", networkAccess: false } };
 }
 
-function truncate(text: string): string {
-  return text.length > MAX_TOOL_OUTPUT ? `${text.slice(0, MAX_TOOL_OUTPUT)}\n…[truncated]` : text;
-}
+const truncate = (text: string) => clipOutput(text, MAX_TOOL_OUTPUT);
 
 /** Codex ThreadItem → our tool_call fields, or undefined for items we don't show as tools. */
 function toolFields(item: Json): { tool: string; input: unknown; output?: string; failed: boolean } | undefined {
@@ -113,13 +113,12 @@ class CodexSession implements ProviderSession {
   readonly #emit: (e: AdapterEvent) => void;
   readonly #threadId: string;
   readonly #proc: ChildProcessWithoutNullStreams;
+  readonly #rpc: JsonRpc;
   readonly #ready: Promise<string>; // resolves to Codex's thread id
   readonly #tools: Map<string, HarnessTool>;
   readonly #cwd: string;
   readonly #mode: RuntimeMode;
 
-  #nextId = 1;
-  readonly #calls = new Map<number, { resolve: (v: Json) => void; reject: (e: Error) => void }>();
   #codexThreadId: string | undefined;
   #closed = false;
 
@@ -144,7 +143,7 @@ class CodexSession implements ProviderSession {
     this.#mode = input.runtimeMode;
     this.#proc = spawn(codexBinary(), ["app-server"], { cwd: input.cwd, stdio: ["pipe", "pipe", "pipe"] });
 
-    createInterface({ input: this.#proc.stdout }).on("line", (line) => this.#onLine(line));
+    this.#rpc = new JsonRpc(this.#proc, { request: (id, method, params) => void this.#onServerRequest(id, method, params), notification: (method, params) => this.#onNotification(method, params) }, {});
     createInterface({ input: this.#proc.stderr }).on("line", (line) => {
       if (process.env.BULLPEN_DEBUG) console.error(`[codex] ${line}`);
     });
@@ -156,11 +155,11 @@ class CodexSession implements ProviderSession {
   }
 
   async #handshake(input: OpenSessionInput): Promise<string> {
-    await this.#request("initialize", {
+    await this.#rpc.request("initialize", {
       clientInfo: { name: "bullpen", title: "Bullpen", version: "0.1.0" },
       capabilities: { experimentalApi: true },
     });
-    this.#notify("initialized");
+    this.#rpc.notify("initialized");
     const params = {
       cwd: input.cwd,
       model: input.model ?? null,
@@ -182,19 +181,19 @@ class CodexSession implements ProviderSession {
     let result: Json;
     if (input.resumeNativeSessionId) {
       try {
-        result = await this.#request("thread/resume", { threadId: input.resumeNativeSessionId, excludeTurns: true, ...params });
+        result = await this.#rpc.request("thread/resume", { threadId: input.resumeNativeSessionId, excludeTurns: true, ...params });
       } catch {
-        result = await this.#request("thread/start", { ...params, dynamicTools }); // rollout gone: start fresh
+        result = await this.#rpc.request("thread/start", { ...params, dynamicTools }); // rollout gone: start fresh
       }
     } else {
-      result = await this.#request("thread/start", { ...params, dynamicTools });
+      result = await this.#rpc.request("thread/start", { ...params, dynamicTools });
     }
     const id: string = result.thread.id;
     this.#codexThreadId = id;
     // A rollback: drop the undone turns from Codex's own history before going on.
     if (input.rewind?.dropFrom && input.resumeNativeSessionId === id) {
       try {
-        await this.#request("thread/revert", { threadId: id, beforeTurnId: input.rewind.dropFrom });
+        await this.#rpc.request("thread/revert", { threadId: id, beforeTurnId: input.rewind.dropFrom });
       } catch (err) {
         if (process.env.BULLPEN_DEBUG) console.error(`[codex] revert failed: ${(err as Error).message}`);
       }
@@ -211,7 +210,7 @@ class CodexSession implements ProviderSession {
     void (async () => {
       try {
         const threadId = await this.#ready;
-        const res = await this.#request("turn/start", {
+        const res = await this.#rpc.request("turn/start", {
           threadId,
           input: [{ type: "text", text, text_elements: [] }],
           // Sticky in Codex, so always say where (the caller's project, or the session's own folder)
@@ -240,7 +239,7 @@ class CodexSession implements ProviderSession {
     this.#pending.delete(requestId);
     this.#emitItem({ ...pending.item, status: "resolved", decision });
     // Codex's ApprovalDecision uses the same four words as ours.
-    this.#write({ id: pending.rpcId, result: { decision } });
+    this.#rpc.write({ id: pending.rpcId, result: { decision } });
     return true;
   }
 
@@ -252,52 +251,23 @@ class CodexSession implements ProviderSession {
 
   // ---------- JSON-RPC plumbing ----------
 
-  #write(msg: Json) {
-    if (this.#proc.stdin.writable) this.#proc.stdin.write(`${JSON.stringify(msg)}\n`);
-  }
 
-  #notify(method: string, params?: Json) {
-    this.#write(params ? { method, params } : { method });
-  }
 
-  #request(method: string, params: Json): Promise<Json> {
-    const id = this.#nextId++;
-    return new Promise((resolve, reject) => {
-      this.#calls.set(id, { resolve, reject });
-      this.#write({ id, method, params });
-    });
-  }
 
   async #sendInterrupt() {
     if (!this.#turnId || !this.#codexThreadId) return;
     try {
-      await this.#request("turn/interrupt", { threadId: this.#codexThreadId, turnId: this.#turnId });
+      await this.#rpc.request("turn/interrupt", { threadId: this.#codexThreadId, turnId: this.#turnId });
     } catch {
       // turn already finished
     }
   }
 
-  #onLine(line: string) {
-    let msg: Json;
-    try {
-      msg = JSON.parse(line);
-    } catch {
-      return;
-    }
-    if (msg.method && msg.id !== undefined) return this.#onServerRequest(msg.id, msg.method, msg.params ?? {});
-    if (msg.method) return this.#onNotification(msg.method, msg.params ?? {});
-    const call = this.#calls.get(msg.id);
-    if (!call) return;
-    this.#calls.delete(msg.id);
-    if (msg.error) call.reject(new Error(msg.error.message ?? JSON.stringify(msg.error)));
-    else call.resolve(msg.result ?? {});
-  }
 
   #onExit(reason: string) {
     if (this.#closed) return;
     this.#closed = true;
-    for (const call of this.#calls.values()) call.reject(new Error(reason));
-    this.#calls.clear();
+    this.#rpc.rejectAll(reason);
     this.#pending.clear();
     this.#failRun(reason);
   }
@@ -315,7 +285,7 @@ class CodexSession implements ProviderSession {
     if (method === "item/tool/call") return void this.#runTool(rpcId, params);
     if (method !== "item/commandExecution/requestApproval" && method !== "item/fileChange/requestApproval") {
       // User-input prompts, MCP elicitations, permission grants etc. aren't modelled here.
-      this.#write({ id: rpcId, error: { code: -32601, message: `bullpen does not handle ${method}` } });
+      this.#rpc.write({ id: rpcId, error: { code: -32601, message: `bullpen does not handle ${method}` } });
       return;
     }
     const started = this.#toolItems.get(params.itemId);
@@ -343,7 +313,7 @@ class CodexSession implements ProviderSession {
     } catch (err) {
       res = { text: String((err as Error)?.message ?? err), isError: true };
     }
-    this.#write({ id: rpcId, result: { contentItems: [{ type: "inputText", text: res.text }], success: !res.isError } });
+    this.#rpc.write({ id: rpcId, result: { contentItems: [{ type: "inputText", text: res.text }], success: !res.isError } });
   }
 
   #onNotification(method: string, p: Json) {

@@ -6,7 +6,10 @@
 import { execFile, execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { Store } from "./store.ts";
-import { isLimitError, resumeTime, type ConsultOutcome } from "./team.ts";
+import { type ConsultOutcome } from "./team.ts";
+import { resumeTime } from "./limits.ts";
+import { clip } from "./util.ts";
+import { finishReply } from "./notes.ts";
 import type { Agent, Job, JobRun, JobRunStatus, JobTrigger, Thread, TurnItem } from "./types.ts";
 
 const TICK_MS = 30_000;
@@ -31,7 +34,6 @@ export interface Briefing {
 }
 
 const now = () => new Date().toISOString();
-const clip = (s: string | undefined, n: number) => (!s ? "" : s.length > n ? `${s.slice(0, n)}…` : s);
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /** "Every day at 2:00 AM", "Weekdays at 9:00", "Every 6 hours", "On new commits to main". */
@@ -277,9 +279,7 @@ export class Jobs {
         return; // finishes with its goal (#checkTeamRuns)
       }
       const res = await this.#host.consult(agent, prompt, [], job.project, { team: true });
-      this.#store.commit(thread.id, [
-        { type: "turn-item.upserted", item: { ...reply, status: res.ok ? "completed" : "failed", text: res.text || "(no answer)" } },
-      ]);
+      finishReply(this.#store, reply, res.ok, res.text);
       if (res.limited) {
         const until = resumeTime(res.text);
         this.#store.commit("settings", [{ type: "setting.upserted", key: "jobs.pausedUntil", value: until }]);

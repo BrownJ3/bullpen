@@ -8,7 +8,7 @@
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { randomBytes, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 import { HOME } from "./home.ts";
@@ -219,15 +219,7 @@ export class Artifacts {
     return this.lastSync;
   }
 
-  /** Copy a claude.ai artifact's page into Bullpen (yours only: shared ones come back as a summary). */
-  async fetch(id: string): Promise<Artifact> {
-    const a = this.#require(id);
-    if (a.source !== "claude" || !a.url) throw new Error("Only claude.ai artifacts can be copied in.");
-    const results = await artifactTool(`Call the Artifact tool with action "read" and url ${a.url}. Then reply with just: done.`, ["read"]);
-    const html = extractHtml(results.join("\n"));
-    if (!html) throw new Error("Claude didn't return that page's HTML (only artifacts you own can be copied in).");
-    return this.#write({ ...a, kind: "html" }, html);
-  }
+
 }
 
 export interface SyncResult {
@@ -288,19 +280,4 @@ export function parseList(text: string): Array<{ title: string; url: string; own
     rows.push({ owner: m[1] === "shared" ? "shared" : "mine", title: m[2].trim(), url: m[3], updated: m[4] ? new Date(m[4]).toISOString() : undefined });
   }
   return rows;
-}
-
-/** The page out of a read result: its header lines and stored declaration come first, then the raw HTML. */
-export function extractHtml(text: string): string | undefined {
-  const saved = text.match(/(\/[^\s"'`]+\.html?)\b/g)?.find((p) => existsSync(p));
-  let body = saved ? readFileSync(saved, "utf8") : text;
-  body = body.replace(/<artifact-stored-declaration>[\s\S]*?<\/artifact-stored-declaration>/g, "");
-  const start = body.search(/<!doctype html|<html[\s>]/i);
-  if (start >= 0) return body.slice(start).trim();
-  // A page published without the skeleton: everything after the bracketed header lines.
-  const lines = body.split("\n");
-  let i = 0;
-  while (i < lines.length && (/^\s*\[.*\]\s*$/.test(lines[i]) || !lines[i].trim())) i++;
-  const rest = lines.slice(i).join("\n").trim();
-  return /<[a-z][\s\S]*>/i.test(rest) ? rest : undefined;
 }

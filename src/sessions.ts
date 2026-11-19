@@ -3,11 +3,12 @@
 //
 // Session files can be huge (100 MB+), so only the end of a file is read: enough for the last few hundred items.
 
-import { closeSync, existsSync, openSync, readSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { clipOutput, readRange, unescapeJson } from "./util.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const HOME = homedir();
+const HOME = homedir(); // the user's home, where Claude Code and Codex keep sessions
 const TAIL_BYTES = 8 * 1024 * 1024;
 const MAX_ITEMS = 400;
 const MAX_TEXT = 20_000;
@@ -30,16 +31,6 @@ export type HistoryItem =
   | { kind: "assistant_message"; text: string }
   | { kind: "tool_call"; tool: string; input: unknown; output?: string; failed?: boolean };
 
-function readRange(file: string, from: number, length: number): string {
-  const fd = openSync(file, "r");
-  try {
-    const buf = Buffer.alloc(length);
-    const n = readSync(fd, buf, 0, length, from);
-    return buf.subarray(0, n).toString("utf8");
-  } finally {
-    closeSync(fd);
-  }
-}
 
 /** Parsed JSON lines from the end of a file (the first, partial line dropped when it starts mid-file). */
 function tailLines(file: string): { lines: any[]; truncated: boolean } {
@@ -57,7 +48,7 @@ function tailLines(file: string): { lines: any[]; truncated: boolean } {
   return { lines, truncated: from > 0 };
 }
 
-const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n…[truncated]` : s);
+const clip = clipOutput;
 /** Text the tools inject into "user" turns (system reminders, notifications, skill bodies), not things you typed. */
 const injected = (t: string) =>
   /^\s*</.test(t) || /^(Base directory for this skill|Caveat: The messages below|Context handoff|\[Historical user;|This session is being continued)/.test(t.trim());
@@ -86,7 +77,7 @@ export function claudeSessions(path: string, limit = 30): PastSession[] {
       const head = readRange(file, 0, Math.min(st.size, 256 * 1024));
       // The folder name is lossy; check the session really ran here.
       const cwd = head.match(/"cwd":"((?:[^"\\]|\\.)*)"/)?.[1];
-      if (cwd && safeJson(cwd) !== path) return [];
+      if (cwd && unescapeJson(cwd) !== path) return [];
       const custom = [...tail.matchAll(/"customTitle":"((?:[^"\\]|\\.)*)"/g)].at(-1)?.[1] ?? [...tail.matchAll(/"type":"ai-title"[^}]*"title":"((?:[^"\\]|\\.)*)"/g)].at(-1)?.[1];
       let first: string | undefined;
       for (const l of head.split("\n")) {
@@ -104,7 +95,7 @@ export function claudeSessions(path: string, limit = 30): PastSession[] {
           break;
         }
       }
-      const title = (custom ? safeJson(custom) : first) ?? "Claude Code session";
+      const title = (custom ? unescapeJson(custom) : first) ?? "Claude Code session";
       return [{ tool: "claude" as const, id: f.replace(/\.jsonl$/, ""), title: title.replace(/\s+/g, " ").slice(0, 90), updatedAt: st.mtime.toISOString(), sizeKb: Math.round(st.size / 1024), file }];
     });
 }
@@ -153,7 +144,7 @@ function claudeHistory(file: string): { items: HistoryItem[]; truncated: boolean
 
 // ---------------------------------------------------------------- Codex
 
-function codexFiles(): string[] {
+export function codexFiles(): string[] {
   const root = join(process.env.CODEX_HOME ?? join(HOME, ".codex"), "sessions");
   const out: string[] = [];
   const walk = (dir: string, depth: number) => {
@@ -257,12 +248,4 @@ export function findSession(tool: "claude" | "codex", id: string, path: string):
 export function sessionHistory(s: PastSession): { items: HistoryItem[]; truncated: boolean } {
   if (!existsSync(s.file)) return { items: [], truncated: false };
   return s.tool === "claude" ? claudeHistory(s.file) : codexHistory(s.file);
-}
-
-function safeJson(s: string): string | undefined {
-  try {
-    return JSON.parse(`"${s}"`);
-  } catch {
-    return undefined;
-  }
 }

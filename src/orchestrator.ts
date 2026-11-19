@@ -7,17 +7,23 @@
 // the engine's saved conversation, once.
 
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HOME } from "./home.ts";
 import { Jobs } from "./jobs.ts";
-import { Team, isLimitError, type ConsultOutcome } from "./team.ts";
+import { Team, type ConsultOutcome } from "./team.ts";
+import { isLimitError } from "./limits.ts";
 import * as checkpoints from "./checkpoints.ts";
 import * as worktrees from "./worktrees.ts";
 import { BrowserHub } from "./browser.ts";
 import { claudeSessions, codexSessions, findSession, sessionHistory, type PastSession } from "./sessions.ts";
 import { Artifacts } from "./artifacts.ts";
 import { activitySig, runActivity } from "./activity.ts";
+import { finishReply, postNote } from "./notes.ts";
+import type { ToolContext } from "./tools/context.ts";
+import { threadTools } from "./tools/threads.ts";
+import { artifactTools } from "./tools/artifacts.ts";
+import { browserTools } from "./tools/browser.ts";
 import { workdirOf } from "./types.ts";
 import { expandHome } from "./projects.ts";
 import type { Store } from "./store.ts";
@@ -41,13 +47,6 @@ import type {
 } from "./types.ts";
 
 export class CommandError extends Error {}
-
-/** A text file an agent points at (for create_artifact), within reason. */
-function readText(path: string): string {
-  if (!existsSync(path)) throw new Error(`No file ${path}.`);
-  if (statSync(path).size > 8 * 1024 * 1024) throw new Error("That file is over 8 MB.");
-  return readFileSync(path, "utf8");
-}
 
 /** "Code Reviewer 🐛" → "code-reviewer": the @handle used to mention an agent. */
 function toHandle(text: string): string {
@@ -79,7 +78,6 @@ const RESUME_NOTE =
 const LESSON_HINT =
   "(If this message corrects how you work in a way worth remembering beyond this task, call propose_lesson with a one-line rule; the person approves it.)";
 
-type ConsultResult = ConsultOutcome;
 
 export class Orchestrator {
   readonly #store: Store;
@@ -100,8 +98,6 @@ export class Orchestrator {
   readonly browser = new BrowserHub();
   /** Pages and reports agents make here, plus your claude.ai artifacts. */
   readonly artifacts: Artifacts;
-  /** Hooks for a run that a team task is waiting on (to time it out and map its approvals). */
-  readonly #runHooks = new Map<string, (homeThreadId: string, runId: string) => void>();
 
   constructor(store: Store, adapters: ProviderAdapter[]) {
     this.#store = store;
@@ -389,12 +385,6 @@ export class Orchestrator {
         if (!r.ok) throw new CommandError(r.error ?? "Couldn't reach claude.ai.");
         return r;
       }
-      case "artifact.fetch":
-        try {
-          return { artifact: await this.artifacts.fetch(command.artifactId) };
-        } catch (err) {
-          throw new CommandError((err as Error).message);
-        }
       case "lesson.delete":
         this.#store.commit(`lesson:${command.lessonId}`, [{ type: "lesson.deleted", lessonId: command.lessonId }]);
         return { ok: true };
@@ -540,8 +530,6 @@ export class Orchestrator {
         this.#store.commit(`project:${project.id}`, [{ type: "project.upserted", project: { ...project, archivedAt: undefined } }]);
       }
     }
-    const resume = cmd.resumeClaudeSession;
-    if (resume && (cmd.provider ?? "claude") !== "claude") throw new CommandError("Only Claude sessions can be resumed.");
     const provider = cmd.provider ?? "claude";
     if (!this.#adapters.has(provider)) throw new CommandError(`Unknown provider "${provider}" (have: ${[...this.#adapters.keys()].join(", ")}).`);
     const thread: Thread = {
@@ -555,13 +543,6 @@ export class Orchestrator {
       runCount: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      ...(resume
-        ? {
-            title: resume.title,
-            nativeSessionId: resume.id,
-            importedFrom: { tool: "claude" as const, title: resume.title, at: resume.updatedAt },
-          }
-        : {}),
     };
     this.#store.commit(thread.id, [{ type: "thread.upserted", thread }]);
     return { threadId: thread.id };
@@ -630,8 +611,7 @@ export class Orchestrator {
 
   /** A short note from Bullpen in a thread's timeline. */
   #note(threadId: string, text: string) {
-    const id = randomUUID();
-    this.#store.commit(threadId, [{ type: "turn-item.upserted", item: { id: `note:${id}`, threadId, runId: `note:${id}`, kind: "note", text } }]);
+    postNote(this.#store, threadId, text, { runId: `note:${randomUUID()}` });
   }
 
   #prBody(thread: Thread): string {
@@ -842,10 +822,7 @@ export class Orchestrator {
       },
     }).then(({ ok, text: answer }) => {
       this.#mentionRuns.delete(item.id);
-      const latest = this.#store.getTurnItem(item.id) ?? item;
-      this.#store.commit(item.threadId, [
-        { type: "turn-item.upserted", item: { ...(latest as typeof item), status: ok ? "completed" : "failed", text: answer, retry: undefined, activity: undefined } },
-      ]);
+      finishReply(this.#store, item, ok, answer);
     });
   }
 
@@ -871,7 +848,7 @@ export class Orchestrator {
     chain: string[],
     project?: string,
     opts: { team?: boolean; onRun?: (homeThreadId: string, runId: string) => void; thread?: string } = {},
-  ): Promise<ConsultResult> {
+  ): Promise<ConsultOutcome> {
     if (chain.includes(agent.id)) {
       return Promise.resolve({
         ok: false,
@@ -881,7 +858,7 @@ export class Orchestrator {
     if (chain.length >= MAX_CONSULT_DEPTH) {
       return Promise.resolve({ ok: false, text: `Too many nested agent consultations (limit ${MAX_CONSULT_DEPTH}).` });
     }
-    return (async (): Promise<ConsultResult> => {
+    return (async (): Promise<ConsultOutcome> => {
       let home = agent.homeThreadId;
       for (;;) {
         // The agent itself if it's free; otherwise a spare copy (same instructions and memory), so requests run in
@@ -977,17 +954,13 @@ export class Orchestrator {
         run: async ({ note }) => {
           const text = (note ?? "").trim().slice(0, 300);
           if (!text) return { isError: true, text: "Pass a note." };
-          if (!this.#team.progress(threadId, text)) {
-            const t = this.#store.getThread(threadId);
-            const id = randomUUID();
-            this.#store.commit(threadId, [{ type: "turn-item.upserted", item: { id: `progress:${id}`, threadId, runId: t?.activeRunId ?? `note:${id}`, kind: "note", text, progress: true } }]);
-          }
+          if (!this.#team.progress(threadId, text)) postNote(this.#store, threadId, text, { progress: true });
           return { text: "Noted. Keep going." };
         },
       },
-      ...this.#threadTools(threadId),
-      ...this.#artifactTools(threadId),
-      ...this.#browserTools(threadId),
+      ...threadTools(this.#toolContext, threadId),
+      ...artifactTools(this.#toolContext, threadId),
+      ...browserTools(this.#toolContext, threadId),
       {
         name: "propose_lesson",
         description:
@@ -1041,302 +1014,40 @@ export class Orchestrator {
     ];
   }
 
-  /** Threads as tools (T3: t3_thread_launch/list/read/send/wait): agents can start and follow other threads. */
-  #threadTools(threadId: string): HarnessTool[] {
-    const find = (ref: string | undefined) => {
-      const r = (ref ?? "").trim();
-      const all = this.#store.listThreads();
-      return all.find((t) => t.id === r) ?? all.find((t) => t.id.startsWith(r) && r.length >= 6);
+  /** What the harness tools need from here (src/tools/*). */
+  get #toolContext(): ToolContext {
+    return {
+      store: this.#store,
+      artifacts: this.artifacts,
+      browser: this.browser,
+      requireThread: (id) => this.#requireThread(id),
+      projectOf: (id) => this.#projectOf(id),
+      transcript: (id) => this.#transcript(id),
+      waitFor: (id, done) => this.#waitFor(id, done),
+      dispatch: (cmd) => this.dispatch(cmd),
+      startAgentThread: (threadId, caller, root, a) => this.#startAgentThread(threadId, caller, root, a),
     };
-    const line = (t: Thread) =>
-      `${t.id.slice(0, 8)}  ${t.status === "running" ? "working" : "idle"}  "${t.title}"  ${t.worktree ? `branch ${t.worktree.branch}` : t.cwd}`;
-    const lastAnswer = (t: Thread) => {
-      const items = this.#store.listTurnItems(t.id, 60);
-      const a = items.filter((i) => i.kind === "assistant_message" && !i.streaming).at(-1);
-      return a?.kind === "assistant_message" ? a.text : "";
-    };
-    return [
-      {
-        name: "list_threads",
-        description: "List recent project threads (id, status, title, folder or branch). Use the id with read_thread, message_thread and wait_for_thread.",
-        params: { project: { description: "Only threads in this project folder (absolute path). Default: the project you're working in.", optional: true } },
-        run: async ({ project }) => {
-          const dir = project?.trim() || this.#projectOf(threadId);
-          const main = dir ? worktrees.mainCheckoutOf(dir) ?? dir : undefined;
-          const list = this.#store
-            .listThreads()
-            .filter((t) => !t.agentId && !t.jobId && (!main || t.cwd === main || t.cwd === dir))
-            .sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt))
-            .slice(0, 25);
-          return { text: list.map(line).join("\n") || "(no threads)" };
-        },
-      },
-      {
-        name: "read_thread",
-        description: "Read the recent conversation in another thread.",
-        params: { thread: { description: "Thread id (or its first 8 characters)." } },
-        run: async ({ thread: ref }) => {
-          const t = find(ref);
-          if (!t) return { isError: true, text: `No thread ${ref}.` };
-          return { text: `${line(t)}\n\n${this.#transcript(t.id) || "(empty)"}` };
-        },
-      },
-      {
-        name: "start_thread",
-        description:
-          "Start a new thread in a project with its own agent, for a separate piece of work that should run on its own (in parallel with yours). " +
-          "With branch 'yes' it works on its own git branch and folder, so it can't collide with you. Returns its id; follow it with wait_for_thread or read_thread. " +
-          "The new thread is visible to the person in the sidebar.",
-        params: {
-          prompt: { description: "The complete request: the new agent sees nothing of your conversation." },
-          title: { description: "Short title for the sidebar.", optional: true },
-          project: { description: "Project folder (absolute path). Default: the project you're working in.", optional: true },
-          branch: { description: "'yes' to work on its own branch (git worktree), 'no' to work in the project folder. Default: yes in git repos.", optional: true },
-          engine: { description: "'claude' or 'codex'. Default: same as yours.", optional: true },
-        },
-        run: async (a) => {
-          const caller = this.#requireThread(threadId);
-          const project = a.project?.trim() || this.#projectOf(threadId);
-          if (!project) return { isError: true, text: "Say which project folder (project)." };
-          const root = worktrees.mainCheckoutOf(project) ?? project;
-          if (!a.prompt?.trim()) return { isError: true, text: "Pass the prompt." };
-          const live = this.#store.listThreads().filter((t) => t.startedBy && t.status === "running").length;
-          if (live >= 4) return { isError: true, text: "Four agent-started threads are already working; wait for one to finish first." };
-          if (caller.startedBy && this.#store.getThread(caller.startedBy.threadId)?.startedBy) {
-            return { isError: true, text: "Threads started by agents can't keep starting more beyond two levels." };
-          }
-          const git = await checkpoints.isGitRepo(root);
-          const wantBranch = a.branch ? /^y/i.test(a.branch) : git;
-          try {
-            const { threadId: id } = this.#createThread({
-              type: "thread.create",
-              cwd: root,
-              provider: a.engine?.trim() || caller.provider,
-              model: !a.engine?.trim() || a.engine.trim() === caller.provider ? caller.model : undefined,
-              title: a.title?.trim().slice(0, 60) || a.prompt.trim().slice(0, 60),
-              runtimeMode: caller.agentId ? (this.#store.getProjectByPath(root)?.runtimeMode ?? "approval-required") : caller.runtimeMode,
-            });
-            const t = this.#requireThread(id);
-            this.#store.commit(id, [{ type: "thread.upserted", thread: { ...t, startedBy: { threadId, title: caller.title } } }]);
-            if (wantBranch && git) await this.#addWorktree(id, {});
-            await this.#serial(id, () => this.#sendMessage(id, a.prompt, [], undefined));
-            const created = this.#requireThread(id);
-            return { text: `Started ${line(created)}.` };
-          } catch (err) {
-            return { isError: true, text: (err as Error).message };
-          }
-        },
-      },
-      {
-        name: "message_thread",
-        description: "Send a message to another thread's agent (it starts a turn there). Fails if that thread is working; wait_for_thread first.",
-        params: { thread: { description: "Thread id." }, message: { description: "What to say; it sees nothing of your conversation." } },
-        run: async ({ thread: ref, message }) => {
-          const t = find(ref);
-          if (!t) return { isError: true, text: `No thread ${ref}.` };
-          if (t.id === threadId) return { isError: true, text: "That's your own thread." };
-          if (!message?.trim()) return { isError: true, text: "Pass the message." };
-          try {
-            await this.dispatch({ type: "message.send", threadId: t.id, text: message });
-            return { text: `Sent. ${line(this.#requireThread(t.id))}` };
-          } catch (err) {
-            return { isError: true, text: (err as Error).message };
-          }
-        },
-      },
-      {
-        name: "wait_for_thread",
-        description: "Wait until another thread's agent finishes its turn, then return its final answer.",
-        params: {
-          thread: { description: "Thread id." },
-          minutes: { description: "Give up after this many minutes (default 10, max 30).", optional: true },
-        },
-        run: async ({ thread: ref, minutes }) => {
-          const t = find(ref);
-          if (!t) return { isError: true, text: `No thread ${ref}.` };
-          const ms = Math.min(30, Math.max(1, Number(minutes) || 10)) * 60_000;
-          const idle = this.#waitFor(t.id, () => this.#store.getThread(t.id)?.status !== "running");
-          const timedOut = await Promise.race([idle.then(() => false), new Promise<boolean>((r) => setTimeout(() => r(true), ms))]);
-          const now = this.#requireThread(t.id);
-          if (timedOut) return { text: `Still working after ${ms / 60_000} minutes. ${line(now)}` };
-          const run = this.#store.listRuns(t.id).at(-1);
-          return { text: `${line(now)}\nLast turn: ${run?.status ?? "?"}\n\n${lastAnswer(now) || "(no answer)"}` };
-        },
-      },
-      {
-        name: "propose_pull_request",
-        description:
-          "When this thread's work (on its own branch) is ready: propose a pull request. The person sees a button to push the branch and open it; you can't push yourself.",
-        params: { title: { description: "PR title." }, body: { description: "PR description: what changed, why, how to verify." } },
-        run: async ({ title, body }) => {
-          const t = this.#requireThread(threadId);
-          if (!t.worktree) return { isError: true, text: "This thread works in the project folder, not on its own branch; there's nothing to open a pull request from." };
-          if (!title?.trim()) return { isError: true, text: "Pass a title." };
-          const id = randomUUID();
-          this.#store.commit(threadId, [
-            {
-              type: "turn-item.upserted",
-              item: { id: `note:${id}`, threadId, runId: t.activeRunId ?? `note:${id}`, kind: "note", text: `Proposed a pull request: **${title.trim()}**`, action: { kind: "open_pr", title: title.trim(), body: body?.trim() ?? "" } },
-            },
-          ]);
-          return { text: "Proposed. The person will open it with one click; tell them briefly." };
-        },
-      },
-    ];
   }
 
-  /** Artifacts: agents publish pages and reports to the person's Artifacts list (and read the ones there). */
-  #artifactTools(threadId: string): HarnessTool[] {
-    const posted = (a: { id: string; title: string; version: number }, verb: string) => {
-      const t = this.#store.getThread(threadId);
-      const id = randomUUID();
-      this.#store.commit(threadId, [
-        {
-          type: "turn-item.upserted",
-          item: { id: `note:${id}`, threadId, runId: t?.activeRunId ?? `note:${id}`, kind: "note", text: `${verb} the artifact **${a.title}**${a.version > 1 ? ` (version ${a.version})` : ""}.`, action: { kind: "open_artifact", artifactId: a.id } },
-        },
-      ]);
-    };
-    const line = (a: { id: string; title: string; source: string; kind: string; version: number; updatedAt: string }) =>
-      `${a.id.slice(0, 8)}  ${a.source === "claude" ? "claude.ai" : "bullpen"}  ${a.kind}${a.version ? ` v${a.version}` : ""}  "${a.title}"  ${a.updatedAt.slice(0, 10)}`;
-    return [
-      {
-        name: "create_artifact",
-        description:
-          "Publish a page for the person: an HTML page (report, dashboard, diagram, prototype, slides) or a Markdown document. It appears in their Artifacts list and opens beside the chat. " +
-          "Make HTML self-contained (inline CSS/JS; libraries only from a CDN). Use this for anything they'll look at rather than files for the project.",
-        params: {
-          title: { description: "Short name, e.g. 'Q3 latency report'." },
-          content: { description: "The full HTML page or Markdown text. Or leave empty and pass file.", optional: true },
-          file: { description: "Absolute path of an .html or .md file you wrote, instead of content.", optional: true },
-          description: { description: "One sentence on what it is.", optional: true },
-        },
-        run: async (a) => {
-          try {
-            const content = a.content?.trim() ? a.content : a.file ? readText(a.file) : "";
-            if (!content.trim()) return { isError: true, text: "Pass content or file." };
-            const t = this.#requireThread(threadId);
-            const art = this.artifacts.create({
-              title: a.title ?? "",
-              content,
-              kind: a.file?.endsWith(".md") ? "markdown" : undefined,
-              description: a.description,
-              threadId,
-              agentId: t.agentId,
-              project: this.#projectOf(threadId),
-            });
-            posted(art, "Made");
-            return { text: `Published as artifact ${art.id.slice(0, 8)} ("${art.title}"). Update it with update_artifact; tell the person it's in Artifacts.` };
-          } catch (err) {
-            return { isError: true, text: (err as Error).message };
-          }
-        },
-      },
-      {
-        name: "update_artifact",
-        description: "Replace an artifact's content with a new version (the old ones are kept).",
-        params: {
-          artifact: { description: "Its id (or first 8 characters)." },
-          content: { description: "The full new content. Or pass file.", optional: true },
-          file: { description: "Absolute path of the new .html or .md file.", optional: true },
-          title: { description: "New title, if it changes.", optional: true },
-        },
-        run: async (a) => {
-          try {
-            const content = a.content?.trim() ? a.content : a.file ? readText(a.file) : "";
-            if (!content.trim()) return { isError: true, text: "Pass content or file." };
-            const art = this.artifacts.update(a.artifact ?? "", content, a.title);
-            posted(art, "Updated");
-            return { text: `Artifact ${art.id.slice(0, 8)} is now version ${art.version}.` };
-          } catch (err) {
-            return { isError: true, text: (err as Error).message };
-          }
-        },
-      },
-      {
-        name: "list_artifacts",
-        description: "List the person's artifacts: ones made in Bullpen and ones from their claude.ai account.",
-        params: { search: { description: "Only titles containing this.", optional: true } },
-        run: async ({ search }) => {
-          const q = (search ?? "").toLowerCase();
-          const list = this.#store.listArtifacts().filter((x) => !q || x.title.toLowerCase().includes(q)).slice(0, 40);
-          return { text: list.map(line).join("\n") || "(no artifacts)" };
-        },
-      },
-      {
-        name: "read_artifact",
-        description: "Read an artifact's content (HTML or Markdown). claude.ai artifacts must be copied into Bullpen first (the person can do that from Artifacts).",
-        params: { artifact: { description: "Its id (or first 8 characters)." } },
-        run: async ({ artifact }) => {
-          try {
-            const { artifact: x, content, version } = this.artifacts.content(artifact ?? "");
-            const clipped = content.length > 60_000 ? `${content.slice(0, 60_000)}\n…[truncated]` : content;
-            return { text: `${line(x)} (showing version ${version})\n\n${clipped}` };
-          } catch (err) {
-            const x = this.#store.listArtifacts().find((y) => y.id.startsWith(artifact ?? "-"));
-            return { isError: true, text: x?.url ? `${(err as Error).message} It's on claude.ai at ${x.url}.` : (err as Error).message };
-          }
-        },
-      },
-    ];
-  }
-
-  /** A real browser (T3: preview_open/act/snapshot). The person sees the same page in the Browser panel. */
-  #browserTools(threadId: string): HarnessTool[] {
-    const b = this.browser;
-    const wrap = (fn: (a: Record<string, string>) => Promise<string>) => async (a: Record<string, string>) => {
-      try {
-        return { text: await fn(a) };
-      } catch (err) {
-        return { isError: true, text: (err as Error).message.split("\n")[0] };
-      }
-    };
-    return [
-      {
-        name: "browser_open",
-        description:
-          "Open a page in your browser (a real Chrome tab; the person sees it live in the Browser panel). Works for localhost dev servers and public sites. Then use browser_snapshot to read it.",
-        params: { url: { description: "e.g. localhost:3000, http://localhost:5173/login, https://example.com" } },
-        run: wrap(async ({ url }) => {
-          const r = await b.open(threadId, url ?? "");
-          return `Opened ${r.url} — "${r.title}". Use browser_snapshot to read it.`;
-        }),
-      },
-      {
-        name: "browser_snapshot",
-        description: "Read the open page: its URL, title, and an accessibility tree of what's on it (headings, text, links, buttons, inputs).",
-        params: {},
-        run: wrap(() => b.snapshot(threadId)),
-      },
-      {
-        name: "browser_click",
-        description: "Click something on the open page.",
-        params: { target: { description: "Visible text, 'button \"Save\"' / 'link \"Docs\"', or a CSS selector." } },
-        run: wrap(({ target }) => b.click(threadId, target ?? "")),
-      },
-      {
-        name: "browser_type",
-        description: "Type into a field on the open page (replaces what's there).",
-        params: {
-          target: { description: "The field's label, placeholder, or a CSS selector." },
-          text: { description: "What to type." },
-          submit: { description: "'yes' to press Enter after typing.", optional: true },
-        },
-        run: wrap(({ target, text, submit }) => b.type(threadId, target ?? "", text ?? "", /^y/i.test(submit ?? ""))),
-      },
-      {
-        name: "browser_press",
-        description: "Press a key on the open page, e.g. Enter, Escape, Tab, ArrowDown, Meta+A.",
-        params: { key: { description: "The key." } },
-        run: wrap(({ key }) => b.press(threadId, key ?? "Enter")),
-      },
-      {
-        name: "browser_screenshot",
-        description: "Save a screenshot of the open page and return its file path; read that image file to see the page.",
-        params: {},
-        run: wrap(async () => `Saved ${await b.screenshot(threadId)}`),
-      },
-    ];
+  /** start_thread: a new chat in a project with its own agent, on its own branch when it's a git repo. */
+  async #startAgentThread(threadId: string, caller: Thread, root: string, a: Record<string, string>): Promise<Thread> {
+    const git = await checkpoints.isGitRepo(root);
+    const wantBranch = a.branch ? /^y/i.test(a.branch) : git;
+    {
+      const { threadId: id } = this.#createThread({
+        type: "thread.create",
+        cwd: root,
+        provider: a.engine?.trim() || caller.provider,
+        model: !a.engine?.trim() || a.engine.trim() === caller.provider ? caller.model : undefined,
+        title: a.title?.trim().slice(0, 60) || a.prompt.trim().slice(0, 60),
+        runtimeMode: caller.agentId ? (this.#store.getProjectByPath(root)?.runtimeMode ?? "approval-required") : caller.runtimeMode,
+      });
+      const t = this.#requireThread(id);
+      this.#store.commit(id, [{ type: "thread.upserted", thread: { ...t, startedBy: { threadId, title: caller.title } } }]);
+      if (wantBranch && git) await this.#addWorktree(id, {});
+      await this.#serial(id, () => this.#sendMessage(id, a.prompt, [], undefined));
+      return this.#requireThread(id);
+    }
   }
 
   /**
