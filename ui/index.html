@@ -222,5 +222,15 @@
 <script src="/js/team.js"></script>
 <script src="/js/pages.js"></script>
 <script src="/js/boot.js"></script>
+<script>
+  // An older Bullpen server can't send the page's scripts (it was updated but not restarted): say so plainly.
+  if (typeof connect !== "function") {
+    document.body.innerHTML = '<div style="font:15px/1.5 -apple-system,system-ui,sans-serif;max-width:520px;margin:12vh auto;padding:0 20px">' +
+      '<h2 style="margin:0 0 8px">Bullpen needs a restart</h2>' +
+      '<p>It was updated, but the running server is still the old version. Restart it to finish:</p>' +
+      '<pre style="background:#f2f2f2;padding:10px 12px;border-radius:8px">bullpen restart</pre>' +
+      '<p style="color:#666">Then reload this page. Agents that were working pick up where they left off.</p></div>';
+  }
+</script>
 </body>
 </html>
