@@ -17,8 +17,12 @@ export function planPrompt(store: Store, goal: Goal, thread: Thread, context: st
     context ? `Recent conversation in that thread:\n\n${context}` : "",
     `The person asked:\n\n${goal.request}`,
     [
-      "How team goals work (speed is a core value: the person wants results quickly, so plan for parallel work and keep the team busy):",
-      "- Speed matters more than ceremony: every handoff costs a turn. If it's small or just a question, answer or do it yourself and don't create tasks.",
+      "First decide whether this needs a team. Measured on real goals, handing work to a team took 2 to 4 times as long and 2.5 to 5 times the usage of one agent doing it, whenever one agent could finish in a few minutes: planning, briefing, a cold start for each teammate, review and merging all cost more than the work.",
+      "- Do it yourself, now, in the project folder, when one agent could finish it in about 15 minutes: a question, a fix, one feature, a handful of files, or parts that build on each other. Don't create tasks, don't call estimate, don't hire. This overrides anything in your instructions about never doing the work yourself.",
+      "- Run it as a team only when it has three or more pieces that are independent (separate files, no shared decisions) and each is about 10 minutes of work or more, or when it needs a skill you don't have. If you're unsure, do it yourself.",
+      "- If the person asks for a team, or says who should do which part, do it their way whatever the size.",
+      "If it does need a team, this is how team goals work (the person wants results quickly, so plan for parallel work and keep the team busy):",
+      "- Every handoff costs a turn, so make no more tasks than the work needs.",
       `- Size tasks to about 10 minutes of work each (a task's run has a ${LIMITS.taskBudgetMs / 60_000}-minute budget; at the budget it wraps up and submits what's done plus what's left). A request with five parts is several tasks, not one.`,
       "- Work in parallel. A single builder working through tasks one after another is the main thing that makes teams slow. Split each pass into 2-4 tasks on separate files and spread them across your builders; the same teammate can take several tasks at once (each runs in its own copy).",
       "- For anything bigger than a couple of tasks, call estimate first to size it and decide how many builders to run at once; hire specialists when there's more parallel work than builders (or a missing skill).",
@@ -33,8 +37,8 @@ export function planPrompt(store: Store, goal: Goal, thread: Thread, context: st
       "- Don't push, deploy, delete data or spend money; that's for the person to do.",
     ].join("\n"),
     `Your team:\n${roster || "(nobody yet; do it yourself, and suggest which specialists to recruit)"}`,
-    builders(store, goal) < 2 ? "Note: you have only one builder; still split work into parallel tasks for it, and suggest recruiting a second builder (e.g. a frontend engineer) in your message to the person." : "",
-    "Now: plan and delegate. Then end your turn with a short message to the person (it's posted in the thread). Start it with either " +
+    builders(store, goal) < 2 ? "Note: you have only one builder. If this needs a team, still split work into parallel tasks for it, and suggest recruiting a second builder (e.g. a frontend engineer) in your message to the person." : "",
+    "Now: size it, then either do it yourself or plan and delegate. If you do it yourself, check it works before you finish. Then end your turn with a short message to the person (it's posted in the thread). Start it with either " +
       "\"I'll run this as a team (N tasks):\" followed by who is doing what, or, if you answered or did it yourself, \"Answering directly:\".",
   ]
     .filter(Boolean)

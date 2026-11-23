@@ -4,3 +4,5 @@ node_modules/
 .env
 .env.*
 # Runtime data lives in ~/.bullpen (database, token, agent memory), never in the repo.
+# Benchmark runs (node scripts/bench.ts)
+bench-results/

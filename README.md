@@ -284,6 +284,10 @@ node scripts/team-smoke.ts         # teams end to end (uses real agents)
 
 More in [`scripts/`](scripts).
 
+`node scripts/bench.ts` measures whether a lead with a team beats one agent on the same goal: five goals from one
+function to an eight-module library, each scored by hidden checks, with time, tokens and prompts recorded. It uses
+real agents. `node scripts/bench.ts goals` lists them; `node scripts/bench.ts report` shows the results so far.
+
 </details>
 
 <details>
