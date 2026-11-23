@@ -1296,7 +1296,7 @@ export class Orchestrator {
     if (event.error) {
       events.push({
         type: "turn-item.upserted",
-        item: { id: `error:${run.id}`, threadId, runId: run.id, kind: "error", message: event.error },
+        item: { id: `error:${run.id}`, threadId, runId: run.id, kind: "error", message: event.error + signInHint(thread.provider, event.error) },
       });
     }
     this.#store.commit(threadId, events);
@@ -1450,4 +1450,14 @@ export class Orchestrator {
   resumeInterrupted() {
     for (const fn of this.#resumeQueue.splice(0)) fn();
   }
+}
+
+/** An engine whose sign-in expired fails every turn; say how to sign in again. */
+function signInHint(provider: string, error: string): string {
+  if (!/authenticat|oauth|not logged in|log ?in again|invalid api key|unauthori[sz]ed|\b401\b|credentials/i.test(error)) return "";
+  const how: Record<string, string> = {
+    claude: "open a terminal, run claude, type /login and sign in",
+    codex: "open a terminal and run: codex login",
+  };
+  return `\n\nThe engine's sign-in has expired. To fix it, ${how[provider] ?? `sign in to ${provider} again from a terminal`}, then send your message again.`;
 }
