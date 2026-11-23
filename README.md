@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/BrownJ3/bullpen/releases"><img src="https://img.shields.io/github/v/tag/BrownJ3/bullpen?sort=semver&style=flat-square&label=version&color=14213d" alt="Latest version"></a>
-  <img src="https://img.shields.io/badge/macOS%20%7C%20Linux-14213d?style=flat-square" alt="macOS and Linux">
+  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-14213d?style=flat-square" alt="macOS, Windows and Linux">
   <img src="https://img.shields.io/badge/node-24%2B-14213d?style=flat-square" alt="Node 24+">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-fca311?style=flat-square" alt="MIT license"></a>
 </p>
@@ -30,12 +30,20 @@
 
 ## Install
 
+**macOS and Linux**
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/BrownJ3/bullpen/main/install.sh | sh
 ```
 
-That's it. Bullpen installs to `~/.bullpen`, starts at login, adds a `bullpen` command and a Bullpen app, and opens in
-your browser. It brings its own Node if you don't have version 24+.
+**Windows** (PowerShell; needs [Git](https://git-scm.com/download/win))
+
+```powershell
+irm https://raw.githubusercontent.com/BrownJ3/bullpen/main/install.ps1 | iex
+```
+
+That's it. Bullpen installs to `~/.bullpen`, starts when you sign in, adds a `bullpen` command and a Bullpen app (Start
+menu on Windows), and opens in your browser. It brings its own Node if you don't have version 24+.
 
 You'll need at least one engine you're already signed in to: **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)**
 or **[Codex](https://github.com/openai/codex)**. Gemini CLI, OpenCode, Goose and Qwen Code work too.

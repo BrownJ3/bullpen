@@ -389,7 +389,7 @@ wss.on("connection", (socket: WebSocket) => {
         }
       }
       case "busy":
-        return { ...orchestrator.busy(), draining: orchestrator.draining };
+        return { ...orchestrator.busy(), draining: orchestrator.draining, pid: process.pid };
       case "drain":
         orchestrator.draining = (req.params as { on?: boolean } | undefined)?.on !== false;
         return { ...orchestrator.busy(), draining: orchestrator.draining };
@@ -398,7 +398,7 @@ wss.on("connection", (socket: WebSocket) => {
       case "update.run": {
         // Runs `bullpen update` on its own: it restarts this server onto the new version.
         const log = openSync(joinPath(DATA_HOME, "update.log"), "a");
-        const child = spawn(process.execPath, [joinPath(APP_ROOT, "src", "cli.ts"), "update"], { cwd: APP_ROOT, detached: true, stdio: ["ignore", log, log] });
+        const child = spawn(process.execPath, [joinPath(APP_ROOT, "src", "cli.ts"), "update"], { cwd: APP_ROOT, detached: true, windowsHide: true, stdio: ["ignore", log, log] });
         closeSync(log);
         child.unref();
         return { ok: true };

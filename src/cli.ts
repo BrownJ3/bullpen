@@ -13,7 +13,7 @@
 //   bullpen uninstall  undo install (keeps your threads and agents)
 
 import { execFileSync, spawn } from "node:child_process";
-import { chmodSync, closeSync, copyFileSync, utimesSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync, lstatSync } from "node:fs";
+import { statSync, watchFile, readSync, chmodSync, closeSync, copyFileSync, utimesSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync, lstatSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,6 +36,12 @@ const APP = join(homedir(), "Applications", "Bullpen.app");
 const ICON = join(ROOT, "assets", "Bullpen.icns");
 const DESKTOP_LINK = join(homedir(), "Desktop", "Bullpen.app");
 const UID = process.getuid?.() ?? 0;
+const WIN = process.platform === "win32";
+// Windows: a `bullpen.cmd` in ~/.bullpen/bin (added to your PATH), a hidden starter in the Startup folder, and a
+// Start menu shortcut.
+const WIN_BIN = join(HOME, "bin");
+const WIN_STARTUP = join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "Bullpen.vbs");
+const WIN_MENU = join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "Microsoft", "Windows", "Start Menu", "Programs", "Bullpen.lnk");
 const NODE = realpathSync(process.execPath); // not fnm's per-shell symlink, which disappears
 
 const say = (s: string) => console.log(s);
@@ -58,7 +64,14 @@ async function waitFor(up: boolean, ms = 10_000): Promise<boolean> {
   return false;
 }
 
-const serviceInstalled = () => process.platform === "darwin" && existsSync(PLIST);
+/** The login service is installed, and it's this instance's (not the main one, when BULLPEN_HOME/PORT point elsewhere). */
+function serviceInstalled(): boolean {
+  if (process.platform !== "darwin" || !existsSync(PLIST)) return false;
+  const plist = readFileSync(PLIST, "utf8");
+  const home = plist.match(/<key>BULLPEN_HOME<\/key><string>([^<]*)<\/string>/)?.[1] ?? join(homedir(), ".bullpen");
+  const port = Number(plist.match(/<key>BULLPEN_PORT<\/key><string>(\d+)<\/string>/)?.[1] ?? DEFAULT_PORT);
+  return home === xml(HOME) && port === PORT;
+}
 
 function launchctl(...args: string[]): boolean {
   try {
@@ -82,10 +95,40 @@ function pidFromFile(): number | undefined {
 /** The process listening on our port, whoever started it. */
 function pidOnPort(): number | undefined {
   try {
+    if (WIN) {
+      const out = execFileSync("netstat", ["-ano", "-p", "TCP"], { encoding: "utf8", windowsHide: true });
+      const m = out.match(new RegExp(`:${PORT}\\s+(?:0\\.0\\.0\\.0|\\[::\\]):0\\s+\\S+\\s+(\\d+)`));
+      return m ? Number(m[1]) : undefined;
+    }
     const out = execFileSync("lsof", ["-nP", `-iTCP:${PORT}`, "-sTCP:LISTEN", "-t"], { encoding: "utf8" }).trim();
     return out ? Number(out.split("\n")[0]) : undefined;
   } catch {
     return undefined;
+  }
+}
+
+/** The running server's process: from our pid file, the server itself, or whoever holds the port. */
+async function serverPid(): Promise<number | undefined> {
+  return pidFromFile() ?? (await ask("busy"))?.pid ?? pidOnPort();
+}
+
+/** Run npm with this Node (on Windows npm is a .cmd, which can't be started directly). */
+function npm(args: string[], cwd: string) {
+  const cli = join(dirname(NODE), "node_modules", "npm", "bin", "npm-cli.js");
+  if (existsSync(cli)) return execFileSync(NODE, [cli, ...args], { cwd, stdio: "inherit" });
+  const bin = join(dirname(NODE), "npm");
+  return execFileSync(existsSync(bin) ? bin : "npm", args, { cwd, stdio: "inherit", shell: WIN });
+}
+
+/** Open a URL in the default browser. */
+function openUrl(url: string): boolean {
+  try {
+    if (process.platform === "darwin") execFileSync("open", [url]);
+    else if (WIN) spawn("explorer.exe", [url], { detached: true, stdio: "ignore" }).unref();
+    else spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).on("error", () => {}).unref();
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -98,7 +141,7 @@ async function start(): Promise<boolean> {
     launchctl("kickstart", `gui/${UID}/${LABEL}`);
   } else {
     const out = openSync(LOG, "a");
-    const child = spawn(NODE, [SERVER], { cwd: ROOT, detached: true, stdio: ["ignore", out, out], env: process.env });
+    const child = spawn(NODE, [SERVER], { cwd: ROOT, detached: true, windowsHide: true, stdio: ["ignore", out, out], env: process.env });
     closeSync(out);
     writeFileSync(PID, String(child.pid));
     child.unref();
@@ -164,10 +207,10 @@ function runningFromDb(): { running: number; threads: string[] } | undefined {
 
 async function stop(): Promise<boolean> {
   if (serviceInstalled()) launchctl("bootout", `gui/${UID}/${LABEL}`); // unload so it stays stopped until `start`
-  const pid = pidFromFile() ?? pidOnPort();
+  const pid = await serverPid();
   if (pid) {
     try {
-      process.kill(pid, "SIGTERM");
+      process.kill(pid, "SIGTERM"); // on Windows this ends the process outright
     } catch {}
   }
   const ok = await waitFor(false);
@@ -243,8 +286,7 @@ async function update(): Promise<boolean> {
   }
   if (git("rev-parse", "HEAD:package-lock.json") !== lockBefore) {
     say("Installing updated dependencies…");
-    const npm = join(dirname(NODE), "npm");
-    execFileSync(existsSync(npm) ? npm : "npm", ["ci", "--omit=dev", "--no-audit", "--no-fund", "--loglevel=error"], { cwd: ROOT, stdio: "inherit" });
+    npm(["ci", "--omit=dev", "--no-audit", "--no-fund", "--loglevel=error"], ROOT);
   }
   // Let running agents finish their step, then the new version's own install step and a restart onto the new code.
   await drain();
@@ -253,7 +295,45 @@ async function update(): Promise<boolean> {
   return true;
 }
 
+/** PowerShell, for the few Windows settings Node can't reach (user PATH, shortcuts). */
+function powershell(script: string): boolean {
+  try {
+    execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], { stdio: "ignore", windowsHide: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+const psq = (s: string) => `'${s.replace(/'/g, "''")}'`;
+const vbq = (s: string) => s.replace(/"/g, '""');
+
+/** Windows: the `bullpen` command, start at login (hidden), and a Start menu shortcut. */
+async function installWindows(): Promise<boolean> {
+  ensureHome();
+  const cli = join(ROOT, "src", "cli.ts");
+  mkdirSync(WIN_BIN, { recursive: true });
+  writeFileSync(join(WIN_BIN, "bullpen.cmd"), `@"${NODE}" "${cli}" %*\r\n`);
+  powershell(
+    `$p=[Environment]::GetEnvironmentVariable('Path','User'); $d=${psq(WIN_BIN)}; ` +
+      `if (-not (($p -split ';') -contains $d)) { [Environment]::SetEnvironmentVariable('Path', (@($p,$d) -ne '' -join ';'), 'User') }`,
+  );
+  // A .vbs runs node without a console window.
+  const hidden = (sub: string) => `CreateObject("WScript.Shell").Run """${vbq(NODE)}"" ""${vbq(cli)}"" ${sub}", 0, False\r\n`;
+  mkdirSync(dirname(WIN_STARTUP), { recursive: true });
+  writeFileSync(WIN_STARTUP, hidden("start"));
+  const opener = join(HOME, "bin", "open-bullpen.vbs");
+  writeFileSync(opener, hidden("open"));
+  powershell(
+    `$s=(New-Object -ComObject WScript.Shell).CreateShortcut(${psq(WIN_MENU)}); $s.TargetPath='wscript.exe'; ` +
+      `$s.Arguments='"' + ${psq(opener)} + '"'; $s.WorkingDirectory=${psq(ROOT)}; $s.Description='Bullpen'; $s.Save()`,
+  );
+  // Swap a manually started server for one started the same way login will start it.
+  if (await running()) await stop();
+  return start();
+}
+
 function install() {
+  if (WIN) return installWindows();
   if (process.platform !== "darwin") {
     // No launchd: just the command. Start it with `bullpen start` (or your own systemd unit).
     ensureHome();
@@ -349,8 +429,9 @@ function install() {
 }
 
 function uninstall() {
-  launchctl("bootout", `gui/${UID}/${LABEL}`);
-  for (const p of [PLIST, BIN_LINK]) {
+  const mine = serviceInstalled();
+  if (mine) launchctl("bootout", `gui/${UID}/${LABEL}`);
+  for (const p of [...(mine ? [PLIST] : []), BIN_LINK, WIN_STARTUP, WIN_MENU, join(WIN_BIN, "bullpen.cmd"), join(WIN_BIN, "open-bullpen.vbs")]) {
     try {
       unlinkSync(p);
     } catch {}
@@ -368,8 +449,7 @@ switch (cmd) {
   case "open": {
     if (!(await start())) process.exit(1);
     const url = uiUrl();
-    if (process.platform === "darwin") execFileSync("open", [url]);
-    else say(url);
+    if (!openUrl(url)) say(url);
     break;
   }
   case "start":
@@ -390,24 +470,41 @@ switch (cmd) {
     break;
   case "status": {
     const up = await running();
-    say(up ? `Running on http://127.0.0.1:${PORT} (pid ${pidOnPort() ?? "?"})` : "Not running.");
-    say(serviceInstalled() ? "Starts at login: yes" : "Starts at login: no (run `bullpen install`)");
+    say(up ? `Running on http://127.0.0.1:${PORT} (pid ${(await serverPid()) ?? "?"})` : "Not running.");
+    say(serviceInstalled() || (WIN && existsSync(WIN_STARTUP)) ? "Starts at login: yes" : "Starts at login: no (run `bullpen install`)");
     say(`Data: ${HOME}`);
     say(`Log: ${LOG}`);
     break;
   }
   case "logs": {
-    const t = spawn("tail", ["-n", "50", "-f", LOG], { stdio: "inherit" });
-    t.on("exit", (code) => process.exit(code ?? 0));
+    // Print the last lines, then follow (no `tail` on Windows).
+    say(tail(50));
+    let size = existsSync(LOG) ? statSync(LOG).size : 0;
+    watchFile(LOG, { interval: 500 }, (cur) => {
+      if (cur.size < size) size = 0; // rotated or truncated
+      if (cur.size === size) return;
+      const fd = openSync(LOG, "r");
+      const buf = Buffer.alloc(cur.size - size);
+      readSync(fd, buf, 0, buf.length, size);
+      closeSync(fd);
+      process.stdout.write(buf);
+      size = cur.size;
+    });
     break;
   }
   case "install":
     if (!(await install())) say("Couldn't load the login service; see `bullpen status`.");
     if (await waitFor(true, 10_000)) {
       say("Installed:");
-      say("  • the server starts at login and restarts if it crashes");
-      say("  • `bullpen` works from any folder (open, start, stop, status, logs)");
-      say(`  • the Bullpen app in ${APP.replace(homedir(), "~")}, with a shortcut on your Desktop: find it with Spotlight or drag it to the Dock`);
+      if (WIN) {
+        say("  • the server starts when you sign in to Windows");
+        say("  • `bullpen` works from any folder in a new terminal (open, start, stop, status, logs, update)");
+        say("  • Bullpen in the Start menu");
+      } else {
+        say("  • the server starts at login and restarts if it crashes");
+        say("  • `bullpen` works from any folder (open, start, stop, status, logs)");
+        say(`  • the Bullpen app in ${APP.replace(homedir(), "~")}, with a shortcut on your Desktop: find it with Spotlight or drag it to the Dock`);
+      }
     } else {
       say(`Installed, but the server didn't start. Last lines of ${LOG}:\n${tail(15)}`);
       process.exit(1);
@@ -426,6 +523,10 @@ switch (cmd) {
     // Only touch the login service if it runs this copy (another checkout may own it).
     const mine = serviceInstalled() && readFileSync(PLIST, "utf8").includes(`<string>${xml(ROOT)}</string>`);
     if (mine) await install(); // rewrites the service and restarts it on the new code
+    else if (WIN && existsSync(WIN_STARTUP)) {
+      await installWindows(); // refreshes the command and shortcuts, and restarts onto the new code
+      break;
+    }
     else if (wasRunning) await stop();
     if (wasRunning || mine) await start();
     break;
@@ -452,7 +553,7 @@ switch (cmd) {
       if (!where) {
         say(via === "lan"
           ? "No local-network address found. Connect to Wi-Fi or Ethernet first."
-          : "Tailscale isn't running on this Mac. Install it (tailscale.com) and sign in on this Mac and your phone, then run this again.\n" +
+          : "Tailscale isn't running on this computer. Install it (tailscale.com) and sign in on this computer and your phone, then run this again.\n" +
             "Or: `bullpen remote on --lan` for your local network (plain HTTP; only on a network you trust),\n" +
             `or from another computer, forward the port over SSH: ${sshCommand(PORT)}`);
         process.exit(1);
@@ -465,7 +566,7 @@ switch (cmd) {
     } else if (sub === "off") {
       writeRemote({ ...cfg, enabled: false });
       await restartServer();
-      say("Remote access is off. Only this Mac can connect.");
+      say("Remote access is off. Only this computer can connect.");
       break;
     } else if (sub === "reset") {
       resetDeviceToken();

@@ -30,7 +30,8 @@ bold "Installing Bullpen"
 case "$(uname -s)" in
   Darwin) OS=darwin ;;
   Linux) OS=linux ;;
-  *) die "Bullpen runs on macOS and Linux." ;;
+  MINGW* | MSYS* | CYGWIN*) die "On Windows, install from PowerShell instead:  irm https://raw.githubusercontent.com/BrownJ3/bullpen/main/install.ps1 | iex" ;;
+  *) die "Bullpen runs on macOS, Linux and Windows." ;;
 esac
 case "$(uname -m)" in
   arm64 | aarch64) ARCH=arm64 ;;
