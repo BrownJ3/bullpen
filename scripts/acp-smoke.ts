@@ -20,6 +20,7 @@ const git = (...a: string[]) => execFileSync("git", ["-C", repo, ...a], { encodi
 git("init", "-q", "-b", "main");
 git("config", "user.email", "t@t");
 git("config", "user.name", "t");
+git("config", "core.autocrlf", "false"); // Windows git defaults to CRLF checkouts; the checks compare exact text
 writeFileSync(join(repo, "README.md"), "# test\n");
 git("add", "-A");
 git("commit", "-q", "-m", "init");

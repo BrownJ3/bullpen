@@ -13,6 +13,7 @@ const git = (...a: string[]) => execFileSync("git", ["-C", repo, ...a], { encodi
 git("init", "-q", "-b", "main");
 git("config", "user.email", "t@t");
 git("config", "user.name", "t");
+git("config", "core.autocrlf", "false"); // Windows git defaults to CRLF checkouts; the checks compare exact text
 writeFileSync(join(repo, "a.txt"), "one\ntwo\nthree\n");
 writeFileSync(join(repo, "b.txt"), "bee\n");
 git("add", "-A");

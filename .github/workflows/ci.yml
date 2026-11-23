@@ -34,17 +34,22 @@ jobs:
       - name: Type-check
         run: npm run typecheck
       - name: UI scripts parse
+        if: ${{ !cancelled() }}
         run: for f in ui/js/*.js; do node --check "$f"; done
       - name: Permission rules
+        if: ${{ !cancelled() }}
         run: node scripts/policy-test.ts
       - name: Branches and worktrees
+        if: ${{ !cancelled() }}
         run: |
           git config --global user.email ci@example.com
           git config --global user.name CI
           node scripts/worktrees-smoke.ts
       - name: The bullpen command (start, stop, restart)
+        if: ${{ !cancelled() }}
         run: node scripts/cli-test.ts
       - name: Engine adapter, against a mock agent
+        if: ${{ !cancelled() }}
         run: node scripts/acp-smoke.ts
 
   install:

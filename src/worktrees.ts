@@ -58,7 +58,7 @@ export function mainCheckoutOf(dir: string): string | undefined {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
-    found = basename(common) === ".git" ? dirname(common) : null;
+    found = basename(common) === ".git" ? resolve(dirname(common)) : null; // resolve: git prints C:/… on Windows
   } catch {
     found = null;
   }

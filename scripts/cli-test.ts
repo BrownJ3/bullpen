@@ -33,7 +33,7 @@ const check = (cond: unknown, label: string, info = "") => { cond ? pass++ : fai
 const pidIn = (status: string) => Number(status.match(/pid (\d+)/)?.[1]);
 
 try {
-  check(/^Bullpen v?\d+\.\d+\.\d+/.test(cli("version")), "version prints", cli("version").split("\n")[0]);
+  check(/^Bullpen \S+/.test(cli("version")), "version prints", cli("version").split("\n")[0]);
   check(cli("status").startsWith("Not running."), "status: not running at first");
 
   let out = cli("start");

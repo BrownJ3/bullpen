@@ -157,7 +157,9 @@ async function ask(method: string, params?: unknown): Promise<any> {
   const { WebSocket } = await import("ws");
   return new Promise((resolve) => {
     const ws = new WebSocket(`ws://127.0.0.1:${PORT}`, { headers: { authorization: `Bearer ${loadOrCreateToken()}` } });
+    const timer = setTimeout(() => done(undefined), 5000);
     const done = (v: unknown) => {
+      clearTimeout(timer); // or the command would sit for 5 seconds before exiting
       ws.close();
       resolve(v);
     };
@@ -167,7 +169,6 @@ async function ask(method: string, params?: unknown): Promise<any> {
       if (msg.id === 1) done(msg.error ? undefined : msg.result);
     });
     ws.on("error", () => done(undefined));
-    setTimeout(() => done(undefined), 5000);
   });
 }
 
@@ -431,7 +432,10 @@ function install() {
 function uninstall() {
   const mine = serviceInstalled();
   if (mine) launchctl("bootout", `gui/${UID}/${LABEL}`);
-  for (const p of [...(mine ? [PLIST] : []), BIN_LINK, WIN_STARTUP, WIN_MENU, join(WIN_BIN, "bullpen.cmd"), join(WIN_BIN, "open-bullpen.vbs")]) {
+  // Windows is still reading bullpen.cmd if that's how this was run, so it's deleted a moment after we exit.
+  const cmdFile = join(WIN_BIN, "bullpen.cmd");
+  if (WIN && existsSync(cmdFile)) spawn("cmd.exe", ["/d", "/s", "/c", `ping -n 3 127.0.0.1 >nul & del "${cmdFile}"`], { detached: true, stdio: "ignore", windowsHide: true, windowsVerbatimArguments: true }).unref();
+  for (const p of [...(mine ? [PLIST] : []), BIN_LINK, WIN_STARTUP, WIN_MENU, join(WIN_BIN, "open-bullpen.vbs")]) {
     try {
       unlinkSync(p);
     } catch {}
