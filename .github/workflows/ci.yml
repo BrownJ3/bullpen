@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main, simplify]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Type-check
+        run: npm run typecheck
+      - name: UI scripts parse
+        run: for f in ui/js/*.js; do node --check "$f"; done
+      - name: Permission rules
+        run: node scripts/policy-test.ts
+      - name: Branches and worktrees
+        run: |
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          node scripts/worktrees-smoke.ts
+      - name: The bullpen command (start, stop, restart)
+        run: node scripts/cli-test.ts
+      - name: Engine adapter, against a mock agent
+        run: node scripts/acp-smoke.ts
+
+  install:
+    name: Installer (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Installs this commit from the checkout into a throwaway folder, then drives it with the installed command.
+      - name: Install (macOS, Linux)
+        if: runner.os != 'Windows'
+        run: |
+          export BULLPEN_HOME="$RUNNER_TEMP/bullpen" BULLPEN_PORT=4795
+          BULLPEN_REPO="$PWD" BULLPEN_REF="$(git rev-parse HEAD)" BULLPEN_NO_SERVICE=1 sh install.sh
+          NODE="$BULLPEN_HOME/node/bin/node"; [ -x "$NODE" ] || NODE=node
+          CLI="$BULLPEN_HOME/app/src/cli.ts"
+          "$NODE" "$CLI" version
+          "$NODE" "$CLI" start
+          "$NODE" "$CLI" status | grep -q "^Running on"
+          "$NODE" "$CLI" stop
+          "$NODE" "$CLI" status | grep -q "^Not running"
+      - name: Install (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:BULLPEN_HOME = Join-Path $env:RUNNER_TEMP 'bullpen'
+          $env:BULLPEN_PORT = '4795'
+          $env:BULLPEN_REPO = "$PWD"
+          $env:BULLPEN_REF = git rev-parse HEAD
+          ./install.ps1
+          $bullpen = Join-Path $env:BULLPEN_HOME 'bin\bullpen.cmd'
+          if (-not (Test-Path $bullpen)) { throw 'bullpen.cmd was not created' }
+          & $bullpen version
+          $status = (& $bullpen status) -join "`n"
+          Write-Host $status
+          if ($status -notmatch 'Running on') { throw 'the server is not running after install' }
+          if ($status -notmatch 'Starts at login: yes') { throw 'start at login was not set up' }
+          if (([Environment]::GetEnvironmentVariable('Path','User') -split ';') -notcontains (Join-Path $env:BULLPEN_HOME 'bin')) { throw 'bullpen is not on the user PATH' }
+          & $bullpen restart
+          if ($LASTEXITCODE -ne 0) { throw 'restart failed' }
+          & $bullpen stop
+          if ($LASTEXITCODE -ne 0) { throw 'stop failed' }
+          $status = (& $bullpen status) -join "`n"
+          if ($status -notmatch 'Not running') { throw 'the server is still running after stop' }
+          & $bullpen uninstall

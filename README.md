@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/BrownJ3/bullpen/releases"><img src="https://img.shields.io/github/v/tag/BrownJ3/bullpen?sort=semver&style=flat-square&label=version&color=14213d" alt="Latest version"></a>
+  <a href="https://github.com/BrownJ3/bullpen/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/BrownJ3/bullpen/ci.yml?branch=main&style=flat-square&label=tests" alt="Tests"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-14213d?style=flat-square" alt="macOS, Windows and Linux">
   <img src="https://img.shields.io/badge/node-24%2B-14213d?style=flat-square" alt="Node 24+">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-fca311?style=flat-square" alt="MIT license"></a>
@@ -270,10 +271,12 @@ To add an engine, implement `ProviderAdapter` from [`src/types.ts`](src/types.ts
 <summary><b>Tests</b></summary>
 <br>
 
-Each starts its own throwaway server.
+Each starts its own throwaway server. The first four need no agents and run on every push, on macOS, Linux and
+Windows, along with a test of the installers ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
 ```bash
 node scripts/policy-test.ts        # permission rules
+node scripts/cli-test.ts           # the bullpen command: start, stop, restart
 node scripts/worktrees-smoke.ts    # branches
 node scripts/acp-smoke.ts          # ACP engine, against a mock agent
 node scripts/team-smoke.ts         # teams end to end (uses real agents)

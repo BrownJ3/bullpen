@@ -1,7 +1,8 @@
 // Test of the ACP engine adapter and the MCP tool endpoint, with a mock ACP agent (no model calls).
 //   node scripts/acp-smoke.ts
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocket } from "ws";
@@ -12,9 +13,9 @@ const HOME = mkdtempSync(join(tmpdir(), "bullpen-acp-home-"));
 const PORT = 4790 + Math.floor(Math.random() * 5);
 process.env.BULLPEN_HOME = HOME;
 const { readToken } = await import("../src/home.ts");
-writeFileSync(join(HOME, "engines.json"), JSON.stringify([{ id: "mock", name: "Mock ACP", command: "node", args: [new URL("./mock-acp-agent.mjs", import.meta.url).pathname] }]));
+writeFileSync(join(HOME, "engines.json"), JSON.stringify([{ id: "mock", name: "Mock ACP", command: "node", args: [fileURLToPath(new URL("./mock-acp-agent.mjs", import.meta.url))] }]));
 
-const repo = execFileSync("realpath", [mkdtempSync(join(tmpdir(), "bullpen-acp-repo-"))], { encoding: "utf8" }).trim();
+const repo = realpathSync.native(mkdtempSync(join(tmpdir(), "bullpen-acp-repo-")));
 const git = (...a: string[]) => execFileSync("git", ["-C", repo, ...a], { encoding: "utf8" }).trim();
 git("init", "-q", "-b", "main");
 git("config", "user.email", "t@t");
@@ -25,7 +26,7 @@ git("commit", "-q", "-m", "init");
 
 let server: ChildProcess | undefined;
 async function startServer() {
-  server = spawn("node", ["src/server.ts"], { env: { ...process.env, BULLPEN_HOME: HOME, BULLPEN_PORT: String(PORT) }, stdio: ["ignore", "pipe", "pipe"] });
+  server = spawn(process.execPath, ["src/server.ts"], { env: { ...process.env, BULLPEN_HOME: HOME, BULLPEN_PORT: String(PORT) }, stdio: ["ignore", "pipe", "pipe"] });
   server.stderr?.on("data", (d) => process.env.DEBUG && process.stderr.write(d));
   await new Promise<void>((r) => server!.stdout!.on("data", (d) => String(d).includes("listening") && r()));
 }

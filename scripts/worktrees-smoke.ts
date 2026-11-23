@@ -1,7 +1,7 @@
 // Worktree test (no agents): thread branches, merging, and team-task workspaces landing cleanly and with conflicts.
 //   node scripts/worktrees-smoke.ts
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,7 +24,7 @@ const check = (name: string, ok: boolean, info = "") => { ok ? pass++ : fail++; 
 // --- thread worktree
 const t = await wt.createThreadWorktree(repo, { title: "Add feature" });
 check("thread worktree created", existsSync(join(t.path, "a.txt")) && t.base === "main", t.branch);
-check("main checkout found from worktree", wt.mainCheckoutOf(t.path) === execFileSync("realpath", [repo], { encoding: "utf8" }).trim());
+check("main checkout found from worktree", wt.mainCheckoutOf(t.path) === realpathSync.native(repo));
 writeFileSync(join(t.path, "c.txt"), "new file\n");
 let st = await wt.status(t);
 check("status sees changes", st.changed === 1 && st.dirty.length === 1, JSON.stringify(st));
