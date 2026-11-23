@@ -12,6 +12,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { JsonRpc } from "./jsonrpc.ts";
+import { onPath, shellFor } from "../engines.ts";
 import { clipOutput } from "../util.ts";
 import type {
   AdapterEvent,
@@ -34,9 +35,8 @@ type StreamItem = Extract<TurnItem, { kind: "assistant_message" | "reasoning" }>
 /** BULLPEN_CODEX_BIN, else `codex` on PATH, else the copy T3 Code downloads. */
 function codexBinary(): string {
   if (process.env.BULLPEN_CODEX_BIN) return process.env.BULLPEN_CODEX_BIN;
-  for (const dir of (process.env.PATH ?? "").split(":")) {
-    if (dir && existsSync(join(dir, "codex"))) return join(dir, "codex");
-  }
+  const found = onPath("codex");
+  if (found) return found;
   const t3 = join(homedir(), ".t3", "tools", "codex");
   if (existsSync(t3)) {
     const versions = readdirSync(t3).sort().reverse();
@@ -141,7 +141,8 @@ class CodexSession implements ProviderSession {
     this.#tools = new Map((input.tools ?? []).map((t) => [t.name, t]));
     this.#cwd = input.cwd;
     this.#mode = input.runtimeMode;
-    this.#proc = spawn(codexBinary(), ["app-server"], { cwd: input.cwd, stdio: ["pipe", "pipe", "pipe"] });
+    const bin = codexBinary();
+    this.#proc = spawn(bin, ["app-server"], { cwd: input.cwd, stdio: ["pipe", "pipe", "pipe"], ...shellFor(bin) });
 
     this.#rpc = new JsonRpc(this.#proc, { request: (id, method, params) => void this.#onServerRequest(id, method, params), notification: (method, params) => this.#onNotification(method, params) }, {});
     createInterface({ input: this.#proc.stderr }).on("line", (line) => {

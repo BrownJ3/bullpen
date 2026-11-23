@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
 import { JsonRpc } from "./jsonrpc.ts";
+import { shellFor } from "../engines.ts";
 import { registerMcp } from "../mcp.ts";
 import { isSafeCommand, localContext } from "../team-policy.ts";
 import { clipOutput } from "../util.ts";
@@ -77,7 +78,7 @@ class AcpSession implements ProviderSession {
     this.#turnMode = input.runtimeMode;
     this.#ownFolder = input.ownFolder;
     this.#mcp = registerMcp(input.tools ?? []);
-    this.#proc = spawn(engine.command, engine.args, { cwd: input.cwd, env: { ...process.env, ...engine.env }, stdio: ["pipe", "pipe", "pipe"] });
+    this.#proc = spawn(engine.command, engine.args, { cwd: input.cwd, env: { ...process.env, ...engine.env }, stdio: ["pipe", "pipe", "pipe"], ...shellFor(engine.command) });
     this.#rpc = new JsonRpc(this.#proc, { request: (id, method, params) => void this.#onRequest(id, method, params), notification: (method, params) => this.#onNotification(method, params) }, { jsonrpcField: true });
     createInterface({ input: this.#proc.stderr }).on("line", (l) => {
       if (process.env.BULLPEN_DEBUG) console.error(`[${engine.id}] ${l}`);

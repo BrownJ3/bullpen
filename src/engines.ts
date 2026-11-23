@@ -3,7 +3,8 @@
 //   [{ "id": "my-agent", "name": "My Agent", "command": "/path/to/agent", "args": ["--acp"] }]
 
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { delimiter, isAbsolute, join } from "node:path";
 import { HOME } from "./home.ts";
 import type { AcpEngine } from "./providers/acp.ts";
 
@@ -15,11 +16,26 @@ const KNOWN: AcpEngine[] = [
 ];
 const RESERVED = new Set(["claude", "codex"]);
 
-function onPath(command: string): string | undefined {
-  if (command.includes("/")) return existsSync(command) ? command : undefined;
-  const dirs = [...(process.env.PATH ?? "").split(":"), "/opt/homebrew/bin", "/usr/local/bin", join(process.env.HOME ?? "", ".local", "bin")];
-  for (const dir of dirs) if (dir && existsSync(join(dir, command))) return join(dir, command);
+const WIN = process.platform === "win32";
+
+/** The full path of a command, searching PATH (and on Windows, trying .exe, .cmd and so on). */
+export function onPath(command: string): string | undefined {
+  // On Windows a command is `name.exe`, or `name.cmd` for anything installed with npm.
+  const exts = WIN ? ["", ...(process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").map((e) => e.toLowerCase())] : [""];
+  const hit = (base: string) => exts.map((e) => base + e).find((f) => existsSync(f));
+  if (isAbsolute(command) || command.includes("/") || (WIN && command.includes("\\"))) return hit(command);
+  const extra = WIN ? [] : ["/opt/homebrew/bin", "/usr/local/bin"];
+  const dirs = [...(process.env.PATH ?? "").split(delimiter), ...extra, join(homedir(), ".local", "bin")];
+  for (const dir of dirs) {
+    const found = dir && hit(join(dir, command));
+    if (found) return found;
+  }
   return undefined;
+}
+
+/** Spawn options for a command found with onPath: Windows can only start .cmd and .bat files through a shell. */
+export function shellFor(command: string): { shell?: boolean; windowsHide: boolean } {
+  return { shell: WIN && /\.(cmd|bat)$/i.test(command) ? true : undefined, windowsHide: true };
 }
 
 export function acpEngines(): AcpEngine[] {
